@@ -1,3 +1,3 @@
 {
-    "ros.distro": "humble"
+    "python.analysis.typeCheckingMode": "basic"
 }
