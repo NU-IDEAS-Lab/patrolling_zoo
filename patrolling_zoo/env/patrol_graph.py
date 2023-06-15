@@ -44,21 +44,32 @@ class PatrolGraph():
 
         return self.graph.nodes[node]["pos"]
 
+    def getNearestNode(self, pos, epsilon=None):
+        ''' Returns the nearest node to the given position.
+            If epsilon is not None and no node is within epsilon, returns None. '''
+        
+        # Find the nearest node.
+        bestDist = math.sqrt(math.pow(self.graph.nodes[0]["pos"][0] - pos[0], 2) + math.pow(self.graph.nodes[0]["pos"][1] - pos[1], 2))
+        bestNode = 0
+        for i in range(len(self.graph.nodes)):
+            dist = math.sqrt(math.pow(self.graph.nodes[i]["pos"][0] - pos[0], 2) + math.pow(self.graph.nodes[i]["pos"][1] - pos[1], 2))
+            if dist < bestDist:
+                bestDist = dist
+                bestNode = i
+
+        # Check if the nearest node is within epsilon.
+        if epsilon is not None and bestDist > epsilon:
+            return None
+        else:
+            return bestNode
+
     def getOriginsFromInitialPoses(self, initialPoses):
         ''' Given (x,y) initial positions, returns the nearest node for each position.
             This is a horrible n^2 algorithm but that's fine for now. '''
 
         origins = []
-        positions = nx.get_node_attributes(self.graph, 'pos')
-        for (x, y) in zip(initialPoses[0::2], initialPoses[1::2]):
-            bestDist = math.sqrt(math.pow(positions[0][0] - x, 2) + math.pow(positions[0][1] - y, 2))
-            bestNode = 0
-            for i in range(len(positions)):
-                dist = math.sqrt(math.pow(positions[i][0] - x, 2) + math.pow(positions[i][1] - y, 2))
-                if dist < bestDist:
-                    bestDist = dist
-                    bestNode = i
-            origins.append(bestNode)
+        for pos in zip(initialPoses[0::2], initialPoses[1::2]):
+            origins.append(self.getNearestNode(pos))
         return origins
     
 
