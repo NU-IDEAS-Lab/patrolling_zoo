@@ -34,8 +34,37 @@ class PatrollingZooEnvironment(ParallelEnv):
 
         self.pg = patrol_graph
         self.possible_agents = [f'agent_{i}' for i in range(num_agents)]
+
+        # Create a tuple state space for each agent:
+        # (current_node, next_node, remaining_steps)
+        self.state_spaces = {agent: spaces.Tuple((
+            spaces.Discrete(len(self.pg.graph)),
+            spaces.Discrete(len(self.pg.graph)),
+            spaces.Discrete(100)
+        )) for agent in self.possible_agents}
+
         self.action_spaces = {agent: spaces.Discrete(len(self.pg.graph)) for agent in self.possible_agents}
-        self.observation_spaces = {agent: spaces.Discrete(len(self.pg.graph) + num_agents) for agent in self.possible_agents}
+        # self.observation_spaces = {agent: spaces.Discrete(len(self.pg.graph) + num_agents) for agent in self.possible_agents}
+
+        # Get graph bounds in euclidean space.
+        pos = nx.get_node_attributes(self.pg.graph, 'pos')
+        minPosX = min(pos[p][0] for p in pos)
+        maxPosX = max(pos[p][0] for p in pos)
+        minPosY = min(pos[p][1] for p in pos)
+        maxPosY = max(pos[p][1] for p in pos)
+
+        # Create the observation space.
+        self.observation_spaces = {agent: spaces.Dict({
+            "agent_state": spaces.Tuple((
+                spaces.Box(
+                    low = np.array([minPosX, minPosY]),
+                    high = np.array([maxPosX, maxPosY]),
+                    shape= (2,)
+                ),
+                spaces.Discrete(100)
+            )),
+            "vertex_state": spaces.Discrete(len(self.pg.graph))
+        }) for agent in self.possible_agents}
 
         self.reset()
 
