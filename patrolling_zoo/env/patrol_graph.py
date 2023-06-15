@@ -75,6 +75,6 @@ class PatrolGraph():
         fig, ax = plt.subplots(figsize=figsize)
         pos = nx.get_node_attributes(self.graph, 'pos')
         edge_labels = nx.get_edge_attributes(self.graph, 'weight')
-        nx.draw(self.graph, pos, with_labels=True, node_color='lightblue', node_size=600,font_size=10, font_color='black')
+        nx.draw_networkx(self.graph, pos, with_labels=True, node_color='lightblue', node_size=600,font_size=10, font_color='black')
         nx.draw_networkx_edge_labels(self.graph, pos, edge_labels=edge_labels, font_size=7)
         # After executing the function do not forget plt.show()
