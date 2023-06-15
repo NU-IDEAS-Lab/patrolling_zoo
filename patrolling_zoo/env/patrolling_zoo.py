@@ -19,7 +19,7 @@ class PatrollingZooEnvironment(ParallelEnv):
         "name": "patrolling_zoo_environment_v0",
     }
 
-    def __init__(self, patrol_graph, num_agents):
+    def __init__(self, patrol_graph, num_agents, *args, **kwargs):
         """
         Initialize the PatrolEnv object.
 
@@ -30,17 +30,19 @@ class PatrollingZooEnvironment(ParallelEnv):
         Returns:
             None
         """
+        super().__init__(*args, **kwargs)
+
         self.pg = patrol_graph
-        self.agents = [f'agent_{i}' for i in range(num_agents)]
-        self.possible_actions = list(self.pg.graph.nodes)
-        self.action_spaces = {agent: spaces.Discrete(len(self.pg.graph)) for agent in self.agents}
-        self.observation_spaces = {agent: spaces.Box(low=0, high=np.inf, shape=(len(self.pg.graph),)) for agent in self.agents}
+        self.possible_agents = [f'agent_{i}' for i in range(num_agents)]
+        self.action_spaces = {agent: spaces.Discrete(len(self.pg.graph)) for agent in self.possible_agents}
+        self.observation_spaces = {agent: spaces.Discrete(len(self.pg.graph) + num_agents) for agent in self.possible_agents}
 
         self.reset()
 
         self.step_count = 0
 
     def reset(self, seed=None, options=None):
+        self.agents = self.possible_agents.copy()
         self.rewards = dict.fromkeys(self.agents, 0)
         self.dones = dict.fromkeys(self.agents, False)
         self.observations = dict.fromkeys(self.agents, 0)
