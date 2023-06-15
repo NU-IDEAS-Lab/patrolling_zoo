@@ -63,7 +63,7 @@ class PatrollingZooEnvironment(ParallelEnv):
         colors = ['red', 'blue', 'green', 'cyan', 'magenta', 'yellow', 'black']
 
         pos = nx.get_node_attributes(self.pg.graph, 'pos')
-        nx.draw(self.pg.graph, pos, with_labels=True, node_color='lightblue', node_size=600,font_size=10, font_color='black')
+        nx.draw_networkx(self.pg.graph, pos, with_labels=True, node_color='lightblue', node_size=600,font_size=10, font_color='black')
         nx.draw_networkx_edge_labels(self.pg.graph, pos, edge_labels=nx.get_edge_attributes(self.pg.graph, 'weight'), font_size=7)
         
         for i, agent in enumerate(self.agents):
@@ -90,7 +90,10 @@ class PatrollingZooEnvironment(ParallelEnv):
     def action_space(self, agent):
         return self.action_spaces[agent]
 
-    def step(self, action_dict = {}):
+    def observe(self, agent):
+        return self.observations[agent]
+
+    def step(self, action_dict={}):
         """
         Perform a step in the environment based on the given action dictionary.
 
@@ -98,9 +101,17 @@ class PatrollingZooEnvironment(ParallelEnv):
             action_dict (dict): A dictionary containing actions for each agent.
 
         Returns:
-            None
+            obs_dict (dict): A dictionary containing the observations for each agent.
+            reward_dict (dict): A dictionary containing the rewards for each agent.
+            done_dict (dict): A dictionary indicating whether each agent is done.
+            info_dict (dict): A dictionary containing additional information for each agent.
         """
         self.step_count += 1
+        obs_dict = {}
+        reward_dict = {}
+        done_dict = {}
+        info_dict = {}
+
         for agent in self.agents:
             # If the agent is at a node, not transitioning
             if self.remaining_steps[agent] == 0 and agent in action_dict:
@@ -112,7 +123,7 @@ class PatrollingZooEnvironment(ParallelEnv):
 
                 # If the agent is asked to go where it already is
                 if action == current_position:
-                    self.rewards[agent] = 0  # you could also give a reward or penalty here if you wanted
+                    reward_dict[agent] = 0  # you could also give a reward or penalty here if you wanted
                     continue
 
                 # Update the agent's position.
@@ -123,21 +134,32 @@ class PatrollingZooEnvironment(ParallelEnv):
                     # If there is a direct edge
                     if path_len == 1:
                         self.observations[agent] = action
-                        self.rewards[agent] = self.pg.graph.edges[current_position, action]['weight']
-                    else: 
+                        reward_dict[agent] = self.pg.graph.edges[current_position, action]['weight']
+                    else:
                         # The agent will start transitioning to the next node on the shortest path
                         self.next_node[agent] = path[1]
                         self.remaining_steps[agent] = self.pg.graph.edges[current_position, self.next_node[agent]]['weight']
-                        self.rewards[agent] = 0 # Assuming no reward until it reaches the destination node
+                        reward_dict[agent] = 0  # Assuming no reward until it reaches the destination node
                         # Update observation to indicate that agent is transitioning
                         self.observations[agent] = (current_position, self.next_node[agent])
                 else:
-                    self.rewards[agent] = 0  # the action was invalid
+                    reward_dict[agent] = 0  # the action was invalid
             elif self.remaining_steps[agent] > 0:
                 # The agent is transitioning
-                self.remaining_steps[agent] -= 1
+                self.remaining_steps[agent] -= 10
 
                 # If the agent has reached the next node in its path
-                if self.remaining_steps[agent] == 0:
+                if self.remaining_steps[agent] <= 0:
                     self.observations[agent] = self.next_node[agent]
                     self.next_node[agent] = None
+
+            # Check if the agent is done
+            done_dict[agent] = self.dones[agent]
+
+            # Add any additional information for the agent
+            info_dict[agent] = {}
+
+            # Update the observation for the agent
+            obs_dict[agent] = self.observe(agent)
+
+        return obs_dict, reward_dict, done_dict, {}, info_dict
