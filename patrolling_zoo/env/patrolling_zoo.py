@@ -10,13 +10,14 @@ from copy import copy
 class PatrolAgent():
     ''' This class stores all agent state. '''
 
-    def __init__(self, id, position=(0.0, 0.0), speed=1.0):
+    def __init__(self, id, position=(0.0, 0.0), speed=1.0, startingNode=None):
         self.id = id
         self.name = f"agent_{id}"
-        self.position = position
+        self.position = position # the current position of the agent
         self.startingPosition = position
-        self.speed = speed
+        self.speed = speed # the movement speed of the agent. Agent may either move at this speed or not move at all.
         self.startingSpeed = speed
+        self.lastNode = startingNode
     
     def reset(self):
         self.position = self.startingPosition
@@ -44,8 +45,9 @@ class PatrollingZooEnvironment(ParallelEnv):
         self.pg = patrol_graph
 
         # Create the agents with random starting positions.
-        startingPositions = [self.pg.getNodePosition(random.sample(range(self.pg.graph.number_of_nodes()), 1)[0]) for _ in range(num_agents)]
-        self.possible_agents = [PatrolAgent(i, startingPositions[i]) for i in range(num_agents)]
+        startingNodes = [random.sample(range(self.pg.graph.number_of_nodes()), 1)[0] for _ in range(num_agents)]
+        startingPositions = [self.pg.getNodePosition(i) for i in startingNodes]
+        self.possible_agents = [PatrolAgent(i, startingPositions[i], startingNode=startingNodes[i]) for i in range(num_agents)]
 
         # Create the action space.
         self.action_spaces = {agent: spaces.Discrete(len(self.pg.graph)) for agent in self.possible_agents}
@@ -84,15 +86,14 @@ class PatrollingZooEnvironment(ParallelEnv):
         return {agent: self.observe(agent) for agent in self.agents}
 
     def render(self, figsize=(18, 12)):
-        """
-        Plot the world representation with agent positions.
-
-        Args:
-            figsize (tuple, optional): The size of the figure in inches. Defaults to (18, 12).
-
-        Returns:
-            None
-        """
+        ''' Renders the environment.
+            
+            Args:
+                figsize (tuple, optional): The size of the figure in inches. Defaults to (18, 12).
+                
+            Returns:
+                None
+        '''
         fig, ax = plt.subplots(figsize=figsize)
         markers = ['p']
         colors = ['red', 'blue', 'green', 'cyan', 'magenta', 'yellow', 'black']
@@ -114,16 +115,19 @@ class PatrollingZooEnvironment(ParallelEnv):
         plt.show()
 
     def observation_space(self, agent):
+        ''' Returns the observation space for the given agent. '''
         return self.observation_spaces[agent]
 
     def action_space(self, agent):
+        ''' Returns the action space for the given agent. '''
         return self.action_spaces[agent]
 
     def observe(self, agent):
+        ''' Returns the observation for the given agent.'''
         return self.observations[agent]
 
     def step(self, action_dict={}):
-        """
+        ''''
         Perform a step in the environment based on the given action dictionary.
 
         Args:
@@ -134,7 +138,7 @@ class PatrollingZooEnvironment(ParallelEnv):
             reward_dict (dict): A dictionary containing the rewards for each agent.
             done_dict (dict): A dictionary indicating whether each agent is done.
             info_dict (dict): A dictionary containing additional information for each agent.
-        """
+        '''
         self.step_count += 1
         obs_dict = {}
         reward_dict = {}
@@ -150,25 +154,18 @@ class PatrollingZooEnvironment(ParallelEnv):
                 if action in self.pg.graph.nodes:
 
                     # Determine the nearest node and find path to destination.
-                    srcNode = self.pg.getNearestNode(agent.position)
+                    srcNode = agent.lastNode
                     path = nx.shortest_path(self.pg.graph, source=srcNode, target=action, weight='weight')
                     print(f'Agent {agent.id} is at node {srcNode} and is going to node {action} via path {path}')
-
-                    # Determine the next node on the shortest path.
-                    nextNodeIdx = 0
-                    if len(path) > 1:
-                        distCurrTo1 = self._dist(agent.position, self.pg.getNodePosition(path[1]))
-                        dist0To1 = self._dist(self.pg.getNodePosition(path[0]), self.pg.getNodePosition(path[1]))
-                        if distCurrTo1 <= dist0To1:
-                            nextNodeIdx = 1
-
+                    
                     # Take a step towards the next node.
                     stepSize = agent.speed
-                    for nextNode in path[nextNodeIdx:]:
+                    for nextNode in path[1:]:
                         print(f"Moving towards next node {nextNode} with step size {stepSize}")
                         stepSize = self._moveTowardsNode(agent, nextNode, stepSize)
                         if stepSize <= 0.0:
                             break
+                        agent.lastNode = nextNode
                 else:
                     reward_dict[agent] = 0  # the action was invalid
 
@@ -189,13 +186,10 @@ class PatrollingZooEnvironment(ParallelEnv):
         # Take a step towards the next node.
         posNextNode = self.pg.getNodePosition(node)
         distCurrToNext = self._dist(agent.position, posNextNode)
-        if distCurrToNext < stepSize:
-            agent.position = posNextNode
-            return 0.0
-        else:
-            agent.position = (agent.position[0] + (posNextNode[0] - agent.position[0]) * stepSize / distCurrToNext,
-                              agent.position[1] + (posNextNode[1] - agent.position[1]) * stepSize / distCurrToNext)
-            return stepSize - distCurrToNext
+        step = distCurrToNext if distCurrToNext < stepSize else stepSize
+        agent.position = (agent.position[0] + (posNextNode[0] - agent.position[0]) * step / distCurrToNext,
+                            agent.position[1] + (posNextNode[1] - agent.position[1]) * step / distCurrToNext)
+        return stepSize - distCurrToNext
 
     def _dist(self, pos1, pos2):
         ''' Calculates the Euclidean distance between two points. '''
