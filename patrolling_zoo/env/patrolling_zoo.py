@@ -4,15 +4,24 @@ import random
 import numpy as np
 from matplotlib import pyplot as plt
 import networkx as nx
+from copy import copy
 
 
-class PatrolAgentState():
-    def __init__(self, position=(0.0, 0.0)):
+class PatrolAgent():
+    ''' This class stores all agent state. '''
+
+    def __init__(self, id, position=(0.0, 0.0), speed=1.0):
+        self.id = id
+        self.name = f"agent_{id}"
         self.position = position
+        self.startingPosition = position
+        self.speed = speed
+        self.startingSpeed = speed
+    
+    def reset(self):
+        self.position = self.startingPosition
+        self.speed = self.startingSpeed
 
-class PatrolVertexState():
-    def __init__(self, idlenessTime=0.0):
-        self.idlenessTime = idlenessTime
 
 class PatrollingZooEnvironment(ParallelEnv):
     metadata = {
@@ -33,20 +42,15 @@ class PatrollingZooEnvironment(ParallelEnv):
         super().__init__(*args, **kwargs)
 
         self.pg = patrol_graph
-        self.possible_agents = [f'agent_{i}' for i in range(num_agents)]
 
-        # Create a tuple state space for each agent:
-        # (current_node, next_node, remaining_steps)
-        self.state_spaces = {agent: spaces.Tuple((
-            spaces.Discrete(len(self.pg.graph)),
-            spaces.Discrete(len(self.pg.graph)),
-            spaces.Discrete(100)
-        )) for agent in self.possible_agents}
+        # Create the agents with random starting positions.
+        startingPositions = [self.pg.getNodePosition(random.sample(range(self.pg.graph.number_of_nodes()), 1)[0]) for _ in range(num_agents)]
+        self.possible_agents = [PatrolAgent(i, startingPositions[i]) for i in range(num_agents)]
 
+        # Create the action space.
         self.action_spaces = {agent: spaces.Discrete(len(self.pg.graph)) for agent in self.possible_agents}
-        # self.observation_spaces = {agent: spaces.Discrete(len(self.pg.graph) + num_agents) for agent in self.possible_agents}
 
-        # Get graph bounds in euclidean space.
+        # Get graph bounds in Euclidean space.
         pos = nx.get_node_attributes(self.pg.graph, 'pos')
         minPosX = min(pos[p][0] for p in pos)
         maxPosX = max(pos[p][0] for p in pos)
@@ -71,12 +75,12 @@ class PatrollingZooEnvironment(ParallelEnv):
         self.step_count = 0
 
     def reset(self, seed=None, options=None):
-        self.agents = self.possible_agents.copy()
+        self.agents = copy(self.possible_agents)
+        for agent in self.possible_agents:
+            agent.reset()
         self.rewards = dict.fromkeys(self.agents, 0)
         self.dones = dict.fromkeys(self.agents, False)
-        self.observations = dict.fromkeys(self.agents, 0)
-        self.next_node = dict.fromkeys(self.agents, None)
-        self.remaining_steps = dict.fromkeys(self.agents, 0)
+        self.observations = dict.fromkeys(self.agents, (np.array((0.0, 0.0)), 0))
         return {agent: self.observe(agent) for agent in self.agents}
 
     def render(self, figsize=(18, 12)):
@@ -93,23 +97,17 @@ class PatrollingZooEnvironment(ParallelEnv):
         markers = ['p']
         colors = ['red', 'blue', 'green', 'cyan', 'magenta', 'yellow', 'black']
 
+        # Draw the graph.
         pos = nx.get_node_attributes(self.pg.graph, 'pos')
         nx.draw_networkx(self.pg.graph, pos, with_labels=True, node_color='lightblue', node_size=600,font_size=10, font_color='black')
         nx.draw_networkx_edge_labels(self.pg.graph, pos, edge_labels=nx.get_edge_attributes(self.pg.graph, 'weight'), font_size=7)
         
+        # Draw the agents.
         for i, agent in enumerate(self.agents):
             marker = markers[i % len(markers)]
             color = colors[i % len(colors)]
-            
-            if isinstance(self.observations[agent], tuple):  # the agent is transitioning
-                pos1, pos2 = [self.pg.getNodePosition(node) for node in self.observations[agent]]
-                ratio = self.remaining_steps[agent] / self.pg.graph.edges[self.observations[agent]]['weight']
-                pos = (pos1[0]*ratio + pos2[0]*(1-ratio), pos1[1]*ratio + pos2[1]*(1-ratio))
-            else:  # the agent is at a node
-                pos = self.pg.getNodePosition(self.observations[agent])
-
-            plt.scatter(*pos, color=colors[i % len(colors)], marker=markers[i % len(markers)], zorder=10, alpha=0.3, s=300)
-            plt.plot([], [], color=color, marker=marker, linestyle='None', label=agent, alpha=0.5)
+            plt.scatter(*agent.position, color=colors[i % len(colors)], marker=markers[i % len(markers)], zorder=10, alpha=0.3, s=300)
+            plt.plot([], [], color=color, marker=marker, linestyle='None', label=agent.name, alpha=0.5)
 
         plt.legend()
         plt.text(0,0,f'Current step: {self.step_count}')
@@ -145,44 +143,34 @@ class PatrollingZooEnvironment(ParallelEnv):
 
         for agent in self.agents:
             # If the agent is at a node, not transitioning
-            if self.remaining_steps[agent] == 0 and agent in action_dict:
+            if agent in action_dict:
                 action = action_dict[agent]
-                if isinstance(self.observations[agent], tuple):
-                    current_position = self.observations[agent][0]
-                else:
-                    current_position = self.observations[agent]
-
-                # If the agent is asked to go where it already is
-                if action == current_position:
-                    reward_dict[agent] = 0  # you could also give a reward or penalty here if you wanted
-                    continue
 
                 # Update the agent's position.
                 if action in self.pg.graph.nodes:
-                    path = nx.shortest_path(self.pg.graph, source=current_position, target=action, weight='weight')
-                    path_len = nx.shortest_path_length(self.pg.graph, source=current_position, target=action, weight='weight')
 
-                    # If there is a direct edge
-                    if path_len == 1:
-                        self.observations[agent] = action
-                        reward_dict[agent] = self.pg.graph.edges[current_position, action]['weight']
-                    else:
-                        # The agent will start transitioning to the next node on the shortest path
-                        self.next_node[agent] = path[1]
-                        self.remaining_steps[agent] = self.pg.graph.edges[current_position, self.next_node[agent]]['weight']
-                        reward_dict[agent] = 0  # Assuming no reward until it reaches the destination node
-                        # Update observation to indicate that agent is transitioning
-                        self.observations[agent] = (current_position, self.next_node[agent])
+                    # Determine the nearest node and find path to destination.
+                    srcNode = self.pg.getNearestNode(agent.position)
+                    path = nx.shortest_path(self.pg.graph, source=srcNode, target=action, weight='weight')
+                    print(f'Agent {agent.id} is at node {srcNode} and is going to node {action} via path {path}')
+
+                    # Determine the next node on the shortest path.
+                    nextNodeIdx = 0
+                    if len(path) > 1:
+                        distCurrTo1 = self._dist(agent.position, self.pg.getNodePosition(path[1]))
+                        dist0To1 = self._dist(self.pg.getNodePosition(path[0]), self.pg.getNodePosition(path[1]))
+                        if distCurrTo1 <= dist0To1:
+                            nextNodeIdx = 1
+
+                    # Take a step towards the next node.
+                    stepSize = agent.speed
+                    for nextNode in path[nextNodeIdx:]:
+                        print(f"Moving towards next node {nextNode} with step size {stepSize}")
+                        stepSize = self._moveTowardsNode(agent, nextNode, stepSize)
+                        if stepSize <= 0.0:
+                            break
                 else:
                     reward_dict[agent] = 0  # the action was invalid
-            elif self.remaining_steps[agent] > 0:
-                # The agent is transitioning
-                self.remaining_steps[agent] -= 10
-
-                # If the agent has reached the next node in its path
-                if self.remaining_steps[agent] <= 0:
-                    self.observations[agent] = self.next_node[agent]
-                    self.next_node[agent] = None
 
             # Check if the agent is done
             done_dict[agent] = self.dones[agent]
@@ -194,3 +182,22 @@ class PatrollingZooEnvironment(ParallelEnv):
             obs_dict[agent] = self.observe(agent)
 
         return obs_dict, reward_dict, done_dict, {}, info_dict
+
+    def _moveTowardsNode(self, agent, node, stepSize):
+        ''' Takes a single step towards the next node. Returns the remaining step size. '''
+
+        # Take a step towards the next node.
+        posNextNode = self.pg.getNodePosition(node)
+        distCurrToNext = self._dist(agent.position, posNextNode)
+        if distCurrToNext < stepSize:
+            agent.position = posNextNode
+            return 0.0
+        else:
+            agent.position = (agent.position[0] + (posNextNode[0] - agent.position[0]) * stepSize / distCurrToNext,
+                              agent.position[1] + (posNextNode[1] - agent.position[1]) * stepSize / distCurrToNext)
+            return stepSize - distCurrToNext
+
+    def _dist(self, pos1, pos2):
+        ''' Calculates the Euclidean distance between two points. '''
+
+        return np.sqrt(np.power(pos1[0] - pos2[0], 2) + np.power(pos1[1] - pos2[1], 2))
