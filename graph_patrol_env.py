@@ -51,6 +51,14 @@ class GraphPatrolEnv(AECEnv):
         self.step_count = 0
 
 
+    def reset(self):
+        self.rewards = dict.fromkeys(self.agents, 0)
+        self.dones = dict.fromkeys(self.agents, False)
+        self.observations = {agent: random.choice(self.possible_actions) for agent in self.agents} 
+        self.next_node = dict.fromkeys(self.agents, None)
+        self.remaining_steps = dict.fromkeys(self.agents, 0)
+        return {agent: self.observe(agent) for agent in self.agents}
+    
 
 
     def step(self, action_dict = {}):
@@ -152,6 +160,7 @@ class GraphPatrolEnv(AECEnv):
         entity_color = 'purple'  # choose a specific color for entities
         for i, (entity, positions) in enumerate(self.entities.items()):
             marker = markers[i % len(markers)]  # choose a different marker for each type of entity
+            color = color[i % len(colors)]  # choose a different color for each type of entity
             for pos in positions:
                 pos = self.pg.getNodePosition(pos)
                 plt.scatter(*pos, color=entity_color, marker=marker, zorder=10, alpha=0.5, s=100)
