@@ -61,15 +61,27 @@ class PatrollingZooEnvironment(ParallelEnv):
 
         # Create the observation space.
         self.observation_spaces = {agent: spaces.Dict({
-            "agent_state": spaces.Tuple((
-                spaces.Box(
-                    low = np.array([minPosX, minPosY]),
-                    high = np.array([maxPosX, maxPosY]),
-                    shape= (2,)
-                ),
-                spaces.Discrete(100)
-            )),
-            "vertex_state": spaces.Discrete(len(self.pg.graph))
+
+            # The agent state is the position of each agent.
+            "agent_state": spaces.Box(
+                low = np.array([minPosX, minPosY] * num_agents),
+                high = np.array([maxPosX, maxPosY] * num_agents),
+                shape= (2 * num_agents,)
+            ),
+
+            # The vertex state is composed of two parts.
+            # The first part is the idleness time of each node.
+            "vertex_state": spaces.Box(
+                low = np.array([0.0] * self.pg.graph.number_of_nodes()),
+                high = np.array([np.inf] * self.pg.graph.number_of_nodes()),
+                shape= (self.pg.graph.number_of_nodes(),)
+            ),
+            # The second part is the shortest path cost from every agent to every node.
+            "vertex_distances": spaces.Box(
+                low = np.array([[0.0] * self.pg.graph.number_of_nodes()] * num_agents),
+                high = np.array([[np.inf] * self.pg.graph.number_of_nodes()] * num_agents),
+                shape= (num_agents, self.pg.graph.number_of_nodes())
+            ),
         }) for agent in self.possible_agents}
 
         self.reset()
@@ -82,7 +94,6 @@ class PatrollingZooEnvironment(ParallelEnv):
             agent.reset()
         self.rewards = dict.fromkeys(self.agents, 0)
         self.dones = dict.fromkeys(self.agents, False)
-        self.observations = dict.fromkeys(self.agents, (np.array((0.0, 0.0)), 0))
         return {agent: self.observe(agent) for agent in self.agents}
 
     def render(self, figsize=(18, 12)):
@@ -124,7 +135,12 @@ class PatrollingZooEnvironment(ParallelEnv):
 
     def observe(self, agent):
         ''' Returns the observation for the given agent.'''
-        return self.observations[agent]
+
+        return {
+            "agent_state": np.array([a.position for a in self.agents]),
+            "vertex_state": np.array([0.0] * self.pg.graph.number_of_nodes()),
+            "vertex_distances": np.array([0.0] * self.pg.graph.number_of_nodes())
+        }
 
     def step(self, action_dict={}):
         ''''
