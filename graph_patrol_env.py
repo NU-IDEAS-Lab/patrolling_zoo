@@ -15,7 +15,7 @@ import numpy as np
 import random
 
 class GraphPatrolEnv(AECEnv):
-    def __init__(self, patrol_graph, num_agents, entities, radius=10):
+    def __init__(self, patrol_graph, num_agents, entities = {}, radius=10):
         """
         Initialize the PatrolEnv object.
 
@@ -26,9 +26,9 @@ class GraphPatrolEnv(AECEnv):
         Returns:
             None
         """
-        self.pg = patrol_graph
+        self.graph = patrol_graph
         self.agents = [f'agent_{i}' for i in range(num_agents)]
-        self.possible_actions = list(self.pg.graph.nodes)
+        self.possible_actions = list(self.graph.nodes)
         #self.rewards = dict.fromkeys(self.agents, 0)
         self.reward = 0           
         self.dones = dict.fromkeys(self.agents, False)
@@ -36,7 +36,7 @@ class GraphPatrolEnv(AECEnv):
         self.next_node = dict.fromkeys(self.agents, None) 
         self.remaining_steps = dict.fromkeys(self.agents, 0) 
 
-        self.idle_time = {node: 0 for node in self.pg.graph.nodes}
+        self.idle_time = {node: 0 for node in self.graph.nodes}
 
         self.entities = {}
         self.radius = radius
@@ -45,7 +45,7 @@ class GraphPatrolEnv(AECEnv):
         for entity, quantity in entities.items():
             self.entities[entity] = []
             for _ in range(quantity):
-                entity_position = random.choice(list(self.pg.graph.nodes))
+                entity_position = random.choice(list(self.graph.nodes))
                 self.entities[entity].append(entity_position)
 
         self.step_count = 0
@@ -60,7 +60,7 @@ class GraphPatrolEnv(AECEnv):
         Returns:
             gym.spaces.Space: The action space for the agent.
         """
-        return spaces.Discrete(len(self.pg.graph))
+        return spaces.Discrete(len(self.graph))
 
     def observation_space(self, agent):
         """
@@ -72,7 +72,7 @@ class GraphPatrolEnv(AECEnv):
         Returns:
             gym.spaces.Space: The observation space for the agent.
         """
-        return spaces.Box(low=0, high=np.inf, shape=(len(self.pg.graph),))
+        return spaces.Box(low=0, high=np.inf, shape=(len(self.graph),))
 
 
     def reset(self):
@@ -115,9 +115,9 @@ class GraphPatrolEnv(AECEnv):
                     continue
 
                 # Update the agent's position.
-                if action in self.pg.graph.nodes:
-                    path = nx.shortest_path(self.pg.graph, source=current_position, target=action, weight='weight')
-                    path_len = nx.shortest_path_length(self.pg.graph, source=current_position, target=action, weight='weight')
+                if action in self.graph.nodes:
+                    path = nx.shortest_path(self.graph, source=current_position, target=action, weight='weight')
+                    path_len = nx.shortest_path_length(self.graph, source=current_position, target=action, weight='weight')
 
                     # If there is a direct edge
                     if path_len == 1:
@@ -125,7 +125,7 @@ class GraphPatrolEnv(AECEnv):
                     else: 
                         # The agent will start transitioning to the next node on the shortest path
                         self.next_node[agent] = path[1]
-                        self.remaining_steps[agent] = self.pg.graph.edges[current_position, self.next_node[agent]]['weight']
+                        self.remaining_steps[agent] = self.graph.edges[current_position, self.next_node[agent]]['weight']
                         # Update observation to indicate that agent is transitioning
                         self.agentPosition[agent] = (current_position, self.next_node[agent])
                 else:
@@ -151,7 +151,7 @@ class GraphPatrolEnv(AECEnv):
         return self.agents
     
 
-    def render(self, figsize=(18, 12)):
+    def render(self, figsize=(16, 9)):
         """
         Plot the world representation with agent positions.
 
@@ -165,9 +165,9 @@ class GraphPatrolEnv(AECEnv):
         markers = ['o', '*', 's', '+', 'x', 'D', 'v', '^']  # markers for entities
         colors = ['red', 'blue', 'green', 'cyan', 'magenta', 'yellow', 'black']
 
-        pos = nx.get_node_attributes(self.pg.graph, 'pos')
-        nx.draw(self.pg.graph, pos, with_labels=True, node_color='lightblue', node_size=600, font_size=10, font_color='black')
-        nx.draw_networkx_edge_labels(self.pg.graph, pos, edge_labels=nx.get_edge_attributes(self.pg.graph, 'weight'), font_size=7)
+        pos = nx.get_node_attributes(self.graph, 'pos')
+        nx.draw(self.graph, pos, with_labels=True, node_color='lightblue', node_size=600, font_size=10, font_color='black')
+        nx.draw_networkx_edge_labels(self.graph, pos, edge_labels=nx.get_edge_attributes(self.graph, 'weight'), font_size=7)
 
         # Plot agents
         for i, agent in enumerate(self.agents):
@@ -175,12 +175,12 @@ class GraphPatrolEnv(AECEnv):
             marker = '.'  # Small dot for agents
 
             if isinstance(self.agentPosition[agent], tuple):  # the agent is transitioning
-                pos1, pos2 = [self.pg.getNodePosition(node) for node in self.agentPosition[agent]]
-                ratio = self.remaining_steps[agent] / self.pg.graph.edges[self.agentPosition[agent]]['weight']
+                pos1, pos2 = [self.graph.nodes[node]["pos"] for node in self.agentPosition[agent]]
+                ratio = self.remaining_steps[agent] / self.graph.edges[self.agentPosition[agent]]['weight']
                 pos = (pos1[0] * ratio + pos2[0] * (1 - ratio), pos1[1] * ratio + pos2[1] * (1 - ratio))
                 label = f'{agent} : {self.agentPosition[agent][0]} --> {self.agentPosition[agent][1]}'
             else:  # the agent is at a node
-                pos = self.pg.getNodePosition(self.agentPosition[agent])
+                pos = self.graph.nodes[self.agentPosition[agent]]["pos"]
                 label = f'{agent} : {self.agentPosition[agent]}'
 
             plt.scatter(*pos, color=color, marker=marker, zorder=20, alpha=1, s=100)
@@ -192,7 +192,7 @@ class GraphPatrolEnv(AECEnv):
             marker = markers[i % len(markers)]  # choose a different marker for each type of entity
             color = colors[i % len(colors)]  # choose a different color for each type of entity
             for pos in positions:
-                pos = self.pg.getNodePosition(pos)
+                pos = self.graph.nodes[pos]["pos"]
                 plt.scatter(*pos, color=entity_color, marker=marker, zorder=10, alpha=0.3, s=200)
             plt.plot([], [], color=entity_color, marker=marker, linestyle='None', label=entity, alpha=0.5)
 
@@ -223,65 +223,18 @@ class GraphPatrolEnv(AECEnv):
         return np.sqrt((pos1[0] - pos2[0])**2 + (pos1[1] - pos2[1])**2)
 
 
-    def get_observations(self):
-        """
-        Get the observation for each agent.
-
-        Args:
-            None
-
-        Returns:
-            None
-        """
-
-        self.observations = {agent: [] for agent in self.agents}
-        
-        for agent in self.agents:
-            if isinstance(self.agentPosition[agent], tuple):  # the agent is transitioning
-                agent_pos_key = self.agentPosition[agent]
-            else:  # the agent is at a node
-                agent_pos_key = self.agentPosition[agent]
-
-            # Check all entities
-            for entity, positions in self.entities.items():
-                for pos in positions:
-                    if isinstance(pos, tuple):  # the entity is transitioning
-                        entity_pos_key = pos
-                    else:  # the entity is at a node
-                        entity_pos_key = pos
-                    self.observations[agent].append((entity, entity_pos_key))  # store the entity name and its vertex
-
-            # Check all other agents
-            for other_agent in self.agents:
-                if other_agent == agent:  # don't check the agent with itself
-                    continue
-                if isinstance(self.agentPosition[other_agent], tuple):  # the other agent is transitioning
-                    other_agent_pos_key = self.agentPosition[other_agent]
-                else:  # the other agent is at a node
-                    other_agent_pos_key = self.agentPosition[other_agent]
-                self.observations[agent].append((other_agent, other_agent_pos_key))  # store the other agent name and its vertex
-
     def observe(self, agent):
         observation = {"agents": [], "entities": []}
 
         # Calculate the current position of the observing agent
-        if isinstance(self.agentPosition[agent], tuple):  # the agent is transitioning
-            pos1, pos2 = [self.pg.getNodePosition(node) for node in self.agentPosition[agent]]
-            ratio = self.remaining_steps[agent] / self.pg.graph.edges[self.agentPosition[agent]]['weight']
-            agent_pos = (pos1[0] * ratio + pos2[0] * (1 - ratio), pos1[1] * ratio + pos2[1] * (1 - ratio))
-        else:  # the agent is at a node
-            agent_pos = self.pg.getNodePosition(self.agentPosition[agent])
+        agent_pos = self.calc_agent_pos(agent)
 
         for other_agent in self.agents:
             if other_agent == agent:  # don't check the agent with itself
                 continue
 
-            if isinstance(self.agentPosition[other_agent], tuple):  # the agent is transitioning
-                pos1, pos2 = [self.pg.getNodePosition(node) for node in self.agentPosition[other_agent]]
-                ratio = self.remaining_steps[other_agent] / self.pg.graph.edges[self.agentPosition[other_agent]]['weight']
-                otherPos = (pos1[0] * ratio + pos2[0] * (1 - ratio), pos1[1] * ratio + pos2[1] * (1 - ratio))
-            else:  # the agent is at a node
-                otherPos = self.pg.getNodePosition(self.agentPosition[other_agent])
+            # Calculate the other agent's position
+            otherPos = self.calc_agent_pos(other_agent)
 
             if self.euclidean_distance(agent_pos, otherPos) < self.radius:
                 observation["agents"].append((other_agent, self.agentPosition[other_agent]))
@@ -289,8 +242,27 @@ class GraphPatrolEnv(AECEnv):
         # Same for entities
         for entity, positions in self.entities.items():
             for entity_position in positions:
-                entityPos = self.pg.getNodePosition(entity_position)
+                entityPos = self.graph.nodes[entity_position]["pos"]
                 if self.euclidean_distance(agent_pos, entityPos) < self.radius:
                     observation["entities"].append((entity, entity_position))
 
         return observation
+
+
+    def calc_agent_pos(self, agent):
+        """Calculates the position of an agent, even if it's transitioning between nodes.
+
+        Args:
+            agent (str): The agent to calculate the position for.
+
+        Returns:
+            tuple: The (x, y) position of the agent.
+        """
+        if isinstance(self.agentPosition[agent], tuple):  # the agent is transitioning
+            pos1, pos2 = [self.graph.nodes[node]["pos"] for node in self.agentPosition[agent]]
+            ratio = self.remaining_steps[agent] / self.graph.edges[self.agentPosition[agent]]['weight']
+            agent_pos = (pos1[0] * ratio + pos2[0] * (1 - ratio), pos1[1] * ratio + pos2[1] * (1 - ratio))
+        else:  # the agent is at a node
+            agent_pos = self.graph.nodes[self.agentPosition[agent]]["pos"]
+
+        return agent_pos
