@@ -54,7 +54,7 @@ class PatrollingZooEnvironment(ParallelEnv):
         self.observationRadius = observation_radius
 
         # Create the agents with random starting positions.
-        startingNodes = [random.sample(self.pg.graph.nodes, 1)[0] for _ in range(num_agents)]
+        startingNodes = random.sample(self.pg.graph.nodes, num_agents)
         startingPositions = [self.pg.getNodePosition(i) for i in startingNodes]
         self.possible_agents = [
             PatrolAgent(i, startingPositions[i],
@@ -99,6 +99,7 @@ class PatrollingZooEnvironment(ParallelEnv):
         }) for agent in self.possible_agents}
 
         self.reset()
+
 
     def reset(self, seed=None, options=None):
         ''' Sets the environment to its initial state. '''
@@ -150,7 +151,7 @@ class PatrollingZooEnvironment(ParallelEnv):
             plt.plot([], [], color=color, marker=marker, linestyle='None', label=agent.name, alpha=0.5)
 
         plt.legend()
-        plt.text(0,0,f'Current step: {self.step_count}, Average idleness time: {self.getAverageIdlenessTime(self.step_count)}')
+        plt.text(0,0,f'Current step: {self.step_count}, Average idleness time: {self.pg.getAverageIdlenessTime(self.step_count)}')
         plt.show()
 
 
@@ -261,13 +262,6 @@ class PatrollingZooEnvironment(ParallelEnv):
         idleTime = self.pg.getNodeIdlenessTime(node, timeStamp)
         self.pg.setNodeVisitTime(node, timeStamp)
         return idleTime
-
-
-    def getAverageIdlenessTime(self, currentTime):
-        ''' Returns the average idleness time of all nodes. '''
-
-        num = self.pg.graph.number_of_nodes()
-        return np.mean([self.pg.getNodeIdlenessTime(node, currentTime) for node in range(num)])
 
 
     def _moveTowardsNode(self, agent, node, stepSize):
