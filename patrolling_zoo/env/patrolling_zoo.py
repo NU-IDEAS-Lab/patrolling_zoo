@@ -200,9 +200,14 @@ class PatrollingZooEnvironment(ParallelEnv):
                     path = nx.shortest_path(self.pg.graph, source=srcNode, target=dstNode, weight='weight')
                     # print(f'Agent {agent.id} is at node {srcNode} and is going to node {dstNode} via path {path}')
                     
+                    # Handle special case where the agent is already at the destination node.
+                    startIdx = 1
+                    if srcNode == dstNode:
+                        startIdx = 0
+
                     # Take a step towards the next node.
                     stepSize = agent.speed
-                    for nextNode in path[1:]:
+                    for nextNode in path[startIdx:]:
                         # print(f"Moving towards next node {nextNode} with step size {stepSize}")
                         reached, stepSize = self._moveTowardsNode(agent, nextNode, stepSize)
 
@@ -259,8 +264,9 @@ class PatrollingZooEnvironment(ParallelEnv):
         distCurrToNext = self._dist(agent.position, posNextNode)
         reached = distCurrToNext <= stepSize
         step = distCurrToNext if reached else stepSize
-        agent.position = (agent.position[0] + (posNextNode[0] - agent.position[0]) * step / distCurrToNext,
-                            agent.position[1] + (posNextNode[1] - agent.position[1]) * step / distCurrToNext)
+        if distCurrToNext > 0.0:
+            agent.position = (agent.position[0] + (posNextNode[0] - agent.position[0]) * step / distCurrToNext,
+                                agent.position[1] + (posNextNode[1] - agent.position[1]) * step / distCurrToNext)
         return reached, stepSize - distCurrToNext
 
 
