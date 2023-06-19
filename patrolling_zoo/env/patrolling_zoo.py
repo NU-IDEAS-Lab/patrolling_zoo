@@ -132,6 +132,7 @@ class PatrollingZooEnvironment(ParallelEnv):
                          pos,
                          with_labels=True,
                          node_color=idleness,
+                         edgecolors='black',
                          vmin=0,
                          vmax=50,
                          cmap='Purples',
