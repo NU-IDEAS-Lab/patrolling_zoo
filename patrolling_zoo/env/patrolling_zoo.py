@@ -10,7 +10,7 @@ from copy import copy
 class PatrolAgent():
     ''' This class stores all agent state. '''
 
-    def __init__(self, id, position=(0.0, 0.0), speed=1.0, startingNode=None):
+    def __init__(self, id, position=(0.0, 0.0), speed=1.0, observationRadius=np.inf, startingNode=None):
         self.id = id
         self.name = f"agent_{id}"
         self.position = position # the current position of the agent
@@ -18,6 +18,7 @@ class PatrolAgent():
         self.speed = speed # the movement speed of the agent. Agent may either move at this speed or not move at all.
         self.startingSpeed = speed
         self.lastNode = startingNode
+        self.observationRadius = observationRadius
     
     
     def reset(self):
@@ -32,6 +33,7 @@ class PatrollingZooEnvironment(ParallelEnv):
 
     def __init__(self, patrol_graph, num_agents, *args,
                  require_explicit_visit = True,
+                 observation_radius = np.inf,
                  **kwargs):
         """
         Initialize the PatrolEnv object.
@@ -49,11 +51,17 @@ class PatrollingZooEnvironment(ParallelEnv):
 
         # Configuration.
         self.requireExplicitVisit = require_explicit_visit
+        self.observationRadius = observation_radius
 
         # Create the agents with random starting positions.
         startingNodes = [random.sample(self.pg.graph.nodes, 1)[0] for _ in range(num_agents)]
         startingPositions = [self.pg.getNodePosition(i) for i in startingNodes]
-        self.possible_agents = [PatrolAgent(i, startingPositions[i], startingNode=startingNodes[i]) for i in range(num_agents)]
+        self.possible_agents = [
+            PatrolAgent(i, startingPositions[i],
+                        startingNode = startingNodes[i],
+                        observationRadius = self.observationRadius
+            ) for i in range(num_agents)
+        ]
 
         # Create the action space.
         self.action_spaces = {agent: spaces.Discrete(len(self.pg.graph)) for agent in self.possible_agents}
@@ -92,12 +100,10 @@ class PatrollingZooEnvironment(ParallelEnv):
 
         self.reset()
 
-        self.step_count = 0
-
-
     def reset(self, seed=None, options=None):
         ''' Sets the environment to its initial state. '''
 
+        self.step_count = 0
         self.agents = copy(self.possible_agents)
         for agent in self.possible_agents:
             agent.reset()
@@ -160,10 +166,19 @@ class PatrollingZooEnvironment(ParallelEnv):
     def observe(self, agent):
         ''' Returns the observation for the given agent.'''
 
+        agents = [a for a in self.agents if self._dist(a.position, agent.position) <= agent.observationRadius]
+        vertices = [v for v in self.pg.graph.nodes if self._dist(self.pg.getNodePosition(v), agent.position) <= agent.observationRadius]
+
+        vDists = nx.shortest_path_length(self.pg.graph,
+                                  source=self.pg.getNearestNode(agent.position),
+                                  weight='weight'
+        )
+        vDistsArr = np.array([vDists[v] for v in range(self.pg.graph.number_of_nodes())])
+
         return {
-            "agent_state": np.array([a.position for a in self.agents]),
-            "vertex_state": np.array([0.0] * self.pg.graph.number_of_nodes()),
-            "vertex_distances": np.array([0.0] * self.pg.graph.number_of_nodes())
+            "agent_state": np.array([a.position for a in agents]),
+            "vertex_state": np.array([self.pg.getNodeIdlenessTime(v, self.step_count) for v in vertices]),
+            "vertex_distances": vDistsArr
         }
 
 
