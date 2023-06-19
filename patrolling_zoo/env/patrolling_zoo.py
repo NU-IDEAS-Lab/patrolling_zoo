@@ -19,6 +19,7 @@ class PatrolAgent():
         self.startingSpeed = speed
         self.lastNode = startingNode
     
+    
     def reset(self):
         self.position = self.startingPosition
         self.speed = self.startingSpeed
@@ -88,6 +89,7 @@ class PatrollingZooEnvironment(ParallelEnv):
 
         self.step_count = 0
 
+
     def reset(self, seed=None, options=None):
         self.agents = copy(self.possible_agents)
         for agent in self.possible_agents:
@@ -95,6 +97,7 @@ class PatrollingZooEnvironment(ParallelEnv):
         self.rewards = dict.fromkeys(self.agents, 0)
         self.dones = dict.fromkeys(self.agents, False)
         return {agent: self.observe(agent) for agent in self.agents}
+
 
     def render(self, figsize=(18, 12)):
         ''' Renders the environment.
@@ -122,16 +125,19 @@ class PatrollingZooEnvironment(ParallelEnv):
             plt.plot([], [], color=color, marker=marker, linestyle='None', label=agent.name, alpha=0.5)
 
         plt.legend()
-        plt.text(0,0,f'Current step: {self.step_count}')
+        plt.text(0,0,f'Current step: {self.step_count}, Average idleness time: {self.getAverageIdlenessTime(self.step_count)}')
         plt.show()
+
 
     def observation_space(self, agent):
         ''' Returns the observation space for the given agent. '''
         return self.observation_spaces[agent]
 
+
     def action_space(self, agent):
         ''' Returns the action space for the given agent. '''
         return self.action_spaces[agent]
+
 
     def observe(self, agent):
         ''' Returns the observation for the given agent.'''
@@ -141,6 +147,7 @@ class PatrollingZooEnvironment(ParallelEnv):
             "vertex_state": np.array([0.0] * self.pg.graph.number_of_nodes()),
             "vertex_distances": np.array([0.0] * self.pg.graph.number_of_nodes())
         }
+
 
     def step(self, action_dict={}):
         ''''
@@ -157,7 +164,7 @@ class PatrollingZooEnvironment(ParallelEnv):
         '''
         self.step_count += 1
         obs_dict = {}
-        reward_dict = {}
+        reward_dict = {agent: 0.0 for agent in self.agents}
         done_dict = {}
         info_dict = {}
 
@@ -171,17 +178,26 @@ class PatrollingZooEnvironment(ParallelEnv):
 
                     # Determine the nearest node and find path to destination.
                     srcNode = agent.lastNode
-                    path = nx.shortest_path(self.pg.graph, source=srcNode, target=action, weight='weight')
-                    print(f'Agent {agent.id} is at node {srcNode} and is going to node {action} via path {path}')
+                    dstNode = action
+                    path = nx.shortest_path(self.pg.graph, source=srcNode, target=dstNode, weight='weight')
+                    # print(f'Agent {agent.id} is at node {srcNode} and is going to node {dstNode} via path {path}')
                     
                     # Take a step towards the next node.
                     stepSize = agent.speed
                     for nextNode in path[1:]:
-                        print(f"Moving towards next node {nextNode} with step size {stepSize}")
+                        # print(f"Moving towards next node {nextNode} with step size {stepSize}")
                         stepSize = self._moveTowardsNode(agent, nextNode, stepSize)
+
+                        # The agent has exceeded its movement budget for this step.
                         if stepSize <= 0.0:
                             break
+
+                        # The agent has reached the next node.
                         agent.lastNode = nextNode
+                        if agent.lastNode == dstNode:
+                            # The agent has reached its destination, visiting the node.
+                            # The agent receives a reward for visiting the node.
+                            reward_dict[agent] += self.onNodeVisit(agent, agent.lastNode, self.step_count)
                 else:
                     reward_dict[agent] = 0  # the action was invalid
 
@@ -196,6 +212,24 @@ class PatrollingZooEnvironment(ParallelEnv):
 
         return obs_dict, reward_dict, done_dict, {}, info_dict
 
+
+    def onNodeVisit(self, agent, node, timeStamp):
+        ''' Called when an agent visits a node.
+            Returns the reward for visiting the node, which is proportional to
+            node idleness time. '''
+
+        idleTime = self.pg.getNodeIdlenessTime(node, timeStamp)
+        self.pg.setNodeVisitTime(node, timeStamp)
+        return idleTime
+
+
+    def getAverageIdlenessTime(self, currentTime):
+        ''' Returns the average idleness time of all nodes. '''
+
+        num = self.pg.graph.number_of_nodes()
+        return np.mean([self.pg.getNodeIdlenessTime(node, currentTime) for node in range(num)])
+
+
     def _moveTowardsNode(self, agent, node, stepSize):
         ''' Takes a single step towards the next node. Returns the remaining step size. '''
 
@@ -206,6 +240,7 @@ class PatrollingZooEnvironment(ParallelEnv):
         agent.position = (agent.position[0] + (posNextNode[0] - agent.position[0]) * step / distCurrToNext,
                             agent.position[1] + (posNextNode[1] - agent.position[1]) * step / distCurrToNext)
         return stepSize - distCurrToNext
+
 
     def _dist(self, pos1, pos2):
         ''' Calculates the Euclidean distance between two points. '''

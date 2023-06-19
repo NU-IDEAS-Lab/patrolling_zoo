@@ -28,7 +28,8 @@ class PatrolGraph():
                 i = int(file.readline())
                 self.graph.add_node(i,
                     pos = (int(file.readline()) * self.resolution + self.offsetX,
-                        int(file.readline()) * self.resolution + self.offsetY)
+                        int(file.readline()) * self.resolution + self.offsetY),
+                    visitTime = 0
                 )
                 
                 # Create edges.
@@ -43,6 +44,21 @@ class PatrolGraph():
         ''' Returns the node position as a tuple (x, y). '''
 
         return self.graph.nodes[node]["pos"]
+    
+    def setNodeVisitTime(self, node, timeStamp):
+        ''' Sets the node visit time. '''
+
+        self.graph.nodes[node]["visitTime"] = timeStamp
+    
+    def getNodeVisitTime(self, node):
+        ''' Returns the node visit time. '''
+
+        return self.graph.nodes[node]["visitTime"]
+    
+    def getNodeIdlenessTime(self, node, currentTime):
+        ''' Returns the node idleness time. '''
+
+        return currentTime - self.graph.nodes[node]["visitTime"]
 
     def getNearestNode(self, pos, epsilon=None):
         ''' Returns the nearest node to the given position.
