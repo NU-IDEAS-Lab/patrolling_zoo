@@ -30,7 +30,9 @@ class PatrollingZooEnvironment(ParallelEnv):
         "name": "patrolling_zoo_environment_v0",
     }
 
-    def __init__(self, patrol_graph, num_agents, *args, **kwargs):
+    def __init__(self, patrol_graph, num_agents, *args,
+                 require_explicit_visit = True,
+                 **kwargs):
         """
         Initialize the PatrolEnv object.
 
@@ -45,8 +47,11 @@ class PatrollingZooEnvironment(ParallelEnv):
 
         self.pg = patrol_graph
 
+        # Configuration.
+        self.requireExplicitVisit = require_explicit_visit
+
         # Create the agents with random starting positions.
-        startingNodes = [random.sample(range(self.pg.graph.number_of_nodes()), 1)[0] for _ in range(num_agents)]
+        startingNodes = [random.sample(self.pg.graph.nodes, 1)[0] for _ in range(num_agents)]
         startingPositions = [self.pg.getNodePosition(i) for i in startingNodes]
         self.possible_agents = [PatrolAgent(i, startingPositions[i], startingNode=startingNodes[i]) for i in range(num_agents)]
 
@@ -91,6 +96,8 @@ class PatrollingZooEnvironment(ParallelEnv):
 
 
     def reset(self, seed=None, options=None):
+        ''' Sets the environment to its initial state. '''
+
         self.agents = copy(self.possible_agents)
         for agent in self.possible_agents:
             agent.reset()
@@ -114,7 +121,18 @@ class PatrollingZooEnvironment(ParallelEnv):
 
         # Draw the graph.
         pos = nx.get_node_attributes(self.pg.graph, 'pos')
-        nx.draw_networkx(self.pg.graph, pos, with_labels=True, node_color='lightblue', node_size=600,font_size=10, font_color='black')
+        idleness = [self.pg.getNodeIdlenessTime(i, self.step_count) for i in self.pg.graph.nodes]
+        nx.draw_networkx(self.pg.graph,
+                         pos,
+                         with_labels=True,
+                         node_color=idleness,
+                         vmin=0,
+                         vmax=50,
+                         cmap='Purples',
+                         node_size=600,
+                         font_size=10,
+                         font_color='black'
+        )
         nx.draw_networkx_edge_labels(self.pg.graph, pos, edge_labels=nx.get_edge_attributes(self.pg.graph, 'weight'), font_size=7)
         
         # Draw the agents.
@@ -186,18 +204,19 @@ class PatrollingZooEnvironment(ParallelEnv):
                     stepSize = agent.speed
                     for nextNode in path[1:]:
                         # print(f"Moving towards next node {nextNode} with step size {stepSize}")
-                        stepSize = self._moveTowardsNode(agent, nextNode, stepSize)
+                        reached, stepSize = self._moveTowardsNode(agent, nextNode, stepSize)
+
+                        # The agent has reached the next node.
+                        if reached:
+                            agent.lastNode = nextNode
+                            if agent.lastNode == dstNode or not self.requireExplicitVisit:
+                                # The agent has reached its destination, visiting the node.
+                                # The agent receives a reward for visiting the node.
+                                reward_dict[agent] += self.onNodeVisit(agent, agent.lastNode, self.step_count)
 
                         # The agent has exceeded its movement budget for this step.
                         if stepSize <= 0.0:
                             break
-
-                        # The agent has reached the next node.
-                        agent.lastNode = nextNode
-                        if agent.lastNode == dstNode:
-                            # The agent has reached its destination, visiting the node.
-                            # The agent receives a reward for visiting the node.
-                            reward_dict[agent] += self.onNodeVisit(agent, agent.lastNode, self.step_count)
                 else:
                     reward_dict[agent] = 0  # the action was invalid
 
@@ -231,15 +250,18 @@ class PatrollingZooEnvironment(ParallelEnv):
 
 
     def _moveTowardsNode(self, agent, node, stepSize):
-        ''' Takes a single step towards the next node. Returns the remaining step size. '''
+        ''' Takes a single step towards the next node.
+            Returns a tuple containing whether the agent has reached the node
+            and the remaining step size. '''
 
         # Take a step towards the next node.
         posNextNode = self.pg.getNodePosition(node)
         distCurrToNext = self._dist(agent.position, posNextNode)
-        step = distCurrToNext if distCurrToNext < stepSize else stepSize
+        reached = distCurrToNext <= stepSize
+        step = distCurrToNext if reached else stepSize
         agent.position = (agent.position[0] + (posNextNode[0] - agent.position[0]) * step / distCurrToNext,
                             agent.position[1] + (posNextNode[1] - agent.position[1]) * step / distCurrToNext)
-        return stepSize - distCurrToNext
+        return reached, stepSize - distCurrToNext
 
 
     def _dist(self, pos1, pos2):
