@@ -18,6 +18,7 @@ class PatrolAgent():
         self.speed = speed # the movement speed of the agent. Agent may either move at this speed or not move at all.
         self.startingSpeed = speed
         self.lastNode = startingNode
+        self.edge = None # the edge which the agent is currently on
         self.observationRadius = observationRadius
     
     
@@ -210,14 +211,23 @@ class PatrollingZooEnvironment(ParallelEnv):
                 # Update the agent's position.
                 if action in self.pg.graph.nodes:
 
-                    # Determine the nearest node and find path to destination.
+                    # Determine the node to use as source node for shortest path calculation.
+                    startIdx = 1
                     srcNode = agent.lastNode
                     dstNode = action
+                    # The agent is on an edge, so determine which connected node results in shortest path.
+                    if agent.edge != None:
+                        pathLen1 = nx.shortest_path_length(self.pg.graph, source=agent.edge[0], target=dstNode, weight='weight')
+                        pathLen2 = nx.shortest_path_length(self.pg.graph, source=agent.edge[1], target=dstNode, weight='weight')
+                        srcNode = agent.edge[0]
+                        if pathLen2 < pathLen1:
+                            srcNode = agent.edge[1]
+                        startIdx = 0
+                    
+                    # Calculate the shortest path.
                     path = nx.shortest_path(self.pg.graph, source=srcNode, target=dstNode, weight='weight')
-                    # print(f'Agent {agent.id} is at node {srcNode} and is going to node {dstNode} via path {path}')
                     
                     # Handle special case where the agent is already at the destination node.
-                    startIdx = 1
                     if srcNode == dstNode:
                         startIdx = 0
 
@@ -283,6 +293,13 @@ class PatrollingZooEnvironment(ParallelEnv):
         if distCurrToNext > 0.0:
             agent.position = (agent.position[0] + (posNextNode[0] - agent.position[0]) * step / distCurrToNext,
                                 agent.position[1] + (posNextNode[1] - agent.position[1]) * step / distCurrToNext)
+        
+        # Set information about the edge which the agent is currently on.
+        if reached:
+            agent.edge = None
+        else:
+            agent.edge = (agent.lastNode, node)
+
         return reached, stepSize - distCurrToNext
 
 
