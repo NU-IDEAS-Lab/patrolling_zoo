@@ -22,17 +22,17 @@ class Agent(nn.Module):
         super().__init__()
 
         self.network = nn.Sequential(
-            self._layer_init(nn.Conv2d(4, 32, 3, padding=1)),
-            nn.MaxPool2d(2),
-            nn.ReLU(),
-            self._layer_init(nn.Conv2d(32, 64, 3, padding=1)),
-            nn.MaxPool2d(2),
-            nn.ReLU(),
-            self._layer_init(nn.Conv2d(64, 128, 3, padding=1)),
-            nn.MaxPool2d(2),
-            nn.ReLU(),
-            nn.Flatten(),
-            self._layer_init(nn.Linear(128 * 8 * 8, 512)),
+            # self._layer_init(nn.Conv2d(4, 32, 3, padding=1)),
+            # nn.MaxPool2d(2),
+            # nn.ReLU(),
+            # self._layer_init(nn.Conv2d(32, 64, 3, padding=1)),
+            # nn.MaxPool2d(2),
+            # nn.ReLU(),
+            # self._layer_init(nn.Conv2d(64, 128, 3, padding=1)),
+            # nn.MaxPool2d(2),
+            # nn.ReLU(),
+            # nn.Flatten(),
+            self._layer_init(nn.Linear(258, 512)),
             nn.ReLU(),
         )
         self.actor = self._layer_init(nn.Linear(512, num_actions), std=0.01)
@@ -145,6 +145,8 @@ if __name__ == "__main__":
 
                 # get action from the agent
                 actions, logprobs, _, values = agent.get_action_and_value(obs)
+
+                print(f"GOT ACTION {actions} AND VALUE {values}")
 
                 # execute the environment and log data
                 next_obs, rewards, terms, truncs, infos = env.step(
