@@ -75,7 +75,7 @@ class parallel_env(ParallelEnv):
         maxPosY = max(pos[p][1] for p in pos)
 
         # Create the observation space.
-        self.observation_spaces = {agent: spaces.Dict({
+        self.observation_spaces = spaces.Dict({agent: spaces.Dict({
 
             # The agent state is the position of each agent.
             "agent_state": spaces.Box(
@@ -97,7 +97,7 @@ class parallel_env(ParallelEnv):
                 high = np.array([[np.inf] * self.pg.graph.number_of_nodes()] * num_agents),
                 shape= (num_agents, self.pg.graph.number_of_nodes())
             ),
-        }) for agent in self.possible_agents}
+        }) for agent in self.possible_agents})
 
         self.reset()
 

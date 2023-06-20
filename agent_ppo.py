@@ -13,6 +13,7 @@ import torch.optim as optim
 # from supersuit import color_reduction_v0, frame_stack_v1, resize_v1
 from torch.distributions.categorical import Categorical
 
+from gymnasium.spaces.utils import flatten
 from patrolling_zoo.patrolling_zoo_v0 import parallel_env, PatrolGraph
 
 
@@ -54,10 +55,12 @@ class Agent(nn.Module):
         return action, probs.log_prob(action), probs.entropy(), self.critic(hidden)
 
 
-def batchify_obs(obs, device):
+def batchify_obs(obs_space, obs, device):
     """Converts PZ style observations to batch of torch arrays."""
     # convert to list of np arrays
-    obs = np.stack([obs[a] for a in obs], axis=0)
+    obs = flatten(obs_space, obs)
+    print(f"obs shape: {obs.shape} and type: {type(obs)}")
+    # obs = np.stack([obs[a] for a in obs], axis=0)
     # transpose to be (batch, channel, height, width)
     print(f"obs shape: {obs.shape} and type: {type(obs)}")
     # obs = obs.transpose(0, -1, 1, 2)
@@ -138,7 +141,7 @@ if __name__ == "__main__":
             # each episode has num_steps
             for step in range(0, max_cycles):
                 # rollover the observation
-                obs = batchify_obs(next_obs, device)
+                obs = batchify_obs(env.observation_spaces, next_obs, device)
 
                 # get action from the agent
                 actions, logprobs, _, values = agent.get_action_and_value(obs)
@@ -269,12 +272,12 @@ if __name__ == "__main__":
         # render 5 episodes out
         for episode in range(5):
             obs, infos = env.reset(seed=None)
-            obs = batchify_obs(obs, device)
+            obs = batchify_obs(env.observation_spaces, obs, device)
             terms = [False]
             truncs = [False]
             while not any(terms) and not any(truncs):
                 actions, logprobs, _, values = agent.get_action_and_value(obs)
                 obs, rewards, terms, truncs, infos = env.step(unbatchify(actions, env))
-                obs = batchify_obs(obs, device)
+                obs = batchify_obs(env.observation_spaces, obs, device)
                 terms = [terms[a] for a in terms]
                 truncs = [truncs[a] for a in truncs]
