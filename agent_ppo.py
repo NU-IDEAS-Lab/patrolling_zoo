@@ -8,12 +8,14 @@ from distutils.util import strtobool
 
 import gymnasium as gym
 import numpy as np
-import supersuit as ss
+# import supersuit as ss
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.distributions.categorical import Categorical
 from torch.utils.tensorboard import SummaryWriter
+
+from patrolling_zoo.env.patrol_graph import PatrolGraph
 
 
 def parse_args():
@@ -85,7 +87,7 @@ def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
 
 
 class Agent(nn.Module):
-    def __init__(self, envs):
+    def __init__(self, env):
         super().__init__()
         self.network = nn.Sequential(
             layer_init(nn.Conv2d(6, 32, 8, stride=4)),
@@ -98,7 +100,7 @@ class Agent(nn.Module):
             layer_init(nn.Linear(64 * 7 * 7, 512)),
             nn.ReLU(),
         )
-        self.actor = layer_init(nn.Linear(512, envs.single_action_space.n), std=0.01)
+        self.actor = layer_init(nn.Linear(512, env.action_spaces.n), std=0.01)
         self.critic = layer_init(nn.Linear(512, 1), std=1)
 
     def get_value(self, x):
@@ -147,31 +149,32 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
     # env setup
-    env = importlib.import_module(f"graph_patrol_env.GraphPatrolEnv").parallel_env()
+    patrolGraph = PatrolGraph("patrolling_zoo/env/cumberland.graph")
+    env = importlib.import_module(f"patrolling_zoo.env.patrolling_zoo").PatrollingZooEnvironment(patrolGraph, 3)
     # env = importlib.import_module(f"pettingzoo.atari.{args.env_id}").parallel_env()
-    env = ss.max_observation_v0(env, 2)
-    env = ss.frame_skip_v0(env, 4)
-    env = ss.clip_reward_v0(env, lower_bound=-1, upper_bound=1)
-    env = ss.color_reduction_v0(env, mode="B")
-    env = ss.resize_v1(env, x_size=84, y_size=84)
-    env = ss.frame_stack_v1(env, 4)
-    env = ss.agent_indicator_v0(env, type_only=False)
-    env = ss.pettingzoo_env_to_vec_env_v1(env)
-    envs = ss.concat_vec_envs_v1(env, args.num_envs // 2, num_cpus=0, base_class="gym")
-    envs.single_observation_space = envs.observation_space
-    envs.single_action_space = envs.action_space
-    envs.is_vector_env = True
-    envs = gym.wrappers.RecordEpisodeStatistics(envs)
+    # env = ss.max_observation_v0(env, 2)
+    # env = ss.frame_skip_v0(env, 4)
+    # env = ss.clip_reward_v0(env, lower_bound=-1, upper_bound=1)
+    # env = ss.color_reduction_v0(env, mode="B")
+    # env = ss.resize_v1(env, x_size=84, y_size=84)
+    # env = ss.frame_stack_v1(env, 4)
+    # env = ss.agent_indicator_v0(env, type_only=False)
+    # env = ss.pettingzoo_env_to_vec_env_v1(env)
+    # env = ss.concat_vec_envs_v1(env, args.num_envs // 2, num_cpus=0, base_class="gym")
+    # env.observation_space = env.observation_space
+    # env.action_spaces = env.action_spaces
+    # env.is_vector_env = True
+    env = gym.wrappers.RecordEpisodeStatistics(env)
     if args.capture_video:
-        envs = gym.wrappers.RecordVideo(envs, f"videos/{run_name}")
-    assert isinstance(envs.single_action_space, gym.spaces.Discrete), "only discrete action space is supported"
+        env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
+    assert isinstance(env.action_spaces.values()[0], gym.spaces.Discrete), "only discrete action space is supported"
 
-    agent = Agent(envs).to(device)
+    agent = Agent(env).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
     # ALGO Logic: Storage setup
-    obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
-    actions = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape).to(device)
+    obs = torch.zeros((args.num_steps, args.num_envs) + env.observation_space.shape).to(device)
+    actions = torch.zeros((args.num_steps, args.num_envs) + env.action_spaces.shape).to(device)
     logprobs = torch.zeros((args.num_steps, args.num_envs)).to(device)
     rewards = torch.zeros((args.num_steps, args.num_envs)).to(device)
     dones = torch.zeros((args.num_steps, args.num_envs)).to(device)
@@ -180,7 +183,7 @@ if __name__ == "__main__":
     # TRY NOT TO MODIFY: start the game
     global_step = 0
     start_time = time.time()
-    next_obs = torch.Tensor(envs.reset()).to(device)
+    next_obs = torch.Tensor(env.reset()).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
     num_updates = args.total_timesteps // args.batch_size
 
@@ -204,7 +207,7 @@ if __name__ == "__main__":
             logprobs[step] = logprob
 
             # TRY NOT TO MODIFY: execute the game and log data.
-            next_obs, reward, done, info = envs.step(action.cpu().numpy())
+            next_obs, reward, done, info = env.step(action.cpu().numpy())
             rewards[step] = torch.tensor(reward).to(device).view(-1)
             next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(done).to(device)
 
@@ -232,9 +235,9 @@ if __name__ == "__main__":
             returns = advantages + values
 
         # flatten the batch
-        b_obs = obs.reshape((-1,) + envs.single_observation_space.shape)
+        b_obs = obs.reshape((-1,) + env.observation_space.shape)
         b_logprobs = logprobs.reshape(-1)
-        b_actions = actions.reshape((-1,) + envs.single_action_space.shape)
+        b_actions = actions.reshape((-1,) + env.action_spaces.shape)
         b_advantages = advantages.reshape(-1)
         b_returns = returns.reshape(-1)
         b_values = values.reshape(-1)
@@ -310,5 +313,5 @@ if __name__ == "__main__":
         print("SPS:", int(global_step / (time.time() - start_time)))
         writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
-    envs.close()
+    env.close()
     writer.close()
