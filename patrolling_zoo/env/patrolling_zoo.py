@@ -27,7 +27,7 @@ class PatrolAgent():
         self.speed = self.startingSpeed
 
 
-class PatrollingZooEnvironment(ParallelEnv):
+class parallel_env(ParallelEnv):
     metadata = {
         "name": "patrolling_zoo_environment_v0",
     }
