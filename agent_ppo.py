@@ -13,15 +13,15 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-# from supersuit import color_reduction_v0, frame_stack_v1, resize_v1
+# from supersuit import color_reduction_v0, frame_stack_v1, resize_v1, flatten_v0
 from torch.distributions.categorical import Categorical
 
-from gymnasium.spaces.utils import flatten
+from gymnasium.spaces.utils import flatten, flatten_space
 from patrolling_zoo.patrolling_zoo_v0 import parallel_env, PatrolGraph
 
 
 class Agent(nn.Module):
-    def __init__(self, num_actions, num_agents):
+    def __init__(self, num_actions, num_agents, observation_size):
         super().__init__()
 
         self.num_actions = num_actions
@@ -38,7 +38,7 @@ class Agent(nn.Module):
             # nn.MaxPool2d(2),
             # nn.ReLU(),
             # nn.Flatten(),
-            self._layer_init(nn.Linear(258, 512)),
+            self._layer_init(nn.Linear(num_agents * observation_size, 512)),
             nn.ReLU(),
         )
         self.actor = self._layer_init(nn.Linear(512, num_actions * num_agents), std=0.01)
@@ -69,19 +69,20 @@ class Agent(nn.Module):
         return actions, probs_all, entropy_all, self.critic(hidden)
 
 
-def batchify_obs(obs_space, obs, device):
-    """Converts PZ style observations to batch of torch arrays."""
-    # convert to list of np arrays
-    obs = flatten(obs_space, obs)
-    # print(f"obs shape: {obs.shape} and type: {type(obs)}")
-    # obs = np.stack([obs[a] for a in obs], axis=0)
-    # transpose to be (batch, channel, height, width)
-    # print(f"obs shape: {obs.shape} and type: {type(obs)}")
-    # obs = obs.transpose(0, -1, 1, 2)
-    # convert to torch
-    obs = torch.tensor(obs).to(device)
+    def batchify_obs(self, obs_space, obs, device):
+        """Converts PZ style observations to batch of torch arrays."""
+        # convert to list of np arrays
+        obs = flatten(obs_space, obs)
+        # obs = np.reshape(obs, (self.num_agents, -1))
+        # print(f"obs shape: {obs.shape} and type: {type(obs)}")
+        # obs = np.stack([obs[a] for a in obs], axis=0)
+        # transpose to be (batch, channel, height, width)
+        # print(f"obs shape: {obs.shape} and type: {type(obs)}")
+        # obs = obs.transpose(0, -1, 1, 2)
+        # convert to torch
+        obs = torch.tensor(obs).to(device)
 
-    return obs
+        return obs
 
 
 def batchify(x, device):
@@ -109,7 +110,7 @@ if __name__ == "__main__":
     vf_coef = 0.1
     clip_coef = 0.1
     gamma = 0.99
-    batch_size = 32
+    batch_size = 1
     stack_size = 4
     frame_size = (64, 64)
     max_cycles = 125
@@ -118,25 +119,29 @@ if __name__ == "__main__":
     """ ENV SETUP """
     patrolGraph = PatrolGraph("patrolling_zoo/env/cumberland.graph")
     env = parallel_env(patrolGraph, 3,
-        require_explicit_visit=True
+        require_explicit_visit=True,
+        max_steps=5
     )
     
     # env = color_reduction_v0(env)
     # env = resize_v1(env, frame_size[0], frame_size[1])
+    # env = flatten_v0(env)
     # env = frame_stack_v1(env, stack_size=stack_size)
     num_agents = len(env.possible_agents)
     num_actions = env.action_space(env.possible_agents[0]).n
-    observation_size = env.observation_space(env.possible_agents[0]).shape
+    # observation_size = flatten_space(env.observation_spaces).shape[0]
+    observation_size = flatten_space(env.observation_space(env.possible_agents[0])).shape[0]
 
     """ LEARNER SETUP """
-    agent = Agent(num_actions=num_actions, num_agents=num_agents).to(device)
+    agent = Agent(num_actions=num_actions, num_agents=num_agents, observation_size=observation_size).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=0.001, eps=1e-5)
 
     """ ALGO LOGIC: EPISODE STORAGE"""
     end_step = 0
     total_episodic_return = 0
     # rb_obs = torch.zeros((max_cycles, num_agents, stack_size, *frame_size)).to(device)
-    rb_obs = torch.zeros((max_cycles, 258)).to(device)
+    rb_obs = torch.zeros((max_cycles, num_agents, observation_size)).to(device)
+    # rb_obs = torch.zeros((max_cycles, observation_size)).to(device)
     rb_actions = torch.zeros((max_cycles, num_agents)).to(device)
     rb_logprobs = torch.zeros((max_cycles, num_agents)).to(device)
     rb_rewards = torch.zeros((max_cycles, num_agents)).to(device)
@@ -156,7 +161,9 @@ if __name__ == "__main__":
             # each episode has num_steps
             for step in range(0, max_cycles):
                 # rollover the observation
-                obs = batchify_obs(env.observation_spaces, next_obs, device)
+                obs = agent.batchify_obs(env.observation_spaces, next_obs, device)
+
+                print(f"OBS SHAPE: {obs.shape}")
 
                 # get action from the agent
                 actions, logprobs, _, values = agent.get_action_and_value(obs)
@@ -168,8 +175,10 @@ if __name__ == "__main__":
                     unbatchify(actions, env)
                 )
 
+                print(f"rb_obs shape: {rb_obs.shape}, obs shape: {obs.shape}")
+
                 # add to episode storage
-                rb_obs[step] = obs
+                rb_obs[step] = torch.reshape(obs, (num_agents, observation_size))
                 rb_rewards[step] = batchify(rewards, device)
                 rb_terms[step] = batchify(terms, device)
                 rb_actions[step] = actions
@@ -197,7 +206,7 @@ if __name__ == "__main__":
             rb_returns = rb_advantages + rb_values
 
         # convert our episodes to batch of individual transitions
-        b_obs = torch.flatten(rb_obs[:end_step], start_dim=0, end_dim=2)
+        b_obs = torch.flatten(rb_obs[:end_step], start_dim=0, end_dim=1)
         b_logprobs = torch.flatten(rb_logprobs[:end_step], start_dim=0, end_dim=1)
         b_actions = torch.flatten(rb_actions[:end_step], start_dim=0, end_dim=1)
         b_returns = torch.flatten(rb_returns[:end_step], start_dim=0, end_dim=1)
@@ -217,6 +226,8 @@ if __name__ == "__main__":
                 end = start + batch_size
                 batch_index = b_index[start:end]
 
+                print(f"Batch index: {batch_index}")
+                print(f"Calling get_action_and_value with {b_obs[batch_index].cpu()} and {b_actions.long()[batch_index].cpu()}")
                 _, newlogprob, entropy, value = agent.get_action_and_value(
                     b_obs[batch_index], b_actions.long()[batch_index]
                 )
@@ -291,12 +302,12 @@ if __name__ == "__main__":
         # render 5 episodes out
         for episode in range(5):
             obs, infos = env.reset(seed=None)
-            obs = batchify_obs(env.observation_spaces, obs, device)
+            obs = agent.batchify_obs(env.observation_spaces, obs, device)
             terms = [False]
             truncs = [False]
             while not any(terms) and not any(truncs):
                 actions, logprobs, _, values = agent.get_action_and_value(obs)
                 obs, rewards, terms, truncs, infos = env.step(unbatchify(actions, env))
-                obs = batchify_obs(env.observation_spaces, obs, device)
+                obs = agent.batchify_obs(env.observation_spaces, obs, device)
                 terms = [terms[a] for a in terms]
                 truncs = [truncs[a] for a in truncs]
