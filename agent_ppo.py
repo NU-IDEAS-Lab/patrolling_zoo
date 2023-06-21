@@ -4,6 +4,9 @@ This code is exceedingly basic, with no logging or weights saving.
 The intention was for users to have a (relatively clean) ~200 line file to refer to when they want to design their own learning algorithm.
 
 Author: Jet (https://github.com/jjshoots)
+
+
+Modified by Anthony Goeckner for the patrolling zoo environment.
 """
 
 import numpy as np
@@ -18,8 +21,11 @@ from patrolling_zoo.patrolling_zoo_v0 import parallel_env, PatrolGraph
 
 
 class Agent(nn.Module):
-    def __init__(self, num_actions):
+    def __init__(self, num_actions, num_agents):
         super().__init__()
+
+        self.num_actions = num_actions
+        self.num_agents = num_agents
 
         self.network = nn.Sequential(
             # self._layer_init(nn.Conv2d(4, 32, 3, padding=1)),
@@ -35,7 +41,7 @@ class Agent(nn.Module):
             self._layer_init(nn.Linear(258, 512)),
             nn.ReLU(),
         )
-        self.actor = self._layer_init(nn.Linear(512, num_actions), std=0.01)
+        self.actor = self._layer_init(nn.Linear(512, num_actions * num_agents), std=0.01)
         self.critic = self._layer_init(nn.Linear(512, 1))
 
     def _layer_init(self, layer, std=np.sqrt(2), bias_const=0.0):
@@ -48,21 +54,29 @@ class Agent(nn.Module):
 
     def get_action_and_value(self, x, action=None):
         hidden = self.network(x / 255.0)
-        logits = self.actor(hidden)
-        probs = Categorical(logits=logits)
-        if action is None:
-            action = probs.sample()
-        return action, probs.log_prob(action), probs.entropy(), self.critic(hidden)
+        actorOutput = self.actor(hidden)
+        actions = torch.zeros((self.num_agents,), dtype=torch.int32)
+        probs_all = torch.zeros((self.num_agents,))
+        entropy_all = torch.zeros((self.num_agents,))
+        for i in range(self.num_agents):
+            logits = actorOutput[i * self.num_actions : (i + 1) * self.num_actions]
+            probs = Categorical(logits=logits)
+            if action is None:
+                action = probs.sample()
+            actions[i] = action
+            probs_all[i] = probs.log_prob(action)
+            entropy_all[i] = probs.entropy()
+        return actions, probs_all, entropy_all, self.critic(hidden)
 
 
 def batchify_obs(obs_space, obs, device):
     """Converts PZ style observations to batch of torch arrays."""
     # convert to list of np arrays
     obs = flatten(obs_space, obs)
-    print(f"obs shape: {obs.shape} and type: {type(obs)}")
+    # print(f"obs shape: {obs.shape} and type: {type(obs)}")
     # obs = np.stack([obs[a] for a in obs], axis=0)
     # transpose to be (batch, channel, height, width)
-    print(f"obs shape: {obs.shape} and type: {type(obs)}")
+    # print(f"obs shape: {obs.shape} and type: {type(obs)}")
     # obs = obs.transpose(0, -1, 1, 2)
     # convert to torch
     obs = torch.tensor(obs).to(device)
@@ -115,13 +129,14 @@ if __name__ == "__main__":
     observation_size = env.observation_space(env.possible_agents[0]).shape
 
     """ LEARNER SETUP """
-    agent = Agent(num_actions=num_actions).to(device)
+    agent = Agent(num_actions=num_actions, num_agents=num_agents).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=0.001, eps=1e-5)
 
     """ ALGO LOGIC: EPISODE STORAGE"""
     end_step = 0
     total_episodic_return = 0
-    rb_obs = torch.zeros((max_cycles, num_agents, stack_size, *frame_size)).to(device)
+    # rb_obs = torch.zeros((max_cycles, num_agents, stack_size, *frame_size)).to(device)
+    rb_obs = torch.zeros((max_cycles, 258)).to(device)
     rb_actions = torch.zeros((max_cycles, num_agents)).to(device)
     rb_logprobs = torch.zeros((max_cycles, num_agents)).to(device)
     rb_rewards = torch.zeros((max_cycles, num_agents)).to(device)
@@ -146,7 +161,7 @@ if __name__ == "__main__":
                 # get action from the agent
                 actions, logprobs, _, values = agent.get_action_and_value(obs)
 
-                print(f"GOT ACTION {actions} AND VALUE {values}")
+                # print(f"GOT ACTION {actions} AND VALUE {values}")
 
                 # execute the environment and log data
                 next_obs, rewards, terms, truncs, infos = env.step(
@@ -182,7 +197,7 @@ if __name__ == "__main__":
             rb_returns = rb_advantages + rb_values
 
         # convert our episodes to batch of individual transitions
-        b_obs = torch.flatten(rb_obs[:end_step], start_dim=0, end_dim=1)
+        b_obs = torch.flatten(rb_obs[:end_step], start_dim=0, end_dim=2)
         b_logprobs = torch.flatten(rb_logprobs[:end_step], start_dim=0, end_dim=1)
         b_actions = torch.flatten(rb_actions[:end_step], start_dim=0, end_dim=1)
         b_returns = torch.flatten(rb_returns[:end_step], start_dim=0, end_dim=1)
@@ -196,6 +211,8 @@ if __name__ == "__main__":
             # shuffle the indices we use to access the data
             np.random.shuffle(b_index)
             for start in range(0, len(b_obs), batch_size):
+                print(f"Training on batch {start} to {start + batch_size}")
+
                 # select the indices we want to train on
                 end = start + batch_size
                 batch_index = b_index[start:end]
