@@ -35,6 +35,7 @@ class parallel_env(ParallelEnv):
     def __init__(self, patrol_graph, num_agents, *args,
                  require_explicit_visit = True,
                  observation_radius = np.inf,
+                 max_steps: int = -1,
                  **kwargs):
         """
         Initialize the PatrolEnv object.
@@ -53,6 +54,7 @@ class parallel_env(ParallelEnv):
         # Configuration.
         self.requireExplicitVisit = require_explicit_visit
         self.observationRadius = observation_radius
+        self.maxSteps = max_steps
 
         # Create the agents with random starting positions.
         startingNodes = random.sample(self.pg.graph.nodes, num_agents)
@@ -78,11 +80,13 @@ class parallel_env(ParallelEnv):
         self.observation_spaces = spaces.Dict({agent: spaces.Dict({
 
             # The agent state is the position of each agent.
-            "agent_state": spaces.Box(
-                low = np.array([minPosX, minPosY] * num_agents),
-                high = np.array([maxPosX, maxPosY] * num_agents),
-                shape= (2 * num_agents,)
-            ),
+            "agent_state": spaces.Dict({
+                a: spaces.Box(
+                    low = np.array([minPosX, minPosY]),
+                    high = np.array([maxPosX, maxPosY]),
+                    shape= (2,)
+                ) for a in self.possible_agents
+            }), # type: ignore
 
             # The vertex state is composed of two parts.
             # The first part is the idleness time of each node.
@@ -97,7 +101,7 @@ class parallel_env(ParallelEnv):
                 high = np.array([[np.inf] * self.pg.graph.number_of_nodes()] * num_agents),
                 shape= (num_agents, self.pg.graph.number_of_nodes())
             ),
-        }) for agent in self.possible_agents})
+        }) for agent in self.possible_agents}) # type: ignore
 
         self.reset()
 
@@ -184,7 +188,7 @@ class parallel_env(ParallelEnv):
         vDistsArr = np.array([vDists[v] for v in range(self.pg.graph.number_of_nodes())])
 
         return {
-            "agent_state": np.array([a.position for a in agents]),
+            "agent_state": {a: a.position for a in agents},
             "vertex_state": np.array([self.pg.getNodeIdlenessTime(v, self.step_count) for v in vertices]),
             "vertex_distances": vDistsArr
         }
@@ -207,6 +211,7 @@ class parallel_env(ParallelEnv):
         obs_dict = {}
         reward_dict = {agent: 0.0 for agent in self.agents}
         done_dict = {}
+        truncated_dict = {agent: False for agent in self.agents}
         info_dict = {}
 
         # Perform actions.
@@ -263,13 +268,22 @@ class parallel_env(ParallelEnv):
             # Check if the agent is done
             done_dict[agent] = self.dones[agent]
 
+            # Check for truncation
+            if not self.dones[agent]:
+                truncated_dict[agent] = self.step_count >= self.maxSteps if self.maxSteps is not None else False
+
             # Add any additional information for the agent
             info_dict[agent] = {}
 
             # Update the observation for the agent
             obs_dict[agent] = self.observe(agent)
 
-        return obs_dict, reward_dict, done_dict, {}, info_dict
+        # Check truncation conditions.
+        if self.maxSteps >= 0 and self.step_count >= self.maxSteps:
+            truncated_dict = {a: True for a in self.agents}
+            self.agents = []
+
+        return obs_dict, reward_dict, done_dict, truncated_dict, info_dict
 
 
     def onNodeVisit(self, agent, node, timeStamp):
