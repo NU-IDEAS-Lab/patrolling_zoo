@@ -209,6 +209,7 @@ class parallel_env(ParallelEnv):
         done_dict = {}
         info_dict = {}
 
+        # Perform actions.
         for agent in self.agents:
             # If the agent is at a node, not transitioning
             if agent in action_dict:
@@ -257,6 +258,8 @@ class parallel_env(ParallelEnv):
                 else:
                     reward_dict[agent] = 0  # the action was invalid
 
+        # Perform observations.
+        for agent in self.agents:
             # Check if the agent is done
             done_dict[agent] = self.dones[agent]
 
