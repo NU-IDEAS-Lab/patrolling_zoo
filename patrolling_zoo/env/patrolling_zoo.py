@@ -165,6 +165,11 @@ class parallel_env(ParallelEnv):
         ''' Returns the action space for the given agent. '''
         return self.action_spaces[agent]
 
+    def state(self):
+        ''' Returns the global state of the environment.
+            This is useful for centralized training, decentralized execution. '''
+        
+        raise NotImplementedError()
 
     def observe(self, agent):
         ''' Returns the observation for the given agent.'''
