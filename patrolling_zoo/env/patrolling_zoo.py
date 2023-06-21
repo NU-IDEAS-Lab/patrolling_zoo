@@ -32,10 +32,11 @@ class parallel_env(ParallelEnv):
         "name": "patrolling_zoo_environment_v0",
     }
 
-    def __init__(self, patrol_graph, num_agents, *args,
+    def __init__(self, patrol_graph, num_agents,
                  require_explicit_visit = True,
                  observation_radius = np.inf,
                  max_steps: int = -1,
+                 *args,
                  **kwargs):
         """
         Initialize the PatrolEnv object.
@@ -84,23 +85,25 @@ class parallel_env(ParallelEnv):
                 a: spaces.Box(
                     low = np.array([minPosX, minPosY]),
                     high = np.array([maxPosX, maxPosY]),
-                    shape= (2,)
                 ) for a in self.possible_agents
             }), # type: ignore
 
             # The vertex state is composed of two parts.
             # The first part is the idleness time of each node.
-            "vertex_state": spaces.Box(
-                low = np.array([0.0] * self.pg.graph.number_of_nodes()),
-                high = np.array([np.inf] * self.pg.graph.number_of_nodes()),
-                shape= (self.pg.graph.number_of_nodes(),)
-            ),
+            "vertex_state": spaces.Dict({
+                v: spaces.Box(
+                    low = 0.0,
+                    high = np.inf,
+                ) for v in range(self.pg.graph.number_of_nodes())
+            }), # type: ignore
+
             # The second part is the shortest path cost from every agent to every node.
-            "vertex_distances": spaces.Box(
-                low = np.array([[0.0] * self.pg.graph.number_of_nodes()] * num_agents),
-                high = np.array([[np.inf] * self.pg.graph.number_of_nodes()] * num_agents),
-                shape= (num_agents, self.pg.graph.number_of_nodes())
-            ),
+            "vertex_distances": spaces.Dict({
+                a: spaces.Box(
+                    low = np.array([0.0] * self.pg.graph.number_of_nodes()),
+                    high = np.array([np.inf] * self.pg.graph.number_of_nodes()),
+                ) for a in self.possible_agents
+            }) # type: ignore
         }) for agent in self.possible_agents}) # type: ignore
 
         self.reset()
@@ -181,16 +184,19 @@ class parallel_env(ParallelEnv):
         agents = [a for a in self.agents if self._dist(a.position, agent.position) <= agent.observationRadius]
         vertices = [v for v in self.pg.graph.nodes if self._dist(self.pg.getNodePosition(v), agent.position) <= agent.observationRadius]
 
-        vDists = nx.shortest_path_length(self.pg.graph,
-                                  source=self.pg.getNearestNode(agent.position),
+        # Calculate the shortest path distances from each agent to each node.
+        vertexDistances = {}
+        for a in agents:
+            vDists = nx.shortest_path_length(self.pg.graph,
+                                  source=self.pg.getNearestNode(a.position),
                                   weight='weight'
-        )
-        vDistsArr = np.array([vDists[v] for v in range(self.pg.graph.number_of_nodes())])
+            )
+            vertexDistances[a] = np.array([vDists[v] for v in range(self.pg.graph.number_of_nodes())])
 
         return {
             "agent_state": {a: a.position for a in agents},
-            "vertex_state": np.array([self.pg.getNodeIdlenessTime(v, self.step_count) for v in vertices]),
-            "vertex_distances": vDistsArr
+            "vertex_state": {v: self.pg.getNodeIdlenessTime(v, self.step_count) for v in vertices},
+            "vertex_distances": vertexDistances
         }
 
 
