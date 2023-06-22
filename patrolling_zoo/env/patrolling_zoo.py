@@ -112,12 +112,19 @@ class parallel_env(ParallelEnv):
     def reset(self, seed=None, options=None):
         ''' Sets the environment to its initial state. '''
 
-        self.step_count = 0
+        # Reset the graph.
+        self.pg.reset()
+
+        # Reset the agents.
         self.agents = copy(self.possible_agents)
         for agent in self.possible_agents:
             agent.reset()
+        
+        # Reset other state.
+        self.step_count = 0
         self.rewards = dict.fromkeys(self.agents, 0)
         self.dones = dict.fromkeys(self.agents, False)
+        
         return {agent: self.observe(agent) for agent in self.agents}
 
 

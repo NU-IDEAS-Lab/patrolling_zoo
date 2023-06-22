@@ -10,6 +10,7 @@ class PatrolGraph():
         self.graph = nx.Graph()
         self.loadFromFile(filepath)
 
+
     def loadFromFile(self, filepath: str):
         with open(filepath, "r") as file:
             # Read graph information.
@@ -29,7 +30,7 @@ class PatrolGraph():
                 self.graph.add_node(i,
                     pos = (int(file.readline()) * self.resolution + self.offsetX,
                         int(file.readline()) * self.resolution + self.offsetY),
-                    visitTime = 0
+                    visitTime = 0.0
                 )
                 
                 # Create edges.
@@ -40,25 +41,37 @@ class PatrolGraph():
                     cost = int(file.readline())
                     self.graph.add_edge(i, j, weight = cost)
 
+
+    def reset(self):
+        ''' Resets the graph to initial state. '''
+
+        for node in self.graph.nodes:
+            self.graph.nodes[node]["visitTime"] = 0.0
+
+
     def getNodePosition(self, node):
         ''' Returns the node position as a tuple (x, y). '''
 
         return self.graph.nodes[node]["pos"]
     
+
     def setNodeVisitTime(self, node, timeStamp):
         ''' Sets the node visit time. '''
 
         self.graph.nodes[node]["visitTime"] = timeStamp
     
+
     def getNodeVisitTime(self, node):
         ''' Returns the node visit time. '''
 
         return self.graph.nodes[node]["visitTime"]
     
+
     def getNodeIdlenessTime(self, node, currentTime):
         ''' Returns the node idleness time. '''
 
         return currentTime - self.graph.nodes[node]["visitTime"]
+
 
     def getAverageIdlenessTime(self, currentTime):
         ''' Returns the average idleness time of all nodes. '''
@@ -85,6 +98,7 @@ class PatrolGraph():
             return None
         else:
             return bestNode
+
 
     def getOriginsFromInitialPoses(self, initialPoses):
         ''' Given (x,y) initial positions, returns the nearest node for each position.
