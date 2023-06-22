@@ -13,18 +13,18 @@ class PatrolAgent():
     def __init__(self, id, position=(0.0, 0.0), speed=1.0, observationRadius=np.inf, startingNode=None):
         self.id = id
         self.name = f"agent_{id}"
-        self.position = position # the current position of the agent
         self.startingPosition = position
-        self.speed = speed # the movement speed of the agent. Agent may either move at this speed or not move at all.
         self.startingSpeed = speed
-        self.lastNode = startingNode
-        self.edge = None # the edge which the agent is currently on
+        self.startingNode = startingNode
         self.observationRadius = observationRadius
+        self.reset()
     
     
     def reset(self):
         self.position = self.startingPosition
         self.speed = self.startingSpeed
+        self.edge = None
+        self.lastNode = self.startingNode
 
 
 class parallel_env(ParallelEnv):
@@ -112,12 +112,19 @@ class parallel_env(ParallelEnv):
     def reset(self, seed=None, options=None):
         ''' Sets the environment to its initial state. '''
 
-        self.step_count = 0
+        # Reset the graph.
+        self.pg.reset()
+
+        # Reset the agents.
         self.agents = copy(self.possible_agents)
         for agent in self.possible_agents:
             agent.reset()
+        
+        # Reset other state.
+        self.step_count = 0
         self.rewards = dict.fromkeys(self.agents, 0)
         self.dones = dict.fromkeys(self.agents, False)
+        
         return {agent: self.observe(agent) for agent in self.agents}
 
 
