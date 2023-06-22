@@ -1,7 +1,9 @@
 from pettingzoo.utils.env import ParallelEnv
+from patrolling_zoo.env.communicaiton_model import Comm_model
 from gymnasium import spaces
 import random
 import numpy as np
+import math
 from matplotlib import pyplot as plt
 import networkx as nx
 from copy import copy
@@ -10,13 +12,14 @@ from copy import copy
 class PatrolAgent():
     ''' This class stores all agent state. '''
 
-    def __init__(self, id, position=(0.0, 0.0), speed=1.0, observationRadius=np.inf, startingNode=None):
+    def __init__(self, id, position=(0.0, 0.0), speed=1.0, observationRadius=np.inf, startingNode=None, currentState = 1):
         self.id = id
         self.name = f"agent_{id}"
         self.startingPosition = position
         self.startingSpeed = speed
         self.startingNode = startingNode
         self.observationRadius = observationRadius
+        self.currentState = currentState
         self.reset()
     
     
@@ -25,14 +28,15 @@ class PatrolAgent():
         self.speed = self.startingSpeed
         self.edge = None
         self.lastNode = self.startingNode
-
+     
 
 class parallel_env(ParallelEnv):
     metadata = {
         "name": "patrolling_zoo_environment_v0",
     }
 
-    def __init__(self, patrol_graph, num_agents,
+    def __init__(self, patrol_graph, num_agents, p=0.7, alpha=0.5, beta=0.5, gamma=0.5, pt=30.0, ps=-65.0,
+                 model = "bernouli_model",
                  require_explicit_visit = True,
                  observation_radius = np.inf,
                  max_steps: int = -1,
@@ -56,6 +60,13 @@ class parallel_env(ParallelEnv):
         self.requireExplicitVisit = require_explicit_visit
         self.observationRadius = observation_radius
         self.maxSteps = max_steps
+        self.p = p
+        self.alpha = alpha
+        self.beta = beta
+        self.gamma = gamma
+        self.pt = pt 
+        self.ps = ps
+        self.model = model
 
         # Create the agents with random starting positions.
         startingNodes = random.sample(self.pg.graph.nodes, num_agents)
@@ -278,6 +289,30 @@ class parallel_env(ParallelEnv):
 
         # Perform observations.
         for agent in self.agents:
+            #implement 3 communication here, if one agent could comm with others, it can add the other agent's position into his agent_state observation
+            other_agents = [temp for temp in self.agents if temp != agent]
+            agent_observation = self.observe(agent)
+            # print(agent_observation)
+
+            for a in other_agents:
+                if self.model == "bernouli_model":
+                    comm_model = Comm_model()
+                    receive_obs = comm_model.bernouli_model(self.p)
+                elif self.model == "Gil_el_model":
+                    comm_model = Comm_model()
+                    receive_obs = comm_model.Gil_el_model(agent, self.alpha, self.beta) # type: ignore
+                else:
+                    comm_model = Comm_model()
+                    receive_obs =comm_model.path_loss_model(agent, a, self.gamma, self.pt, self.ps)
+                
+                if receive_obs:
+                    # agent_observation["agent_state"]['test'] = "this is the test"
+                    agent_observation["agent_state"][a] = a.position
+                    # print(agent_observation)
+            
+
+
+
             # Check if the agent is done
             done_dict[agent] = self.dones[agent]
 
@@ -289,7 +324,7 @@ class parallel_env(ParallelEnv):
             info_dict[agent] = {}
 
             # Update the observation for the agent
-            obs_dict[agent] = self.observe(agent)
+            obs_dict[agent] = agent_observation
 
         # Check truncation conditions.
         if self.maxSteps >= 0 and self.step_count >= self.maxSteps:
