@@ -139,6 +139,7 @@ class parallel_env(ParallelEnv):
         '''
         fig, ax = plt.subplots(figsize=figsize)
         markers = ['p']
+        markers_done = ['X']
         colors = ['red', 'blue', 'green', 'cyan', 'magenta', 'yellow', 'black']
 
         # Draw the graph.
@@ -159,10 +160,10 @@ class parallel_env(ParallelEnv):
         nx.draw_networkx_edge_labels(self.pg.graph, pos, edge_labels=nx.get_edge_attributes(self.pg.graph, 'weight'), font_size=7)
         
         # Draw the agents.
-        for i, agent in enumerate(self.agents):
-            marker = markers[i % len(markers)]
+        for i, agent in enumerate(self.possible_agents):
+            marker = markers[i % len(markers)] if agent in self.agents else markers_done[i % len(markers_done)]
             color = colors[i % len(colors)]
-            plt.scatter(*agent.position, color=colors[i % len(colors)], marker=markers[i % len(markers)], zorder=10, alpha=0.3, s=300)
+            plt.scatter(*agent.position, color=color, marker=marker, zorder=10, alpha=0.3, s=300)
             plt.plot([], [], color=color, marker=marker, linestyle='None', label=agent.name, alpha=0.5)
 
         plt.legend()
