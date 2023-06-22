@@ -39,7 +39,6 @@ class Agent(nn.Module):
             # nn.ReLU(),
             # nn.Flatten(),
             self._layer_init(nn.Linear(observation_size, 512)),
-            # self._layer_init(nn.Linear(num_agents * observation_size, 512)),
             nn.ReLU(),
         )
         self.actor = self._layer_init(nn.Linear(512, num_actions * num_agents), std=0.01)
@@ -53,22 +52,6 @@ class Agent(nn.Module):
     def get_value(self, x):
         return self.critic(self.network(x / 255.0))
 
-    # def get_action_and_value(self, x, action=None):
-    #     hidden = self.network(x / 255.0)
-    #     actorOutput = self.actor(hidden)
-    #     actions = torch.zeros((self.num_agents,), dtype=torch.int32)
-    #     probs_all = torch.zeros((self.num_agents,))
-    #     entropy_all = torch.zeros((self.num_agents,))
-    #     for i in range(self.num_agents):
-    #         logits = actorOutput[i * self.num_actions : (i + 1) * self.num_actions]
-    #         probs = Categorical(logits=logits)
-    #         if action is None:
-    #             action = probs.sample()
-    #         actions[i] = action
-    #         probs_all[i] = probs.log_prob(action)
-    #         entropy_all[i] = probs.entropy()
-    #     return actions, probs_all, entropy_all, self.critic(hidden)
-
     def get_action_and_value(self, x, action=None):
         hidden = self.network(x / 255.0)
         logits = self.actor(hidden)
@@ -78,21 +61,14 @@ class Agent(nn.Module):
         return action, probs.log_prob(action), probs.entropy(), self.critic(hidden)
 
 
-    def batchify_obs(self, obs_space, obs, device):
-        """Converts PZ style observations to batch of torch arrays."""
-        # convert to list of np arrays
-        # obs = flatten(obs_space, obs)
-        obs = np.stack([flatten(obs_space, obs[a]) for a in obs], axis=0)
-        # obs = np.reshape(obs, (self.num_agents, -1))
-        # print(f"obs shape: {obs.shape} and type: {type(obs)}")
-        # obs = np.stack([obs[a] for a in obs], axis=0)
-        # transpose to be (batch, channel, height, width)
-        # print(f"obs shape: {obs.shape} and type: {type(obs)}")
-        # obs = obs.transpose(0, -1, 1, 2)
-        # convert to torch
-        obs = torch.tensor(obs).to(device)
+def batchify_obs(obs_space, obs, device):
+    """Converts PZ style observations to batch of torch arrays."""
+    # convert to list of np arrays
+    obs = np.stack([flatten(obs_space, obs[a]) for a in obs], axis=0)
+    # convert to torch
+    obs = torch.tensor(obs).to(device)
 
-        return obs
+    return obs
 
 
 def batchify(x, device):
@@ -124,7 +100,7 @@ if __name__ == "__main__":
     stack_size = 4
     frame_size = (64, 64)
     max_cycles = 125
-    total_episodes = 2
+    total_episodes = 5
 
     """ ENV SETUP """
     patrolGraph = PatrolGraph("patrolling_zoo/env/cumberland.graph")
@@ -133,13 +109,8 @@ if __name__ == "__main__":
         max_steps=5
     )
     
-    # env = color_reduction_v0(env)
-    # env = resize_v1(env, frame_size[0], frame_size[1])
-    # env = flatten_v0(env)
-    # env = frame_stack_v1(env, stack_size=stack_size)
     num_agents = len(env.possible_agents)
     num_actions = env.action_space(env.possible_agents[0]).n
-    # observation_size = flatten_space(env.observation_spaces).shape[0]
     observation_size = flatten_space(env.observation_space(env.possible_agents[0])).shape[0]
 
     """ LEARNER SETUP """
@@ -149,9 +120,7 @@ if __name__ == "__main__":
     """ ALGO LOGIC: EPISODE STORAGE"""
     end_step = 0
     total_episodic_return = 0
-    # rb_obs = torch.zeros((max_cycles, num_agents, stack_size, *frame_size)).to(device)
     rb_obs = torch.zeros((max_cycles, num_agents, observation_size)).to(device)
-    # rb_obs = torch.zeros((max_cycles, observation_size)).to(device)
     rb_actions = torch.zeros((max_cycles, num_agents)).to(device)
     rb_logprobs = torch.zeros((max_cycles, num_agents)).to(device)
     rb_rewards = torch.zeros((max_cycles, num_agents)).to(device)
@@ -171,21 +140,15 @@ if __name__ == "__main__":
             # each episode has num_steps
             for step in range(0, max_cycles):
                 # rollover the observation
-                obs = agent.batchify_obs(env.observation_space(env.possible_agents[0]), next_obs, device)
-
-                # print(f"OBS SHAPE: {obs.shape}")
+                obs = batchify_obs(env.observation_space(env.possible_agents[0]), next_obs, device)
 
                 # get action from the agent
                 actions, logprobs, _, values = agent.get_action_and_value(obs)
-
-                # print(f"GOT ACTION {actions} AND VALUE {values}")
 
                 # execute the environment and log data
                 next_obs, rewards, terms, truncs, infos = env.step(
                     unbatchify(actions, env)
                 )
-
-                # print(f"rb_obs shape: {rb_obs.shape}, obs shape: {obs.shape}")
 
                 # add to episode storage
                 rb_obs[step] = torch.reshape(obs, (num_agents, observation_size))
@@ -230,14 +193,10 @@ if __name__ == "__main__":
             # shuffle the indices we use to access the data
             np.random.shuffle(b_index)
             for start in range(0, len(b_obs), batch_size):
-                print(f"Training on batch {start} to {start + batch_size}")
-
                 # select the indices we want to train on
                 end = start + batch_size
                 batch_index = b_index[start:end]
 
-                print(f"Batch index: {batch_index}")
-                print(f"Calling get_action_and_value with obs shape: {b_obs[batch_index].shape} and actions shape: {b_actions.long()[batch_index].shape}")
                 _, newlogprob, entropy, value = agent.get_action_and_value(
                     b_obs[batch_index], b_actions.long()[batch_index]
                 )
@@ -301,11 +260,6 @@ if __name__ == "__main__":
         print("\n-------------------------------------------\n")
 
     """ RENDER THE POLICY """
-    # patrolGraph = PatrolGraph("patrolling_zoo/env/cumberland.graph")
-    # env = parallel_env(patrolGraph, 3,
-    #     require_explicit_visit=True,
-    #     max_steps=5
-    # )
 
     agent.eval()
 
@@ -313,12 +267,12 @@ if __name__ == "__main__":
         # render 5 episodes out
         for episode in range(5):
             obs = env.reset(seed=None)
-            obs = agent.batchify_obs(env.observation_space(env.possible_agents[0]), obs, device)
+            obs = batchify_obs(env.observation_space(env.possible_agents[0]), obs, device)
             terms = [False]
             truncs = [False]
             while not any(terms) and not any(truncs):
                 actions, logprobs, _, values = agent.get_action_and_value(obs)
                 obs, rewards, terms, truncs, infos = env.step(unbatchify(actions, env))
-                obs = agent.batchify_obs(env.observation_space(env.possible_agents[0]), obs, device)
+                obs = batchify_obs(env.observation_space(env.possible_agents[0]), obs, device)
                 terms = [terms[a] for a in terms]
                 truncs = [truncs[a] for a in truncs]
