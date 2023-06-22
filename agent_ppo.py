@@ -38,7 +38,8 @@ class Agent(nn.Module):
             # nn.MaxPool2d(2),
             # nn.ReLU(),
             # nn.Flatten(),
-            self._layer_init(nn.Linear(num_agents * observation_size, 512)),
+            self._layer_init(nn.Linear(observation_size, 512)),
+            # self._layer_init(nn.Linear(num_agents * observation_size, 512)),
             nn.ReLU(),
         )
         self.actor = self._layer_init(nn.Linear(512, num_actions * num_agents), std=0.01)
@@ -52,27 +53,36 @@ class Agent(nn.Module):
     def get_value(self, x):
         return self.critic(self.network(x / 255.0))
 
+    # def get_action_and_value(self, x, action=None):
+    #     hidden = self.network(x / 255.0)
+    #     actorOutput = self.actor(hidden)
+    #     actions = torch.zeros((self.num_agents,), dtype=torch.int32)
+    #     probs_all = torch.zeros((self.num_agents,))
+    #     entropy_all = torch.zeros((self.num_agents,))
+    #     for i in range(self.num_agents):
+    #         logits = actorOutput[i * self.num_actions : (i + 1) * self.num_actions]
+    #         probs = Categorical(logits=logits)
+    #         if action is None:
+    #             action = probs.sample()
+    #         actions[i] = action
+    #         probs_all[i] = probs.log_prob(action)
+    #         entropy_all[i] = probs.entropy()
+    #     return actions, probs_all, entropy_all, self.critic(hidden)
+
     def get_action_and_value(self, x, action=None):
         hidden = self.network(x / 255.0)
-        actorOutput = self.actor(hidden)
-        actions = torch.zeros((self.num_agents,), dtype=torch.int32)
-        probs_all = torch.zeros((self.num_agents,))
-        entropy_all = torch.zeros((self.num_agents,))
-        for i in range(self.num_agents):
-            logits = actorOutput[i * self.num_actions : (i + 1) * self.num_actions]
-            probs = Categorical(logits=logits)
-            if action is None:
-                action = probs.sample()
-            actions[i] = action
-            probs_all[i] = probs.log_prob(action)
-            entropy_all[i] = probs.entropy()
-        return actions, probs_all, entropy_all, self.critic(hidden)
+        logits = self.actor(hidden)
+        probs = Categorical(logits=logits)
+        if action is None:
+            action = probs.sample()
+        return action, probs.log_prob(action), probs.entropy(), self.critic(hidden)
 
 
     def batchify_obs(self, obs_space, obs, device):
         """Converts PZ style observations to batch of torch arrays."""
         # convert to list of np arrays
-        obs = flatten(obs_space, obs)
+        # obs = flatten(obs_space, obs)
+        obs = np.stack([flatten(obs_space, obs[a]) for a in obs], axis=0)
         # obs = np.reshape(obs, (self.num_agents, -1))
         # print(f"obs shape: {obs.shape} and type: {type(obs)}")
         # obs = np.stack([obs[a] for a in obs], axis=0)
@@ -161,9 +171,9 @@ if __name__ == "__main__":
             # each episode has num_steps
             for step in range(0, max_cycles):
                 # rollover the observation
-                obs = agent.batchify_obs(env.observation_spaces, next_obs, device)
+                obs = agent.batchify_obs(env.observation_space(env.possible_agents[0]), next_obs, device)
 
-                print(f"OBS SHAPE: {obs.shape}")
+                # print(f"OBS SHAPE: {obs.shape}")
 
                 # get action from the agent
                 actions, logprobs, _, values = agent.get_action_and_value(obs)
@@ -175,7 +185,7 @@ if __name__ == "__main__":
                     unbatchify(actions, env)
                 )
 
-                print(f"rb_obs shape: {rb_obs.shape}, obs shape: {obs.shape}")
+                # print(f"rb_obs shape: {rb_obs.shape}, obs shape: {obs.shape}")
 
                 # add to episode storage
                 rb_obs[step] = torch.reshape(obs, (num_agents, observation_size))
@@ -227,7 +237,7 @@ if __name__ == "__main__":
                 batch_index = b_index[start:end]
 
                 print(f"Batch index: {batch_index}")
-                print(f"Calling get_action_and_value with {b_obs[batch_index].cpu()} and {b_actions.long()[batch_index].cpu()}")
+                print(f"Calling get_action_and_value with obs shape: {b_obs[batch_index].shape} and actions shape: {b_actions.long()[batch_index].shape}")
                 _, newlogprob, entropy, value = agent.get_action_and_value(
                     b_obs[batch_index], b_actions.long()[batch_index]
                 )
@@ -291,23 +301,24 @@ if __name__ == "__main__":
         print("\n-------------------------------------------\n")
 
     """ RENDER THE POLICY """
-    env = pistonball_v6.parallel_env(render_mode="human", continuous=False)
-    env = color_reduction_v0(env)
-    env = resize_v1(env, 64, 64)
-    env = frame_stack_v1(env, stack_size=4)
+    # patrolGraph = PatrolGraph("patrolling_zoo/env/cumberland.graph")
+    # env = parallel_env(patrolGraph, 3,
+    #     require_explicit_visit=True,
+    #     max_steps=5
+    # )
 
     agent.eval()
 
     with torch.no_grad():
         # render 5 episodes out
         for episode in range(5):
-            obs, infos = env.reset(seed=None)
-            obs = agent.batchify_obs(env.observation_spaces, obs, device)
+            obs = env.reset(seed=None)
+            obs = agent.batchify_obs(env.observation_space(env.possible_agents[0]), obs, device)
             terms = [False]
             truncs = [False]
             while not any(terms) and not any(truncs):
                 actions, logprobs, _, values = agent.get_action_and_value(obs)
                 obs, rewards, terms, truncs, infos = env.step(unbatchify(actions, env))
-                obs = agent.batchify_obs(env.observation_spaces, obs, device)
+                obs = agent.batchify_obs(env.observation_space(env.possible_agents[0]), obs, device)
                 terms = [terms[a] for a in terms]
                 truncs = [truncs[a] for a in truncs]
