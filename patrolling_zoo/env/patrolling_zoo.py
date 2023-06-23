@@ -106,6 +106,10 @@ class parallel_env(ParallelEnv):
             }) # type: ignore
         }) for agent in self.possible_agents}) # type: ignore
 
+        # The state space is a complete observation of the environment.
+        # This is not part of the standard PettingZoo API, but is useful for centralized training.
+        self.state_space = self.observation_spaces[self.possible_agents[0]]
+
         self.reset()
 
 
@@ -184,13 +188,16 @@ class parallel_env(ParallelEnv):
         ''' Returns the global state of the environment.
             This is useful for centralized training, decentralized execution. '''
         
-        raise NotImplementedError()
+        return self.observe(self.agents[0], radius=np.inf)
 
-    def observe(self, agent):
+    def observe(self, agent, radius=None):
         ''' Returns the observation for the given agent.'''
 
-        agents = [a for a in self.agents if self._dist(a.position, agent.position) <= agent.observationRadius]
-        vertices = [v for v in self.pg.graph.nodes if self._dist(self.pg.getNodePosition(v), agent.position) <= agent.observationRadius]
+        if radius == None:
+            radius = agent.observationRadius
+
+        agents = [a for a in self.agents if self._dist(a.position, agent.position) <= radius]
+        vertices = [v for v in self.pg.graph.nodes if self._dist(self.pg.getNodePosition(v), agent.position) <= radius]
 
         # Calculate the shortest path distances from each agent to each node.
         vertexDistances = {}
