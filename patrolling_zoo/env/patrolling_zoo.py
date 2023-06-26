@@ -35,8 +35,9 @@ class parallel_env(ParallelEnv):
         "name": "patrolling_zoo_environment_v0",
     }
 
-    def __init__(self, patrol_graph, num_agents, p=0.7, alpha=0.5, beta=0.5, gamma=0.5, pt=30.0, ps=-65.0,
-                 model = "bernouli_model",
+    def __init__(self, patrol_graph, num_agents,
+                 model = Comm_model(),
+                 model_name = "bernouli_model",
                  require_explicit_visit = True,
                  observation_radius = np.inf,
                  max_steps: int = -1,
@@ -60,13 +61,8 @@ class parallel_env(ParallelEnv):
         self.requireExplicitVisit = require_explicit_visit
         self.observationRadius = observation_radius
         self.maxSteps = max_steps
-        self.p = p
-        self.alpha = alpha
-        self.beta = beta
-        self.gamma = gamma
-        self.pt = pt 
-        self.ps = ps
         self.model = model
+        self.model_name = model_name
 
         # Create the agents with random starting positions.
         startingNodes = random.sample(self.pg.graph.nodes, num_agents)
@@ -289,26 +285,9 @@ class parallel_env(ParallelEnv):
 
         # Perform observations.
         for agent in self.agents:
-            #implement 3 communication here, if one agent could comm with others, it can add the other agent's position into his agent_state observation
-            other_agents = [temp for temp in self.agents if temp != agent]
-            agent_observation = self.observe(agent)
-            # print(agent_observation)
 
-            for a in other_agents:
-                if self.model == "bernouli_model":
-                    comm_model = Comm_model()
-                    receive_obs = comm_model.bernouli_model(self.p)
-                elif self.model == "Gil_el_model":
-                    comm_model = Comm_model()
-                    receive_obs = comm_model.Gil_el_model(agent, self.alpha, self.beta) # type: ignore
-                else:
-                    comm_model = Comm_model()
-                    receive_obs =comm_model.path_loss_model(agent, a, self.gamma, self.pt, self.ps)
-                
-                if receive_obs:
-                    # agent_observation["agent_state"]['test'] = "this is the test"
-                    agent_observation["agent_state"][a] = a.position
-                    # print(agent_observation)
+            # 3 communicaiton models here
+            agent_observation= self.obeserve_with_communication(agent)
             
 
 
@@ -371,3 +350,26 @@ class parallel_env(ParallelEnv):
         ''' Calculates the Euclidean distance between two points. '''
 
         return np.sqrt(np.power(pos1[0] - pos2[0], 2) + np.power(pos1[1] - pos2[1], 2))
+    
+
+    # impletment 3 communication models here 
+    def obeserve_with_communication(self, agent):
+        other_agents = [temp for temp in self.agents if temp != agent ]
+        agent_observation = self.observe(agent)
+
+        for a in other_agents:
+            if self.model_name == "bernouli_model":
+                receive_obs = self.model.bernouli_model()
+            elif self.model_name == "Gil_el_model":
+                receive_obs = self.model.Gil_el_model(agent)
+            else:
+                receive_obs = self.model.path_loss_model(agent, a)
+            
+            print(receive_obs)
+
+            if receive_obs:
+                agent_observation["agent_state"][a] = a.position
+
+
+
+        return agent_observation
