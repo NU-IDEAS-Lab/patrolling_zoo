@@ -1,7 +1,9 @@
 from pettingzoo.utils.env import ParallelEnv
+from patrolling_zoo.env.communication_model import Comm_model
 from gymnasium import spaces
 import random
 import numpy as np
+import math
 from matplotlib import pyplot as plt
 import networkx as nx
 from copy import copy
@@ -10,13 +12,14 @@ from copy import copy
 class PatrolAgent():
     ''' This class stores all agent state. '''
 
-    def __init__(self, id, position=(0.0, 0.0), speed=1.0, observationRadius=np.inf, startingNode=None):
+    def __init__(self, id, position=(0.0, 0.0), speed=1.0, observationRadius=np.inf, startingNode=None, currentState = 1):
         self.id = id
         self.name = f"agent_{id}"
         self.startingPosition = position
         self.startingSpeed = speed
         self.startingNode = startingNode
         self.observationRadius = observationRadius
+        self.currentState = currentState
         self.reset()
     
     
@@ -25,7 +28,7 @@ class PatrolAgent():
         self.speed = self.startingSpeed
         self.edge = None
         self.lastNode = self.startingNode
-
+     
 
 class parallel_env(ParallelEnv):
     metadata = {
@@ -33,6 +36,8 @@ class parallel_env(ParallelEnv):
     }
 
     def __init__(self, patrol_graph, num_agents,
+                 model = Comm_model(),
+                 model_name = "bernouli_model",
                  require_explicit_visit = True,
                  observation_radius = np.inf,
                  max_steps: int = -1,
@@ -56,6 +61,8 @@ class parallel_env(ParallelEnv):
         self.requireExplicitVisit = require_explicit_visit
         self.observationRadius = observation_radius
         self.maxSteps = max_steps
+        self.model = model
+        self.model_name = model_name
 
         # Create the agents with random starting positions.
         startingNodes = random.sample(self.pg.graph.nodes, num_agents)
@@ -199,7 +206,10 @@ class parallel_env(ParallelEnv):
                                   source=self.pg.getNearestNode(a.position),
                                   weight='weight'
             )
+            #vDists compute the shortest length between a and all nodes in this graph
             vertexDistances[a] = np.array([vDists[v] for v in range(self.pg.graph.number_of_nodes())])
+            # vertextDistances[a] would be an numpy array with vertex distance
+            # vertexDistance would be a numpy array with shape (num_agents, num_vertex)
 
         return {
             "agent_state": {a: a.position for a in agents},
@@ -279,6 +289,13 @@ class parallel_env(ParallelEnv):
 
         # Perform observations.
         for agent in self.agents:
+
+            # 3 communicaiton models here
+            agent_observation= self.observe_with_communication(agent)
+            
+
+
+
             # Check if the agent is done
             done_dict[agent] = self.dones[agent]
 
@@ -290,7 +307,7 @@ class parallel_env(ParallelEnv):
             info_dict[agent] = {}
 
             # Update the observation for the agent
-            obs_dict[agent] = self.observe(agent)
+            obs_dict[agent] = agent_observation
 
         # Check truncation conditions.
         if self.maxSteps >= 0 and self.step_count >= self.maxSteps:
@@ -337,3 +354,24 @@ class parallel_env(ParallelEnv):
         ''' Calculates the Euclidean distance between two points. '''
 
         return np.sqrt(np.power(pos1[0] - pos2[0], 2) + np.power(pos1[1] - pos2[1], 2))
+    
+
+    # impletment 3 communication models here 
+    def observe_with_communication(self, agent):
+        other_agents = [temp for temp in self.agents if temp != agent ]
+        agent_observation = self.observe(agent)
+
+        for a in other_agents:
+            if self.model_name == "bernouli_model":
+                receive_obs = self.model.bernouli_model()
+            elif self.model_name == "Gil_el_model":
+                receive_obs = self.model.Gil_el_model(agent)
+            else:
+                receive_obs = self.model.path_loss_model(agent, a)
+
+            if receive_obs:
+                agent_observation["agent_state"][a] = a.position
+
+
+
+        return agent_observation
