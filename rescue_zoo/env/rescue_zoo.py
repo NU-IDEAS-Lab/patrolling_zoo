@@ -5,7 +5,29 @@ import numpy as np
 from matplotlib import pyplot as plt
 import networkx as nx
 from copy import copy
+from enum import IntEnum
 
+class PhysicalAction(IntEnum):
+    ''' An enumeration of physical actions (excluding movement).
+        We use negative values to avoid conflicts with the movement actions,
+        which are positive integers representing node IDs. '''
+    NONE = -1
+    SEARCH = -2
+    PICKUP = -3
+    DELIVER = -4
+
+class VirtualAction(IntEnum):
+    ''' An enumeration of virtual actions. '''
+    NONE = 0
+    BROADCAST = 1
+
+class Item(IntEnum):
+    ''' An enumeration of payload types. '''
+    NONE = 0
+    SURVIVOR = 1
+    BLANKET = 2
+    MEDICINE = 3
+    FOOD = 4
 
 class RescueAgent():
     ''' This class stores all agent state. '''
@@ -70,8 +92,8 @@ class parallel_env(ParallelEnv):
         # Create the action space.
         self.action_spaces = {
             agent: spaces.Tuple((
-                spaces.Discrete(len(self.graph.graph)), # move to a node
-                spaces.Discrete(2) # communicate or not communicate
+                spaces.Discrete(self.graph.graph.number_of_nodes() + len(PhysicalAction)),
+                spaces.Discrete(len(VirtualAction))
             ))
             for agent in self.possible_agents
         }
@@ -86,21 +108,23 @@ class parallel_env(ParallelEnv):
         # Create the observation space.
         self.observation_spaces = spaces.Dict({agent: spaces.Dict({
 
-            # The agent state is the position of each agent.
-            "agent_state": spaces.Dict({
+            # The position of each agent.
+            "agent_position": spaces.Dict({
                 a: spaces.Box(
                     low = np.array([minPosX, minPosY]),
                     high = np.array([maxPosX, maxPosY]),
                 ) for a in self.possible_agents
             }), # type: ignore
 
+            # The payload of each agent.
+            "agent_payload": spaces.Dict({
+                a: spaces.Discrete(len(Item)) for a in self.possible_agents
+            }), # type: ignore
+
             # The vertex state is composed of two parts.
             # The first part is the idleness time of each node.
             "vertex_state": spaces.Dict({
-                v: spaces.Box(
-                    low = 0.0,
-                    high = np.inf,
-                ) for v in range(self.graph.graph.number_of_nodes())
+                v: spaces.Discrete(len(Item)) for v in range(self.graph.graph.number_of_nodes())
             }), # type: ignore
 
             # The second part is the shortest path cost from every agent to every node.
