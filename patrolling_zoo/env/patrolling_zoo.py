@@ -1,5 +1,5 @@
 from pettingzoo.utils.env import ParallelEnv
-from patrolling_zoo.env.communicaiton_model import Comm_model
+from patrolling_zoo.env.communication_model import Comm_model
 from gymnasium import spaces
 import random
 import numpy as np
@@ -205,7 +205,10 @@ class parallel_env(ParallelEnv):
                                   source=self.pg.getNearestNode(a.position),
                                   weight='weight'
             )
+            #vDists compute the shortest length between a and all nodes in this graph
             vertexDistances[a] = np.array([vDists[v] for v in range(self.pg.graph.number_of_nodes())])
+            # vertextDistances[a] would be an numpy array with vertex distance
+            # vertexDistance would be a numpy array with shape (num_agents, num_vertex)
 
         return {
             "agent_state": {a: a.position for a in agents},
@@ -287,7 +290,7 @@ class parallel_env(ParallelEnv):
         for agent in self.agents:
 
             # 3 communicaiton models here
-            agent_observation= self.obeserve_with_communication(agent)
+            agent_observation= self.observe_with_communication(agent)
             
 
 
@@ -353,7 +356,7 @@ class parallel_env(ParallelEnv):
     
 
     # impletment 3 communication models here 
-    def obeserve_with_communication(self, agent):
+    def observe_with_communication(self, agent):
         other_agents = [temp for temp in self.agents if temp != agent ]
         agent_observation = self.observe(agent)
 
@@ -364,8 +367,6 @@ class parallel_env(ParallelEnv):
                 receive_obs = self.model.Gil_el_model(agent)
             else:
                 receive_obs = self.model.path_loss_model(agent, a)
-            
-            print(receive_obs)
 
             if receive_obs:
                 agent_observation["agent_state"][a] = a.position
