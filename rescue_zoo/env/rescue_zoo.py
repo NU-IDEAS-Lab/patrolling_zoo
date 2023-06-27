@@ -21,9 +21,17 @@ class VirtualAction(IntEnum):
     NONE = 0
     BROADCAST = 1
 
-class Item(IntEnum):
+class AgentPayloadState(IntEnum):
     ''' An enumeration of payload types. '''
     NONE = 0
+    SURVIVOR = 1
+    BLANKET = 2
+    MEDICINE = 3
+    FOOD = 4
+
+class VertexState(IntEnum):
+    ''' An enumeration of payload types. '''
+    UNKNOWN = 0
     SURVIVOR = 1
     BLANKET = 2
     MEDICINE = 3
@@ -32,21 +40,27 @@ class Item(IntEnum):
 class RescueAgent():
     ''' This class stores all agent state. '''
 
-    def __init__(self, id, position=(0.0, 0.0), speed=1.0, observationRadius=np.inf, startingNode=None):
+    def __init__(self, id, position=(0.0, 0.0), speed=1.0, observationRadius=np.inf, startingNode=None,
+                 initialPayload=AgentPayloadState.NONE):
         self.id = id
         self.name = f"agent_{id}"
         self.startingPosition = position
         self.startingSpeed = speed
         self.startingNode = startingNode
         self.observationRadius = observationRadius
+        self.initialPayload = initialPayload
         self.reset()
     
     
     def reset(self):
+        ''' Resets the agent to its initial state.
+            This is called by the environment when the environment is reset. '''
+
         self.position = self.startingPosition
         self.speed = self.startingSpeed
         self.edge = None
         self.lastNode = self.startingNode
+        self.payload = self.initialPayload
 
 
 class parallel_env(ParallelEnv):
@@ -118,16 +132,15 @@ class parallel_env(ParallelEnv):
 
             # The payload of each agent.
             "agent_payload": spaces.Dict({
-                a: spaces.Discrete(len(Item)) for a in self.possible_agents
+                a: spaces.Discrete(len(AgentPayloadState)) for a in self.possible_agents
             }), # type: ignore
 
-            # The vertex state is composed of two parts.
-            # The first part is the idleness time of each node.
+            # The vertex state describes which item is at each node.
             "vertex_state": spaces.Dict({
-                v: spaces.Discrete(len(Item)) for v in range(self.graph.graph.number_of_nodes())
+                v: spaces.MultiBinary(len(VertexState)) for v in range(self.graph.graph.number_of_nodes())
             }), # type: ignore
 
-            # The second part is the shortest path cost from every agent to every node.
+            # We also include the distance from every agent to every node.
             "vertex_distances": spaces.Dict({
                 a: spaces.Box(
                     low = np.array([0.0] * self.graph.graph.number_of_nodes()),
@@ -181,7 +194,7 @@ class parallel_env(ParallelEnv):
                          node_color=idleness,
                          edgecolors='black',
                          vmin=0,
-                         vmax=50,
+                         vmax=500,
                          cmap='Purples',
                          node_size=600,
                          font_size=10,
@@ -264,13 +277,16 @@ class parallel_env(ParallelEnv):
             if agent in action_dict:
                 action = action_dict[agent]
 
+                actionPhysical = action[0]
+                actionVirtual = action[1]
+
                 # Update the agent's position.
-                if action in self.graph.graph.nodes:
+                if actionPhysical in self.graph.graph.nodes:
 
                     # Determine the node to use as source node for shortest path calculation.
                     startIdx = 1
                     srcNode = agent.lastNode
-                    dstNode = action
+                    dstNode = actionPhysical
                     # The agent is on an edge, so determine which connected node results in shortest path.
                     if agent.edge != None:
                         pathLen1 = nx.shortest_path_length(self.graph.graph, source=agent.edge[0], target=dstNode, weight='weight')
