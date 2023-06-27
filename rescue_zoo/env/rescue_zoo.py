@@ -68,7 +68,13 @@ class parallel_env(ParallelEnv):
         ]
 
         # Create the action space.
-        self.action_spaces = {agent: spaces.Discrete(len(self.graph.graph)) for agent in self.possible_agents}
+        self.action_spaces = {
+            agent: spaces.Tuple((
+                spaces.Discrete(len(self.graph.graph)), # move to a node
+                spaces.Discrete(2) # communicate or not communicate
+            ))
+            for agent in self.possible_agents
+        }
 
         # Get graph bounds in Euclidean space.
         pos = nx.get_node_attributes(self.graph.graph, 'pos')
