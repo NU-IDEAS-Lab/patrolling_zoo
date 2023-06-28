@@ -14,3 +14,8 @@ class RescueGraph(GraphEnvironment):
         ''' Returns the node state. '''
 
         return self.graph.nodes[node]["state"]
+    
+    def setNodeState(self, node, state):
+        ''' Sets the node state. '''
+
+        self.graph.nodes[node]["state"] = state
