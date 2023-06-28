@@ -3,7 +3,7 @@ from .graph_environment import GraphEnvironment
 class RescueGraph(GraphEnvironment):
     ''' The GraphEnvironment with additional state information for the rescue scenario. '''
 
-    def reset(self, initialState = 0):
+    def reset(self, initialState = {}):
         ''' Resets the graph to initial state. '''
 
         super().reset()

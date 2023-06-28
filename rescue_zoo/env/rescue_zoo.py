@@ -31,12 +31,11 @@ class AgentPayloadState(IntEnum):
 
 class VertexState(IntEnum):
     ''' An enumeration of payload types. '''
-    NONE = 0x0
-    UNKNOWN = 0x1
-    SURVIVOR = 0x2
-    BLANKET = 0x4
-    MEDICINE = 0x8
-    FOOD = 0x16
+    UNKNOWN = 0
+    SURVIVOR = 1
+    BLANKET = 2
+    MEDICINE = 3
+    FOOD = 4
 
 
 class RescueAgent():
@@ -157,8 +156,10 @@ class parallel_env(ParallelEnv):
     def reset(self, seed=None, options=None):
         ''' Sets the environment to its initial state. '''
 
-        # Reset the graph.
-        self.graph.reset(initialState = VertexState.UNKNOWN)
+        # Reset the graph. All nodes start unknown.
+        graphState = {s: False for s in VertexState}
+        graphState[VertexState.UNKNOWN] = True
+        self.graph.reset(initialState = graphState)
 
         # Reset the agents.
         self.agents = copy(self.possible_agents)
@@ -190,7 +191,7 @@ class parallel_env(ParallelEnv):
         # Draw the graph.
         pos = nx.get_node_attributes(self.graph.graph, 'pos')
         idleness = [self.graph.getNodeIdlenessTime(i, self.step_count) for i in self.graph.graph.nodes]
-        labels = {i: f"{i}\n{self.graph.getNodeState(i)}" for i in self.graph.graph.nodes}
+        labels = {i: f"{i}\n{[int(i) for i in self.graph.getNodeState(i).values()]}" for i in self.graph.graph.nodes}
         nx.draw_networkx(self.graph.graph,
                          pos,
                          with_labels=True,
