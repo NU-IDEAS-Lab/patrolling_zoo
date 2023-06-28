@@ -9,6 +9,7 @@ class GraphEnvironment():
     def __init__(self, filepath):
         self.graph = nx.Graph()
         self.loadFromFile(filepath)
+        self.reset()
 
 
     def loadFromFile(self, filepath: str):
@@ -30,7 +31,7 @@ class GraphEnvironment():
                 self.graph.add_node(i,
                     pos = (int(file.readline()) * self.resolution + self.offsetX,
                         int(file.readline()) * self.resolution + self.offsetY),
-                    visitTime = 0.0
+                    visitTime = 0.0,
                 )
                 
                 # Create edges.
@@ -47,7 +48,6 @@ class GraphEnvironment():
 
         for node in self.graph.nodes:
             self.graph.nodes[node]["visitTime"] = 0.0
-
 
     def getNodePosition(self, node):
         ''' Returns the node position as a tuple (x, y). '''
@@ -108,21 +108,3 @@ class GraphEnvironment():
         for pos in zip(initialPoses[0::2], initialPoses[1::2]):
             origins.append(self.getNearestNode(pos))
         return origins
-    
-
-    def PlotGraph(self, figsize=(18, 12)):
-        """
-        PlotGraph function plots the graph using matplotlib and networkx libraries.
-
-        Args:
-            figsize (tuple, optional): The size of the figure in inches. Defaults to (18, 12).
-
-        Returns:
-            None
-        """
-        fig, ax = plt.subplots(figsize=figsize)
-        pos = nx.get_node_attributes(self.graph, 'pos')
-        edge_labels = nx.get_edge_attributes(self.graph, 'weight')
-        nx.draw_networkx(self.graph, pos, with_labels=True, node_color='lightblue', node_size=600,font_size=10, font_color='black')
-        nx.draw_networkx_edge_labels(self.graph, pos, edge_labels=edge_labels, font_size=7)
-        # After executing the function do not forget plt.show()

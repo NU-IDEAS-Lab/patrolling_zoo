@@ -1,0 +1,16 @@
+from .graph_environment import GraphEnvironment
+
+class RescueGraph(GraphEnvironment):
+    ''' The GraphEnvironment with additional state information for the rescue scenario. '''
+
+    def reset(self, initialState = 0):
+        ''' Resets the graph to initial state. '''
+
+        super().reset()
+        for node in self.graph.nodes:
+            self.graph.nodes[node]["state"] = initialState
+    
+    def getNodeState(self, node):
+        ''' Returns the node state. '''
+
+        return self.graph.nodes[node]["state"]
