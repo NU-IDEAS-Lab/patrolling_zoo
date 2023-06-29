@@ -10,7 +10,8 @@ from IPython.display import clear_output
 from .algorithm import BaseAlgorithm
 
 class PPO(BaseAlgorithm):
-    ''' This algorithm implements PPO for the patrolling problem. '''
+    ''' This algorithm implements PPO for the patrolling problem.
+        Adapted from an example by Jet (https://github.com/jjshoots). '''
 
     def __init__(self, env, device,
             ent_coef = 0.1,
