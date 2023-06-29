@@ -241,7 +241,7 @@ class parallel_env(ParallelEnv):
         '''
         self.step_count += 1
         obs_dict = {}
-        reward_dict = {agent: 0.0 for agent in self.agents}
+        reward_dict = {agent: -0.1 for agent in self.agents}
         done_dict = {}
         truncated_dict = {agent: False for agent in self.agents}
         info_dict = {}
