@@ -325,14 +325,14 @@ class parallel_env(ParallelEnv):
                         # The agent has exceeded its movement budget for this step.
                         if stepSize <= 0.0:
                             break
-                if actionPhysical in range(-4,50):
+                elif actionPhysical in range(-4,0):
                     if actionPhysical == -1:
                         continue
-                    elif actionPhysical > -10:
+                    elif actionPhysical == -2:
                         nodestate = self.graph.getNodeState(agent.lastNode)
                         if nodestate[0] == True:
                             options = [VertexState. SURVIVOR, VertexState.BLANKET, VertexState.FOOD, VertexState.MEDICINE]
-                            probability_none = 0.5  
+                            probability_none = 0.05  
                             if random.random() < probability_none:
                                 graphState = {s: False for s in VertexState}
                             else:
