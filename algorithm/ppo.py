@@ -47,6 +47,18 @@ class PPO(BaseAlgorithm):
     def train(self):
         ''' Trains the policy. '''
 
+        # Stats storage
+        stats = {
+            "episodic_return": [],
+            "episodic_length": [],
+            "value_loss": [],
+            "policy_loss": [],
+            "entropy_loss": [],
+            "total_loss": [],
+            "approx_kl": [],
+            "clip_frac": [],
+        }
+
         """ ALGO LOGIC: EPISODE STORAGE"""
         end_step = 0
         total_episodic_return = 0
@@ -169,6 +181,15 @@ class PPO(BaseAlgorithm):
                     entropy_loss = entropy.mean()
                     loss = pg_loss - self.ent_coef * entropy_loss + v_loss * self.vf_coef
 
+                    # Store statistics.
+                    stats["value_loss"] += [v_loss.item()]
+                    stats["policy_loss"] += [pg_loss.item()]
+                    stats["entropy_loss"] += [entropy_loss.item()]
+                    stats["total_loss"] += [loss.item()]
+                    stats["approx_kl"] += [approx_kl.item()]
+                    stats["clip_frac"] += [np.mean(clip_fracs)]
+
+                    # Take gradient step.
                     self.optimizer.zero_grad()
                     loss.backward()
                     self.optimizer.step()
@@ -181,31 +202,29 @@ class PPO(BaseAlgorithm):
             print(f"Episodic Return: {np.mean(total_episodic_return)}")
             print(f"Episode Length: {end_step}")
             print("")
-            print(f"Value Loss: {v_loss.item()}")
-            print(f"Policy Loss: {pg_loss.item()}")
-            print(f"Old Approx KL: {old_approx_kl.item()}")
-            print(f"Approx KL: {approx_kl.item()}")
-            print(f"Clip Fraction: {np.mean(clip_fracs)}")
-            print(f"Explained Variance: {explained_var.item()}")
-            print(f"Training episode {episode}")
-            print(f"Episodic Return: {np.mean(total_episodic_return)}")
-            print(f"Episode Length: {end_step}\n")
+
+            # Store episode statistics.
+            stats["episodic_return"] += [np.mean(total_episodic_return)]
+            stats["episodic_length"] += [end_step]
+
+        return stats
 
 
-    def evaluate(self):
+    def evaluate(self, render=False, max_cycles=None):
         ''' Evaluates the policy. '''
 
         self.learner.eval()
 
-        # TEMP: Only run for 30 steps.
-        self.env.maxSteps = 30
+        if max_cycles != None:
+            self.env.maxSteps = max_cycles
 
         with torch.no_grad():
             # render 2 episodes out
             for episode in range(2):
                 obs = self.env.reset(seed=None)
-                clear_output(wait=True)
-                self.env.render()
+                if render:
+                    clear_output(wait=True)
+                    self.env.render()
                 obs = self.learner.batchify_obs(self.env.observation_space(self.env.possible_agents[0]), obs, self.device)
                 terms = [False]
                 truncs = [False]
@@ -215,8 +234,9 @@ class PPO(BaseAlgorithm):
                     obs = self.learner.batchify_obs(self.env.observation_space(self.env.possible_agents[0]), obs, self.device)
                     terms = [terms[a] for a in terms]
                     truncs = [truncs[a] for a in truncs]
-                    clear_output(wait=True)
-                    self.env.render()
+                    if render:
+                        clear_output(wait=True)
+                        self.env.render()
 
 
 class PPONetwork(nn.Module):

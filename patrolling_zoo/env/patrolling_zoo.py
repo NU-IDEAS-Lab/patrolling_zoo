@@ -12,7 +12,7 @@ from copy import copy
 class PatrolAgent():
     ''' This class stores all agent state. '''
 
-    def __init__(self, id, position=(0.0, 0.0), speed=50.0, observationRadius=np.inf, startingNode=None, currentState = 1):
+    def __init__(self, id, position=(0.0, 0.0), speed=1.0, observationRadius=np.inf, startingNode=None, currentState = 1):
         self.id = id
         self.name = f"agent_{id}"
         self.startingPosition = position
