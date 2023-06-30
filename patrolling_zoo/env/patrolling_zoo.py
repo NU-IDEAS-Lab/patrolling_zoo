@@ -40,7 +40,7 @@ class parallel_env(ParallelEnv):
                  model_name = "bernouli_model",
                  require_explicit_visit = True,
                  observation_radius = np.inf,
-                 max_steps: int = -1,
+                 max_cycles: int = -1,
                  reward_shift = 0.0,
                  *args,
                  **kwargs):
@@ -61,14 +61,14 @@ class parallel_env(ParallelEnv):
         # Configuration.
         self.requireExplicitVisit = require_explicit_visit
         self.observationRadius = observation_radius
-        self.max_steps = max_steps
+        self.max_cycles = max_cycles
         self.model = model
         self.model_name = model_name
 
         self.reward_shift = reward_shift
 
         # Create the agents with random starting positions.
-        startingNodes = random.sample(self.pg.graph.nodes, num_agents)
+        startingNodes = random.sample(list(self.pg.graph.nodes), num_agents)
         startingPositions = [self.pg.getNodePosition(i) for i in startingNodes]
         self.possible_agents = [
             PatrolAgent(i, startingPositions[i],
@@ -93,8 +93,8 @@ class parallel_env(ParallelEnv):
             # The agent state is the position of each agent.
             "agent_state": spaces.Dict({
                 a: spaces.Box(
-                    low = np.array([minPosX, minPosY]),
-                    high = np.array([maxPosX, maxPosY]),
+                    low = np.array([minPosX, minPosY], dtype=np.float32),
+                    high = np.array([maxPosX, maxPosY], dtype=np.float32),
                 ) for a in self.possible_agents
             }), # type: ignore
 
@@ -110,8 +110,8 @@ class parallel_env(ParallelEnv):
             # The second part is the shortest path cost from every agent to every node.
             "vertex_distances": spaces.Dict({
                 a: spaces.Box(
-                    low = np.array([0.0] * self.pg.graph.number_of_nodes()),
-                    high = np.array([np.inf] * self.pg.graph.number_of_nodes()),
+                    low = np.array([0.0] * self.pg.graph.number_of_nodes(), dtype=np.float32),
+                    high = np.array([np.inf] * self.pg.graph.number_of_nodes(), dtype=np.float32),
                 ) for a in self.possible_agents
             }) # type: ignore
         }) for agent in self.possible_agents}) # type: ignore
@@ -317,7 +317,7 @@ class parallel_env(ParallelEnv):
             obs_dict[agent] = agent_observation
 
         # Check truncation conditions.
-        if self.max_steps >= 0 and self.step_count >= self.max_steps:
+        if self.max_cycles >= 0 and self.step_count >= self.max_cycles:
             truncated_dict = {a: True for a in self.agents}
             self.agents = []
 
