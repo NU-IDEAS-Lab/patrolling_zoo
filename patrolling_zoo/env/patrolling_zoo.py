@@ -61,7 +61,7 @@ class parallel_env(ParallelEnv):
         # Configuration.
         self.requireExplicitVisit = require_explicit_visit
         self.observationRadius = observation_radius
-        self.maxSteps = max_steps
+        self.max_steps = max_steps
         self.model = model
         self.model_name = model_name
 
@@ -133,7 +133,9 @@ class parallel_env(ParallelEnv):
         self.rewards = dict.fromkeys(self.agents, 0)
         self.dones = dict.fromkeys(self.agents, False)
         
-        return {agent: self.observe(agent) for agent in self.agents}
+        observation = {agent: self.observe(agent) for agent in self.agents}
+        info = {}
+        return observation, info
 
 
     def render(self, figsize=(18, 12)):
@@ -305,15 +307,8 @@ class parallel_env(ParallelEnv):
             # 3 communicaiton models here
             agent_observation= self.observe_with_communication(agent)
             
-
-
-
             # Check if the agent is done
             done_dict[agent] = self.dones[agent]
-
-            # Check for truncation
-            if not self.dones[agent]:
-                truncated_dict[agent] = self.step_count >= self.maxSteps if self.maxSteps is not None else False
 
             # Add any additional information for the agent
             info_dict[agent] = {}
@@ -322,7 +317,7 @@ class parallel_env(ParallelEnv):
             obs_dict[agent] = agent_observation
 
         # Check truncation conditions.
-        if self.maxSteps >= 0 and self.step_count >= self.maxSteps:
+        if self.max_steps >= 0 and self.step_count >= self.max_steps:
             truncated_dict = {a: True for a in self.agents}
             self.agents = []
 
