@@ -295,6 +295,10 @@ class parallel_env(ParallelEnv):
                 else:
                     reward_dict[agent] = 0  # the action was invalid
 
+        # Assign the idleness penalty.
+        for agent in self.agents:
+            reward_dict[agent] -= self.pg.getAverageIdlenessTime(self.step_count)
+        
         # Perform observations.
         for agent in self.agents:
 
