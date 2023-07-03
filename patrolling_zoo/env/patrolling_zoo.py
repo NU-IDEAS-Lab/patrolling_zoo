@@ -12,7 +12,7 @@ from copy import copy
 class PatrolAgent():
     ''' This class stores all agent state. '''
 
-    def __init__(self, id, position=(0.0, 0.0), speed=1.0, observationRadius=np.inf, startingNode=None, currentState = 1):
+    def __init__(self, id, position=(0.0, 0.0), speed = 1.0, observationRadius=np.inf, startingNode=None, currentState = 1):
         self.id = id
         self.name = f"agent_{id}"
         self.startingPosition = position
@@ -39,9 +39,11 @@ class parallel_env(ParallelEnv):
                  model = Comm_model(),
                  model_name = "bernouli_model",
                  require_explicit_visit = True,
+                 speed = 1.0,
+                 alpha = 10,
                  observation_radius = np.inf,
                  max_cycles: int = -1,
-                 reward_shift = 0.0,
+                 reward_shift = None,
                  *args,
                  **kwargs):
         """
@@ -66,12 +68,14 @@ class parallel_env(ParallelEnv):
         self.model_name = model_name
 
         self.reward_shift = reward_shift
+        self.alpha = alpha
 
         # Create the agents with random starting positions.
         startingNodes = random.sample(list(self.pg.graph.nodes), num_agents)
         startingPositions = [self.pg.getNodePosition(i) for i in startingNodes]
         self.possible_agents = [
             PatrolAgent(i, startingPositions[i],
+                        speed = speed,
                         startingNode = startingNodes[i],
                         observationRadius = self.observationRadius
             ) for i in range(num_agents)
@@ -243,7 +247,7 @@ class parallel_env(ParallelEnv):
         '''
         self.step_count += 1
         obs_dict = {}
-        reward_dict = {agent: -0.1 for agent in self.agents}
+        reward_dict = {agent: 0 for agent in self.agents}
         done_dict = {}
         truncated_dict = {agent: False for agent in self.agents}
         info_dict = {}
@@ -289,7 +293,7 @@ class parallel_env(ParallelEnv):
                             if agent.lastNode == dstNode or not self.requireExplicitVisit:
                                 # The agent has reached its destination, visiting the node.
                                 # The agent receives a reward for visiting the node.
-                                reward_dict[agent] += self.onNodeVisit(agent.lastNode, self.step_count, shift=self.reward_shift)
+                                reward_dict[agent] += self.onNodeVisit(agent.lastNode, self.step_count)
                 
                         # The agent has exceeded its movement budget for this step.
                         if stepSize <= 0.0:
@@ -297,9 +301,9 @@ class parallel_env(ParallelEnv):
                 else:
                     reward_dict[agent] = 0  # the action was invalid
 
-        # Assign the idleness penalty.
-        for agent in self.agents:
-            reward_dict[agent] -= self.pg.getAverageIdlenessTime(self.step_count)
+        # # Assign the idleness penalty.
+        # for agent in self.agents:
+        #     reward_dict[agent] -= self.pg.getAverageIdlenessTime(self.step_count)
         
         # Perform observations.
         for agent in self.agents:
@@ -324,11 +328,11 @@ class parallel_env(ParallelEnv):
         return obs_dict, reward_dict, done_dict, truncated_dict, info_dict
 
 
-    def onNodeVisit(self, node, timeStamp, shift = None):
+    def onNodeVisit(self, node, timeStamp):
         ''' Called when an agent visits a node.
             Returns the reward for visiting the node, which is proportional to
             node idleness time. '''
-        if shift is None:
+        if self.reward_shift is None:
             # Method 0 is the one we thaought of by default
             idleTime = self.pg.getNodeIdlenessTime(node, timeStamp) 
             self.pg.setNodeVisitTime(node, timeStamp)
@@ -340,7 +344,7 @@ class parallel_env(ParallelEnv):
             indices = sorted(nodes_idless, key=nodes_idless.get)
             index = indices.index(node)
             self.pg.setNodeVisitTime(node, timeStamp)
-            return max(index - shift * len(indices), 0)
+            return self.alpha**max((index - self.reward_shift * len(indices))/self.pg.graph.number_of_nodes(), 0)
         
 
     

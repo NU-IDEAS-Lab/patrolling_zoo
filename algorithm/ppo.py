@@ -18,6 +18,7 @@ class PPO(BaseAlgorithm):
             vf_coef = 0.1,
             clip_coef = 0.1,
             gamma = 0.99,
+            lr = 0.0001,
             batch_size = 1,
             stack_size = 4,
             frame_size = (64, 64),
@@ -30,6 +31,7 @@ class PPO(BaseAlgorithm):
         self.vf_coef = vf_coef
         self.clip_coef = clip_coef
         self.gamma = gamma
+        self.lr = lr
         self.batch_size = batch_size
         self.stack_size = stack_size
         self.frame_size = frame_size
@@ -42,7 +44,7 @@ class PPO(BaseAlgorithm):
 
         """ LEARNER SETUP """
         self.learner = PPONetwork(num_actions=self.num_actions, num_agents=self.num_agents, observation_size=self.observation_size).to(self.device)
-        self.optimizer = optim.Adam(self.learner.parameters(), lr=1e-3, eps=1e-5)
+        self.optimizer = optim.Adam(self.learner.parameters(), lr=self.lr, eps=1e-5)
     
     def train(self):
         ''' Trains the policy. '''
@@ -74,7 +76,7 @@ class PPO(BaseAlgorithm):
             # collect an episode
             with torch.no_grad():
                 # collect observations and convert to batch of torch tensors
-                next_obs = self.env.reset(seed=None)
+                next_obs, info = self.env.reset(seed=None)
 
                 # reset the episodic return
                 total_episodic_return = 0
@@ -221,7 +223,7 @@ class PPO(BaseAlgorithm):
         with torch.no_grad():
             # render 2 episodes out
             for episode in range(2):
-                obs = self.env.reset(seed=None)
+                obs, info = self.env.reset(seed=None)
                 if render:
                     clear_output(wait=True)
                     self.env.render()
