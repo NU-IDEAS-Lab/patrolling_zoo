@@ -247,7 +247,7 @@ class parallel_env(ParallelEnv):
         '''
         self.step_count += 1
         obs_dict = {}
-        reward_dict = {agent: 0 for agent in self.agents}
+        reward_dict = {agent: 0.0 for agent in self.agents}
         done_dict = {}
         truncated_dict = {agent: False for agent in self.agents}
         info_dict = {}
@@ -294,7 +294,7 @@ class parallel_env(ParallelEnv):
                                 # The agent has reached its destination, visiting the node.
                                 # The agent receives a reward for visiting the node.
                                 reward_dict[agent] += self.onNodeVisit(agent.lastNode, self.step_count)
-                
+                                
                         # The agent has exceeded its movement budget for this step.
                         if stepSize <= 0.0:
                             break
@@ -303,7 +303,7 @@ class parallel_env(ParallelEnv):
 
         # # Assign the idleness penalty.
         # for agent in self.agents:
-        #     reward_dict[agent] -= self.pg.getAverageIdlenessTime(self.step_count)
+        #     reward_dict[agent] += 10/self.pg.getAverageIdlenessTime(self.step_count)
         
         # Perform observations.
         for agent in self.agents:

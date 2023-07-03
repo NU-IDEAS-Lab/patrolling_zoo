@@ -202,7 +202,7 @@ class PPO(BaseAlgorithm):
         
             print(f"Training episode {episode}")
             print(f"Episodic Return: {np.mean(total_episodic_return)}")
-            print(f"Episode Length: {end_step}")
+            print(f"Value Loss: {np.mean(stats['value_loss'])}")
             print("")
 
             # Store episode statistics.
@@ -260,13 +260,18 @@ class PPONetwork(nn.Module):
             # nn.MaxPool2d(2),
             # nn.ReLU(),
             # nn.Flatten(),
-            self._layer_init(nn.Linear(observation_size, 512)),
-            nn.ReLU(),      
-            self._layer_init(nn.Linear(512, 512)),
+            self._layer_init(nn.Linear(observation_size, 2048)),
+            nn.ReLU(),  
+            self._layer_init(nn.Linear(2048, 2048)),
             nn.ReLU(),
+            self._layer_init(nn.Linear(2048, 2048)),
+            nn.ReLU(),
+            self._layer_init(nn.Linear(2048, 256)),
+            nn.ReLU(),
+
         )
-        self.actor = self._layer_init(nn.Linear(512, num_actions), std=0.01)
-        self.critic = self._layer_init(nn.Linear(512, 1))
+        self.actor = self._layer_init(nn.Linear(256, num_actions), std=0.01)
+        self.critic = self._layer_init(nn.Linear(256, 1))
 
     def _layer_init(self, layer, std=np.sqrt(2), bias_const=0.0):
         torch.nn.init.orthogonal_(layer.weight, std)
