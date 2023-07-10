@@ -1,5 +1,5 @@
 from pettingzoo.utils.env import ParallelEnv
-from patrolling_zoo.env.communication_model import Comm_model
+from patrolling_zoo.env.communication_model import CommunicationModel
 from gymnasium import spaces
 import random
 import numpy as np
@@ -36,8 +36,7 @@ class parallel_env(ParallelEnv):
     }
 
     def __init__(self, patrol_graph, num_agents,
-                 model = Comm_model(),
-                 model_name = "bernouli_model",
+                 comms_model = CommunicationModel(model = "bernoulli"),
                  require_explicit_visit = True,
                  speed = 1.0,
                  alpha = 10,
@@ -64,8 +63,7 @@ class parallel_env(ParallelEnv):
         self.requireExplicitVisit = require_explicit_visit
         self.observationRadius = observation_radius
         self.max_cycles = max_cycles
-        self.model = model
-        self.model_name = model_name
+        self.comms_model = comms_model
 
         self.reward_shift = reward_shift
         self.alpha = alpha
@@ -379,22 +377,16 @@ class parallel_env(ParallelEnv):
         return np.sqrt(np.power(pos1[0] - pos2[0], 2) + np.power(pos1[1] - pos2[1], 2))
     
 
-    # impletment 3 communication models here 
     def observe_with_communication(self, agent):
+        ''' Adds communicated states to the agent's observation. '''
+
         other_agents = [temp for temp in self.agents if temp != agent ]
         agent_observation = self.observe(agent)
 
         for a in other_agents:
-            if self.model_name == "bernouli_model":
-                receive_obs = self.model.bernouli_model()
-            elif self.model_name == "Gil_el_model":
-                receive_obs = self.model.Gil_el_model(agent)
-            else:
-                receive_obs = self.model.path_loss_model(agent, a)
+            receive_obs = self.comms_model.canReceive(a, agent)
 
             if receive_obs:
                 agent_observation["agent_state"][a] = a.position
-
-
 
         return agent_observation

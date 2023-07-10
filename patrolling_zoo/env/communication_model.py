@@ -1,8 +1,9 @@
 import math
 import random 
 
-class Comm_model():
-    def __init__(self, p=0.7, alpha=0.3, beta=0.7, gamma=3, pt = 30.0, ps=-65.0):
+class CommunicationModel():
+    def __init__(self, model, p=0.7, alpha=0.3, beta=0.7, gamma=3, pt = 30.0, ps=-65.0):
+        self.model = model
         self.p = p
         self.alpha =alpha
         self.beta = beta
@@ -11,7 +12,18 @@ class Comm_model():
         self.ps = ps
 
 
-    def bernouli_model(self):
+    def canReceive(self, agentA, agentB):
+        ''' Determines whether agentB can receive a message from agentA. '''
+
+        if self.model == "bernoulli":
+            return self.bernoulli_model()
+        elif self.model == "gilbert_elliot":
+            return self.Gil_el_model(agentB)
+        else:
+            return self.path_loss_model(agentA, agentB)
+
+
+    def bernoulli_model(self):
         if random.random()< self.p:
             return True
         else:
