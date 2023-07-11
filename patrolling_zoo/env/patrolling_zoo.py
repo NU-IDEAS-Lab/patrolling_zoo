@@ -82,7 +82,7 @@ class parallel_env(ParallelEnv):
         ]
 
         # Create the action space.
-        self.action_spaces = {agent: spaces.Discrete(len(self.pg.graph)) for agent in self.possible_agents}
+        self.action_spaces = spaces.Dict({agent: spaces.Discrete(len(self.pg.graph)) for agent in self.possible_agents})
 
         # Get graph bounds in Euclidean space.
         pos = nx.get_node_attributes(self.pg.graph, 'pos')
@@ -92,7 +92,7 @@ class parallel_env(ParallelEnv):
         maxPosY = max(pos[p][1] for p in pos)
 
         # Create the observation space.
-        self.observation_spaces = spaces.Dict({agent: spaces.Dict({
+        self.observation_spaces = spaces.Dict({
 
             # The agent state is the position of each agent.
             "agent_state": spaces.Dict({
@@ -110,15 +110,8 @@ class parallel_env(ParallelEnv):
                     high = np.inf,
                 ) for v in range(self.pg.graph.number_of_nodes())
             }), # type: ignore
+        })
 
-            # The second part is the shortest path cost from every agent to every node.
-            "vertex_distances": spaces.Dict({
-                a: spaces.Box(
-                    low = np.array([0.0] * self.pg.graph.number_of_nodes(), dtype=np.float32),
-                    high = np.array([np.inf] * self.pg.graph.number_of_nodes(), dtype=np.float32),
-                ) for a in self.possible_agents
-            }) # type: ignore
-        }) for agent in self.possible_agents}) # type: ignore
 
 
     def reset(self, seed=None, options=None):
@@ -137,9 +130,10 @@ class parallel_env(ParallelEnv):
         self.rewards = dict.fromkeys(self.agents, 0)
         self.dones = dict.fromkeys(self.agents, False)
         
-        observation = {agent: self.observe(agent) for agent in self.agents}
+        observation = self.observe()
         info = {}
-        return observation, info
+
+        return observation
 
 
     def render(self, figsize=(18, 12)):
@@ -185,9 +179,9 @@ class parallel_env(ParallelEnv):
         plt.show()
 
 
-    def observation_space(self, agent):
+    def observation_space(self):
         ''' Returns the observation space for the given agent. '''
-        return self.observation_spaces[agent]
+        return self.observation_spaces
 
 
     def action_space(self, agent):
@@ -200,28 +194,7 @@ class parallel_env(ParallelEnv):
         
         raise NotImplementedError()
 
-    def observe(self, agent):
-        ''' Returns the observation for the given agent.'''
-
-        agents = [a for a in self.agents if self._dist(a.position, agent.position) <= agent.observationRadius]
-        vertices = [v for v in self.pg.graph.nodes if self._dist(self.pg.getNodePosition(v), agent.position) <= agent.observationRadius]
-
-        # Calculate the shortest path distances from each agent to each node.
-        vertexDistances = {}
-        for a in agents:
-            vDists = nx.shortest_path_length(self.pg.graph,
-                                  source=self.pg.getNearestNode(a.position),
-                                  weight='weight'
-            )
-            vertexDistances[a] = np.array([vDists[v] for v in self.pg.graph.nodes])
-
-        return {
-            "agent_state": {a: a.position for a in agents},
-            "vertex_state": {v: self.pg.getNodeIdlenessTime(v, self.step_count) for v in vertices},
-            "vertex_distances": vertexDistances
-        }
-
-    def global_observation(self):
+    def observe(self):
 
         obs = {
             "agent_state": {a: a.position for a in self.agents},
@@ -229,7 +202,6 @@ class parallel_env(ParallelEnv):
         }
         
         return obs
-
 
 
     def step(self, action_dict={}):
@@ -246,7 +218,6 @@ class parallel_env(ParallelEnv):
             info_dict (dict): A dictionary containing additional information for each agent.
         '''
         self.step_count += 1
-        obs_dict = {}
         reward_dict = {agent: 0.0 for agent in self.agents}
         done_dict = {}
         truncated_dict = {agent: False for agent in self.agents}
@@ -308,8 +279,6 @@ class parallel_env(ParallelEnv):
         # Perform observations.
         for agent in self.agents:
 
-            # 3 communicaiton models here
-            agent_observation= self.observe_with_communication(agent)
             
             # Check if the agent is done
             done_dict[agent] = self.dones[agent]
@@ -325,7 +294,7 @@ class parallel_env(ParallelEnv):
             truncated_dict = {a: True for a in self.agents}
             self.agents = []
 
-        return obs_dict, reward_dict, done_dict, truncated_dict, info_dict
+        return self.observe(), reward_dict, done_dict, truncated_dict, info_dict
 
 
     def onNodeVisit(self, node, timeStamp):
@@ -382,7 +351,7 @@ class parallel_env(ParallelEnv):
     # impletment 3 communication models here 
     def observe_with_communication(self, agent):
         other_agents = [temp for temp in self.agents if temp != agent ]
-        agent_observation = self.observe(agent)
+        agent_observation = self.observe()
 
         for a in other_agents:
             if self.model_name == "bernouli_model":

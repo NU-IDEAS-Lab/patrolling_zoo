@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.distributions.categorical import Categorical
 import numpy as np
+import time
 from IPython.display import clear_output
 
 
@@ -22,31 +23,37 @@ class PPO(BaseAlgorithm):
             batch_size = 32,
             stack_size = 4,
             frame_size = (64, 64),
-            max_cycles = 500,
-            total_episodes = 40
+            num_steps = 500,
+            total_episodes = 40,
+            gae_lambda = 0.95,
+            update_epochs = 4,
         ):
         super().__init__(env, device)
 
+
+        self.num_env = 1
+    
         self.ent_coef = ent_coef
         self.vf_coef = vf_coef
         self.clip_coef = clip_coef
         self.gamma = gamma
+        self.gae_lambda = gae_lambda
         self.lr = lr
         self.batch_size = batch_size
+        self.update_epochs = update_epochs
         self.stack_size = stack_size
         self.frame_size = frame_size
-        self.max_cycles = max_cycles
+        self.num_steps = num_steps
         self.total_episodes = total_episodes
 
         self.num_agents = len(env.possible_agents)
         self.num_actions = env.action_space(env.possible_agents[0]).n
-        self.observation_size = flatten_space(env.observation_space(env.possible_agents[0])).shape[0]
+        self.observation_size = self.env.pg.graph.number_of_nodes()+ self.num_agents*2
 
-        """ LEARNER SETUP """
-        self.learner = PPONetwork(num_actions=self.num_actions, num_agents=self.num_agents, observation_size=self.observation_size).to(self.device)
-        self.optimizer = optim.Adam(self.learner.parameters(), lr=self.lr, eps=1e-5)
     
     def train(self):
+
+        device = self.device
         ''' Trains the policy. '''
 
         # Stats storage
@@ -61,124 +68,120 @@ class PPO(BaseAlgorithm):
             "clip_frac": [],
         }
 
-        """ ALGO LOGIC: EPISODE STORAGE"""
-        end_step = 0
-        total_episodic_return = 0
-        rb_obs = torch.zeros((self.max_cycles, self.num_agents, self.observation_size)).to(self.device)
-        rb_actions = torch.zeros((self.max_cycles, self.num_agents)).to(self.device)
-        rb_logprobs = torch.zeros((self.max_cycles, self.num_agents)).to(self.device)
-        rb_rewards = torch.zeros((self.max_cycles, self.num_agents)).to(self.device)
-        rb_terms = torch.zeros((self.max_cycles, self.num_agents)).to(self.device)
-        rb_values = torch.zeros((self.max_cycles, self.num_agents)).to(self.device)
+        # ALGO Logic: Storage setup
+        obs = torch.zeros((self.num_steps, self.num_env) + (self.observation_size,)).to(device)
+        print(obs.shape)
+        print(obs)
+        actions = torch.zeros((self.num_steps, self.num_env) + (self.num_agents,)).to(device)
+        logprobs = torch.zeros((self.num_steps, self.num_env)+ (self.num_agents,)).to(device)
+        rewards = torch.zeros((self.num_steps, self.num_env)+ (self.num_agents,)).to(device)
+        dones = torch.zeros((self.num_steps, self.num_env)+ (self.num_agents,)).to(device)
+        values = torch.zeros((self.num_steps, self.num_env)+ (self.num_agents,)).to(device)
 
-        # train for n number of episodes
-        for episode in range(self.total_episodes):
-            # collect an episode
-            with torch.no_grad():
-                # collect observations and convert to batch of torch tensors
-                next_obs, info = self.env.reset(seed=None)
+        # TRY NOT TO MODIFY: start the game
+        global_step = 0
+        start_time = time.time()
+        next_obs = torch.Tensor(serialize_obs(self.env.reset())).to(device)
+        next_done = torch.zeros(self.num_env).to(device)
+        num_updates = self.total_timesteps // self.batch_size
 
-                # reset the episodic return
-                total_episodic_return = 0
+        for update in range(1, num_updates + 1):
+            # Annealing the rate if instructed to do so.
+            if self.anneal_lr:
+                frac = 1.0 - (update - 1.0) / num_updates
+                lrnow = frac * self.learning_rate
+                optimizer.param_groups[0]["lr"] = lrnow
 
-                # each episode has num_steps
-                for step in range(0, self.max_cycles):
-                    # rollover the observation
-                    
-                    obs = self.learner.batchify_obs(self.env.observation_space(self.env.possible_agents[0]), next_obs, self.device)
+            for step in range(0, self.num_steps):
+                global_step += 1 * self.num_env
+                obs[step] = next_obs
+                dones[step] = next_done
 
-                    actions, logprobs, _, values = self.learner.get_action_and_value(obs)
+                # ALGO LOGIC: action logic
+                with torch.no_grad():
+                    action, logprob, _, value = agent.get_action_and_value(next_obs)
+                    values[step] = value.flatten()
+                actions[step] = action
+                logprobs[step] = logprob
 
-                    # execute the environment and log data
-                    next_obs, rewards, terms, truncs, infos = self.env.step(
-                        self.learner.unbatchify(actions, self.env)
-                    )
+                # TRY NOT TO MODIFY: execute the game and log data.
+                next_obs, reward, done, info = self.env.step(action.cpu().numpy())
+                rewards[step] = torch.tensor(reward).to(device).view(-1)
+                next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(done).to(device)
 
-                    # add to episode storage
-                    rb_obs[step] = torch.reshape(obs, (self.num_agents, self.observation_size))
-                    rb_rewards[step] = self.learner.batchify(rewards, self.device)
-                    rb_terms[step] = self.learner.batchify(terms, self.device)
-                    rb_actions[step] = actions
-                    rb_logprobs[step] = logprobs
-                    rb_values[step] = values.flatten()
-
-                    # compute episodic return
-                    total_episodic_return += rb_rewards[step].cpu().numpy()
-
-                    # if we reach termination or truncation, end
-                    if any([terms[a] for a in terms]) or any([truncs[a] for a in truncs]):
-                        end_step = step
+                for item in info:
+                    if "episode" in item.keys():
+                        print(f"global_step={global_step}, episodic_return={item['episode']['r']}")
+                        writer.add_scalar("charts/episodic_return", item["episode"]["r"], global_step)
+                        writer.add_scalar("charts/episodic_length", item["episode"]["l"], global_step)
                         break
 
             # bootstrap value if not done
             with torch.no_grad():
-                rb_advantages = torch.zeros_like(rb_rewards).to(self.device)
-                for t in reversed(range(end_step)):
-                    delta = (
-                        rb_rewards[t]
-                        + self.gamma * rb_values[t + 1] * rb_terms[t + 1]
-                        - rb_values[t]
-                    )
-                    rb_advantages[t] = delta + self.gamma * self.gamma * rb_advantages[t + 1]
-                rb_returns = rb_advantages + rb_values
+                next_value = agent.get_value(next_obs).reshape(1, -1)
+                advantages = torch.zeros_like(rewards).to(device)
+                lastgaelam = 0
+                for t in reversed(range(self.num_steps)):
+                    if t == self.num_steps - 1:
+                        nextnonterminal = 1.0 - next_done
+                        nextvalues = next_value
+                    else:
+                        nextnonterminal = 1.0 - dones[t + 1]
+                        nextvalues = values[t + 1]
+                    delta = rewards[t] + self.gamma * nextvalues * nextnonterminal - values[t]
+                    advantages[t] = lastgaelam = delta + self.gamma * self.gae_lambda * nextnonterminal * lastgaelam
+                returns = advantages + values
 
-            # convert our episodes to batch of individual transitions
-            b_obs = torch.flatten(rb_obs[:end_step], start_dim=0, end_dim=1)
-            b_logprobs = torch.flatten(rb_logprobs[:end_step], start_dim=0, end_dim=1)
-            b_actions = torch.flatten(rb_actions[:end_step], start_dim=0, end_dim=1)
-            b_returns = torch.flatten(rb_returns[:end_step], start_dim=0, end_dim=1)
-            b_values = torch.flatten(rb_values[:end_step], start_dim=0, end_dim=1)
-            b_advantages = torch.flatten(rb_advantages[:end_step], start_dim=0, end_dim=1)
+            # flatten the batch
+            b_obs = obs.reshape((-1,) + self.env.single_observation_space.shape)
+            b_logprobs = logprobs.reshape(-1)
+            b_actions = actions.reshape((-1,) + self.env.single_action_space.shape)
+            b_advantages = advantages.reshape(-1)
+            b_returns = returns.reshape(-1)
+            b_values = values.reshape(-1)
 
             # Optimizing the policy and value network
-            b_index = np.arange(len(b_obs))
-            clip_fracs = []
-            for repeat in range(3):
-                # shuffle the indices we use to access the data
-                np.random.shuffle(b_index)
-                for start in range(0, len(b_obs), self.batch_size):
-                    # select the indices we want to train on
-                    end = start + self.batch_size
-                    batch_index = b_index[start:end]
+            b_inds = np.arange(self.batch_size)
+            clipfracs = []
+            for epoch in range(self.update_epochs):
+                np.random.shuffle(b_inds)
+                for start in range(0, self.batch_size, self.minibatch_size):
+                    end = start + self.minibatch_size
+                    mb_inds = b_inds[start:end]
 
-                    _, newlogprob, entropy, value = self.learner.get_action_and_value(
-                        b_obs[batch_index], b_actions.long()[batch_index]
-                    )
-                    logratio = newlogprob - b_logprobs[batch_index]
+                    _, newlogprob, entropy, newvalue = agent.get_action_and_value(b_obs[mb_inds], b_actions.long()[mb_inds])
+                    logratio = newlogprob - b_logprobs[mb_inds]
                     ratio = logratio.exp()
 
                     with torch.no_grad():
                         # calculate approx_kl http://joschu.net/blog/kl-approx.html
                         old_approx_kl = (-logratio).mean()
                         approx_kl = ((ratio - 1) - logratio).mean()
-                        clip_fracs += [
-                            ((ratio - 1.0).abs() > self.clip_coef).float().mean().item()
-                        ]
+                        clipfracs += [((ratio - 1.0).abs() > self.clip_coef).float().mean().item()]
 
-                    # normalize advantaegs
-                    advantages = b_advantages[batch_index]
-                    advantages = (advantages - advantages.mean()) / (
-                        advantages.std() + 1e-8
-                    )
+                    mb_advantages = b_advantages[mb_inds]
+                    if self.norm_adv:
+                        mb_advantages = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
 
                     # Policy loss
-                    pg_loss1 = -b_advantages[batch_index] * ratio
-                    pg_loss2 = -b_advantages[batch_index] * torch.clamp(
-                        ratio, 1 - self.clip_coef, 1 + self.clip_coef
-                    )
+                    pg_loss1 = -mb_advantages * ratio
+                    pg_loss2 = -mb_advantages * torch.clamp(ratio, 1 - self.clip_coef, 1 + self.clip_coef)
                     pg_loss = torch.max(pg_loss1, pg_loss2).mean()
 
                     # Value loss
-                    value = value.flatten()
-                    v_loss_unclipped = (value - b_returns[batch_index]) ** 2
-                    v_clipped = b_values[batch_index] + torch.clamp(
-                        value - b_values[batch_index],
-                        -self.clip_coef,
-                        self.clip_coef,
-                    )
-                    v_loss_clipped = (v_clipped - b_returns[batch_index]) ** 2
-                    v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
-                    v_loss = 0.5 * v_loss_max.mean()
+                    newvalue = newvalue.view(-1)
+                    if self.clip_vloss:
+                        v_loss_unclipped = (newvalue - b_returns[mb_inds]) ** 2
+                        v_clipped = b_values[mb_inds] + torch.clamp(
+                            newvalue - b_values[mb_inds],
+                            -self.clip_coef,
+                            self.clip_coef,
+                        )
+                        v_loss_clipped = (v_clipped - b_returns[mb_inds]) ** 2
+                        v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
+                        v_loss = 0.5 * v_loss_max.mean()
+                    else:
+                        v_loss = 0.5 * ((newvalue - b_returns[mb_inds]) ** 2).mean()
 
                     entropy_loss = entropy.mean()
                     loss = pg_loss - self.ent_coef * entropy_loss + v_loss * self.vf_coef
@@ -227,13 +230,13 @@ class PPO(BaseAlgorithm):
                 if render:
                     clear_output(wait=True)
                     self.env.render()
-                obs = self.learner.batchify_obs(self.env.observation_space(self.env.possible_agents[0]), obs, self.device)
+                obs = self.learner.batchify_obs(obs)
                 terms = [False]
                 truncs = [False]
                 while not any(terms) and not any(truncs):
                     actions, logprobs, _, values = self.learner.get_action_and_value(obs)
                     obs, rewards, terms, truncs, infos = self.env.step(self.learner.unbatchify(actions, self.env))
-                    obs = self.learner.batchify_obs(self.env.observation_space(self.env.possible_agents[0]), obs, self.device)
+                    obs = self.learner.batchify_obs(obs)
                     terms = [terms[a] for a in terms]
                     truncs = [truncs[a] for a in truncs]
                     if render:
@@ -241,95 +244,57 @@ class PPO(BaseAlgorithm):
                         self.env.render()
 
 
-class PPONetwork(nn.Module):
-    def __init__(self, num_actions, num_agents, observation_size):
+def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
+    torch.nn.init.orthogonal_(layer.weight, std)
+    torch.nn.init.constant_(layer.bias, bias_const)
+    return layer
+
+def serialize_obs(obs):
+    agent_states = torch.tensor([list(val) for val in obs['agent_state'].values()])
+    vertex_states = torch.tensor([val for val in obs['vertex_state'].values()])
+    return torch.cat((agent_states.view(-1), vertex_states)).float()
+
+class Agent(nn.Module):
+    def __init__(self, env):
         super().__init__()
-
-        self.num_actions = num_actions
-        self.num_agents = num_agents
-
-
-        self.network = nn.Sequential(
-            # self._layer_init(nn.Conv2d(4, 32, 3, padding=1)),
-            # nn.MaxPool2d(2),
-            # nn.ReLU(),
-            # self._layer_init(nn.Conv2d(32, 64, 3, padding=1)),
-            # nn.MaxPool2d(2),
-            # nn.ReLU(),
-            # self._layer_init(nn.Conv2d(64, 128, 3, padding=1)),
-            # nn.MaxPool2d(2),
-            # nn.ReLU(),
-            # nn.Flatten(),
-            self._layer_init(nn.Linear(observation_size, 4096)),
-            nn.ReLU(),  
-            self._layer_init(nn.Linear(4096, 2048)),
-            nn.ReLU(),
-            self._layer_init(nn.Linear(2048, 2048)),
-            nn.ReLU(),
-            self._layer_init(nn.Linear(2048, 256)),
-            nn.ReLU(),
-
+        self.critic = nn.Sequential(
+            layer_init(nn.Linear(np.array(env.single_observation_space.shape).prod(), 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, 1), std=1.0),
         )
-        self.actor = self._layer_init(nn.Linear(256, num_actions), std=0.01)
-        self.critic = self._layer_init(nn.Linear(256, 1))
-
-    def _layer_init(self, layer, std=np.sqrt(2), bias_const=0.0):
-        torch.nn.init.orthogonal_(layer.weight, std)
-        torch.nn.init.constant_(layer.bias, bias_const)
-        return layer
+        self.actor = nn.Sequential(
+            layer_init(nn.Linear(np.array(env.single_observation_space.shape).prod(), 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, 64)),
+            nn.Tanh(),
+            layer_init(nn.Linear(64, env.single_action_space.n), std=0.01),
+        )
 
     def get_value(self, x):
-        return self.critic(self.network(x / 255.0))
+        return self.critic(x)
 
     def get_action_and_value(self, x, action=None):
-        hidden = self.network(x / 255.0)
-        logits = self.actor(hidden)
-        total_probs =Categorical(logits=logits)
-        #split the (3,40) logits into 3 (1,40) logits for every agents
-        splits_logits = torch.split(logits, split_size_or_sections=1, dim=0)
+        logits = self.actor(x)
+        probs = Categorical(logits=logits)
         if action is None:
-            action = []
-            logprobs = []
-            entropy = []
-            for i in range(self.num_agents):
-                split_logits = splits_logits[i]
-                probs = Categorical(logits= split_logits)
-                temp = probs.sample()
-                action.append(temp.item())
-                logprobs.append(probs.log_prob(temp).item())
-                entropy.append(probs.entropy().item())
-            logprobs = torch.tensor(logprobs)
-            action = torch.tensor(action)
-            entropy = torch.tensor(entropy)
-            return action, logprobs, entropy, self.critic(hidden)
-        return action, total_probs.log_prob(action), total_probs.entropy(), self.critic(hidden)
+            action = probs.sample()
+        return action, probs.log_prob(action), probs.entropy(), self.critic(x)
 
 
-    def batchify_obs(self, obs_space, obs, device):
-        """Converts PZ style observations to batch of torch arrays."""
-        # convert to list of np arrays
 
-        #np.stack is a method that concencate the tensors along the new axis
-        obs = np.stack([flatten(obs_space, obs[a]) for a in obs], axis=0)
-        # convert to torch
-        obs = torch.tensor(obs).to(device)
+        logprobs = []
+        for i in range(action.shape[0]): # loop over the batch dimension
+            single_action = action[i] # get a single action of shape (3,)
+            single_logits = logits[i] # get the corresponding logits
+            total_probs = torch.distributions.Categorical(logits=single_logits)
+            logprob = total_probs.log_prob(single_action)
+            logprobs.append(logprob)
+            
+        # After the loop, you might want to stack the list of tensors into a single tensor:
+        logprobs = torch.stack(logprobs)
 
-        return obs
-
-
-    def batchify(self, x, device):
-        """Converts PZ style returns to batch of torch arrays."""
-        # convert to list of np arrays
-        x = np.stack([x[a] for a in x], axis=0)
-        # convert to torch
-        x = torch.tensor(x).to(device)
-
-        return x
+        return action, logprobs, total_probs.entropy(), self.critic(hidden)
 
 
-    def unbatchify(self, x, env):
-        """Converts np array to PZ style arguments."""
-        x = x.cpu().numpy()
-        x = {a: x[i] for i, a in enumerate(env.possible_agents)}
-
-        return x
