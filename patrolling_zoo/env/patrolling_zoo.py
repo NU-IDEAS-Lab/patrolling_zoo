@@ -122,12 +122,19 @@ class parallel_env(ParallelEnv):
     def reset(self, seed=None, options=None):
         ''' Sets the environment to its initial state. '''
 
+        if seed != None:
+            random.seed(seed)
+
         # Reset the graph.
         self.pg.reset()
 
         # Reset the agents.
+        startingNodes = random.sample(list(self.pg.graph.nodes), len(self.possible_agents))
+        startingPositions = [self.pg.getNodePosition(i) for i in startingNodes]
         self.agents = copy(self.possible_agents)
         for agent in self.possible_agents:
+            agent.startingPosition = startingPositions[agent.id]
+            agent.startingNode = startingNodes[agent.id]
             agent.reset()
         
         # Reset other state.
