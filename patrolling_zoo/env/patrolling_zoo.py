@@ -147,7 +147,7 @@ class parallel_env(ParallelEnv):
         return observation, info
 
 
-    def render(self, figsize=(18, 12)):
+    def render(self, figsize=(9, 6)):
         ''' Renders the environment.
             
             Args:
@@ -186,7 +186,7 @@ class parallel_env(ParallelEnv):
             plt.plot([], [], color=color, marker=marker, linestyle='None', label=agent.name, alpha=0.5)
 
         plt.legend()
-        plt.text(0,0,f'Current step: {self.step_count}, Average idleness time: {self.pg.getAverageIdlenessTime(self.step_count)}')
+        plt.gcf().text(0,0,f'Current step: {self.step_count}, Average idleness time: {self.pg.getAverageIdlenessTime(self.step_count)}')
         plt.show()
 
 
