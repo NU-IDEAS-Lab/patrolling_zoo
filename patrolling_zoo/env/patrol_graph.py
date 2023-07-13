@@ -1,3 +1,4 @@
+import numpy as np
 import networkx as nx
 import math
 import matplotlib.pyplot as plt
@@ -38,9 +39,14 @@ class PatrolGraph():
                 for _ in range(numEdges):
                     j = int(file.readline())
                     direction = str(file.readline()) # not useful!
-                    cost = int(file.readline())
-                    self.graph.add_edge(i, j, weight = cost)
-
+                    cost = int(file.readline()) # we no longer use this cost value, as it does not correspond to the actual euclidean distance.
+                    self.graph.add_edge(i, j)
+        
+        # Set a weight on each edge which corresponds to the actual euclidean distance.
+        for edge in self.graph.edges:
+            i = edge[0]
+            j = edge[1]
+            self.graph.edges[i, j]["weight"] = self._dist(self.graph.nodes[i]["pos"], self.graph.nodes[j]["pos"])
 
     def reset(self):
         ''' Resets the graph to initial state. '''
@@ -126,20 +132,7 @@ class PatrolGraph():
             origins.append(self.getNearestNode(pos))
         return origins
     
+    def _dist(self, pos1, pos2):
+        ''' Calculates the Euclidean distance between two points. '''
 
-    def PlotGraph(self, figsize=(18, 12)):
-        """
-        PlotGraph function plots the graph using matplotlib and networkx libraries.
-
-        Args:
-            figsize (tuple, optional): The size of the figure in inches. Defaults to (18, 12).
-
-        Returns:
-            None
-        """
-        fig, ax = plt.subplots(figsize=figsize)
-        pos = nx.get_node_attributes(self.graph, 'pos')
-        edge_labels = nx.get_edge_attributes(self.graph, 'weight')
-        nx.draw_networkx(self.graph, pos, with_labels=True, node_color='lightblue', node_size=600,font_size=10, font_color='black')
-        nx.draw_networkx_edge_labels(self.graph, pos, edge_labels=edge_labels, font_size=7)
-        # After executing the function do not forget plt.show()
+        return np.sqrt(np.power(pos1[0] - pos2[0], 2) + np.power(pos1[1] - pos2[1], 2))
