@@ -19,15 +19,20 @@ class PPO(BaseAlgorithm):
             vf_coef = 0.1,
             clip_coef = 0.1,
             gamma = 0.99,
-            lr = 0.0001,
+            learning_rate = 0.0001,
             batch_size = 32,
             stack_size = 4,
             frame_size = (64, 64),
             num_steps = 500,
-            total_episodes = 40,
+            total_timesteps = 100,
             gae_lambda = 0.95,
             update_epochs = 4,
+            anneal_lr = True,
+            num_minibatches = 4,
+            norm_adv = True,
+            clip_vloss = True,
         ):
+        
         super().__init__(env, device)
 
 
@@ -38,21 +43,25 @@ class PPO(BaseAlgorithm):
         self.clip_coef = clip_coef
         self.gamma = gamma
         self.gae_lambda = gae_lambda
-        self.lr = lr
+        self.learning_rate = learning_rate
         self.batch_size = batch_size
         self.update_epochs = update_epochs
         self.stack_size = stack_size
         self.frame_size = frame_size
         self.num_steps = num_steps
-        self.total_episodes = total_episodes
+        self.total_timesteps = total_timesteps
+        self.anneal_lr = anneal_lr
+        self.num_minibatches = num_minibatches
+        self.minibatch_size =  int(self.batch_size // self.num_minibatches)
+        self.norm_adv = norm_adv
+        self.clip_vloss = clip_vloss
 
         self.num_agents = len(env.possible_agents)
-        self.num_actions = env.action_space(env.possible_agents[0]).n
-        self.observation_size = self.env.pg.graph.number_of_nodes()+ self.num_agents*2
 
     
     def train(self):
-
+        
+        env = self.env
         device = self.device
         ''' Trains the policy. '''
 
@@ -68,20 +77,21 @@ class PPO(BaseAlgorithm):
             "clip_frac": [],
         }
 
+        agent = Agent(env).to(device)
+        optimizer = optim.Adam(agent.parameters(), lr=self.learning_rate, eps=1e-5)
+
         # ALGO Logic: Storage setup
-        obs = torch.zeros((self.num_steps, self.num_env) + (self.observation_size,)).to(device)
-        print(obs.shape)
-        print(obs)
-        actions = torch.zeros((self.num_steps, self.num_env) + (self.num_agents,)).to(device)
-        logprobs = torch.zeros((self.num_steps, self.num_env)+ (self.num_agents,)).to(device)
-        rewards = torch.zeros((self.num_steps, self.num_env)+ (self.num_agents,)).to(device)
-        dones = torch.zeros((self.num_steps, self.num_env)+ (self.num_agents,)).to(device)
-        values = torch.zeros((self.num_steps, self.num_env)+ (self.num_agents,)).to(device)
+        obs = torch.zeros((self.num_steps,)+ env.observation_space.shape).to(device)
+        actions = torch.zeros((self.num_steps, self.num_agents)).to(device)
+        logprobs = torch.zeros((self.num_steps, self.num_agents,)).to(device)
+        rewards = torch.zeros((self.num_steps, self.num_agents,)).to(device)
+        dones = torch.zeros((self.num_steps, self.num_agents,)).to(device)
+        values = torch.zeros((self.num_steps, self.num_agents,)).to(device)
 
         # TRY NOT TO MODIFY: start the game
         global_step = 0
         start_time = time.time()
-        next_obs = torch.Tensor(serialize_obs(self.env.reset())).to(device)
+        next_obs = torch.Tensor(self.env.reset()).to(device)
         next_done = torch.zeros(self.num_env).to(device)
         num_updates = self.total_timesteps // self.batch_size
 
@@ -103,7 +113,7 @@ class PPO(BaseAlgorithm):
                     values[step] = value.flatten()
                 actions[step] = action
                 logprobs[step] = logprob
-
+                
                 # TRY NOT TO MODIFY: execute the game and log data.
                 next_obs, reward, done, info = self.env.step(action.cpu().numpy())
                 rewards[step] = torch.tensor(reward).to(device).view(-1)
@@ -115,7 +125,7 @@ class PPO(BaseAlgorithm):
                         writer.add_scalar("charts/episodic_return", item["episode"]["r"], global_step)
                         writer.add_scalar("charts/episodic_length", item["episode"]["l"], global_step)
                         break
-
+            
             # bootstrap value if not done
             with torch.no_grad():
                 next_value = agent.get_value(next_obs).reshape(1, -1)
@@ -133,12 +143,12 @@ class PPO(BaseAlgorithm):
                 returns = advantages + values
 
             # flatten the batch
-            b_obs = obs.reshape((-1,) + self.env.single_observation_space.shape)
-            b_logprobs = logprobs.reshape(-1)
-            b_actions = actions.reshape((-1,) + self.env.single_action_space.shape)
-            b_advantages = advantages.reshape(-1)
-            b_returns = returns.reshape(-1)
-            b_values = values.reshape(-1)
+            b_obs = obs.reshape((-1,) + self.env.observation_space.shape)
+            b_logprobs = logprobs.reshape(-1, self.num_agents)
+            b_actions = actions.reshape(-1, self.num_agents)
+            b_advantages = advantages.reshape(-1, self.num_agents)
+            b_returns = returns.reshape(-1, self.num_agents)
+            b_values = values.reshape(-1, self.num_agents)
 
             # Optimizing the policy and value network
             b_inds = np.arange(self.batch_size)
@@ -169,7 +179,7 @@ class PPO(BaseAlgorithm):
                     pg_loss = torch.max(pg_loss1, pg_loss2).mean()
 
                     # Value loss
-                    newvalue = newvalue.view(-1)
+                    newvalue = newvalue.view(-1,3)
                     if self.clip_vloss:
                         v_loss_unclipped = (newvalue - b_returns[mb_inds]) ** 2
                         v_clipped = b_values[mb_inds] + torch.clamp(
@@ -195,9 +205,9 @@ class PPO(BaseAlgorithm):
                     stats["clip_frac"] += [np.mean(clip_fracs)]
 
                     # Take gradient step.
-                    self.optimizer.zero_grad()
+                    optimizer.zero_grad()
                     loss.backward()
-                    self.optimizer.step()
+                    optimizer.step()
 
             y_pred, y_true = b_values.cpu().numpy(), b_returns.cpu().numpy()
             var_y = np.var(y_true)
@@ -258,18 +268,18 @@ class Agent(nn.Module):
     def __init__(self, env):
         super().__init__()
         self.critic = nn.Sequential(
-            layer_init(nn.Linear(np.array(env.single_observation_space.shape).prod(), 64)),
+            layer_init(nn.Linear(np.array(env.observation_space.shape).prod(), 64)),
             nn.Tanh(),
             layer_init(nn.Linear(64, 64)),
             nn.Tanh(),
-            layer_init(nn.Linear(64, 1), std=1.0),
+            layer_init(nn.Linear(64, 3), std=1.0),
         )
         self.actor = nn.Sequential(
-            layer_init(nn.Linear(np.array(env.single_observation_space.shape).prod(), 64)),
+            layer_init(nn.Linear(np.array(env.observation_space.shape).prod(), 64)),
             nn.Tanh(),
             layer_init(nn.Linear(64, 64)),
             nn.Tanh(),
-            layer_init(nn.Linear(64, env.single_action_space.n), std=0.01),
+            layer_init(nn.Linear(64, env.action_space.n), std=0.01),
         )
 
     def get_value(self, x):
@@ -277,10 +287,24 @@ class Agent(nn.Module):
 
     def get_action_and_value(self, x, action=None):
         logits = self.actor(x)
-        probs = Categorical(logits=logits)
+        logits = logits.view(-1, 3, 40)  # Reshape logits to size n*3*40
+        n = logits.shape[0] # get the batch size
         if action is None:
-            action = probs.sample()
-        return action, probs.log_prob(action), probs.entropy(), self.critic(x)
+            action = Categorical(logits=logits).sample()
+        else:
+            action = action.view(n, -1)  # Reshape the action tensor if provided
+        logprobs = []
+        for i in range(n): # loop over the batch dimension
+            single_action = action[i] # get a single action of shape (3,)
+            single_logits = logits[i] # get the corresponding logits
+            total_probs = Categorical(logits=single_logits)
+            logprob = total_probs.log_prob(single_action)
+            logprobs.append(logprob)
+        # After the loop, you might want to stack the list of tensors into a single tensor:
+        logprobs = torch.stack(logprobs)
+        entropy = Categorical(logits=logits).entropy().mean()  # Get mean entropy over the batch
+        value = self.critic(x)
+        return action, logprobs, entropy, value
 
 
 

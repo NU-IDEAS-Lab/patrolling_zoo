@@ -8,7 +8,6 @@ from matplotlib import pyplot as plt
 import networkx as nx
 from copy import copy
 
-
 class PatrolAgent():
     ''' This class stores all agent state. '''
 
@@ -70,6 +69,7 @@ class parallel_env(ParallelEnv):
         self.reward_shift = reward_shift
         self.alpha = alpha
 
+
         # Create the agents with random starting positions.
         startingNodes = random.sample(list(self.pg.graph.nodes), num_agents)
         startingPositions = [self.pg.getNodePosition(i) for i in startingNodes]
@@ -80,9 +80,10 @@ class parallel_env(ParallelEnv):
                         observationRadius = self.observationRadius
             ) for i in range(num_agents)
         ]
+        self.agents = copy(self.possible_agents)
 
         # Create the action space.
-        self.action_spaces = spaces.Dict({agent: spaces.Discrete(len(self.pg.graph)) for agent in self.possible_agents})
+        self.action_space = spaces.Discrete(self.pg.graph.number_of_nodes()* num_agents)
 
         # Get graph bounds in Euclidean space.
         pos = nx.get_node_attributes(self.pg.graph, 'pos')
@@ -92,25 +93,7 @@ class parallel_env(ParallelEnv):
         maxPosY = max(pos[p][1] for p in pos)
 
         # Create the observation space.
-        self.observation_spaces = spaces.Dict({
-
-            # The agent state is the position of each agent.
-            "agent_state": spaces.Dict({
-                a: spaces.Box(
-                    low = np.array([minPosX, minPosY], dtype=np.float32),
-                    high = np.array([maxPosX, maxPosY], dtype=np.float32),
-                ) for a in self.possible_agents
-            }), # type: ignore
-
-            # The vertex state is composed of two parts.
-            # The first part is the idleness time of each node.
-            "vertex_state": spaces.Dict({
-                v: spaces.Box(
-                    low = 0.0,
-                    high = np.inf,
-                ) for v in range(self.pg.graph.number_of_nodes())
-            }), # type: ignore
-        })
+        self.observation_space = spaces.Box(low= 0.0, high=np.inf, shape=(self.pg.graph.number_of_nodes()+ self.num_agents*2,), dtype=np.float32)
 
 
 
@@ -184,10 +167,6 @@ class parallel_env(ParallelEnv):
         return self.observation_spaces
 
 
-    def action_space(self, agent):
-        ''' Returns the action space for the given agent. '''
-        return self.action_spaces[agent]
-
     def state(self):
         ''' Returns the global state of the environment.
             This is useful for centralized training, decentralized execution. '''
@@ -201,10 +180,10 @@ class parallel_env(ParallelEnv):
             "vertex_state": {v: self.pg.getNodeIdlenessTime(v, self.step_count) for v in self.pg.graph.nodes}
         }
         
-        return obs
+        return serialize_obs(obs)
 
 
-    def step(self, action_dict={}):
+    def step(self, action_list=[]):
         ''''
         Perform a step in the environment based on the given action dictionary.
 
@@ -217,6 +196,10 @@ class parallel_env(ParallelEnv):
             done_dict (dict): A dictionary indicating whether each agent is done.
             info_dict (dict): A dictionary containing additional information for each agent.
         '''
+        action_list = action_list.squeeze()
+
+        action_dict = {agent: action_list[i] for i, agent in enumerate(self.agents)}
+
         self.step_count += 1
         reward_dict = {agent: 0.0 for agent in self.agents}
         done_dict = {}
@@ -286,15 +269,8 @@ class parallel_env(ParallelEnv):
             # Add any additional information for the agent
             info_dict[agent] = {}
 
-            # Update the observation for the agent
-            obs_dict[agent] = agent_observation
 
-        # Check truncation conditions.
-        if self.max_cycles >= 0 and self.step_count >= self.max_cycles:
-            truncated_dict = {a: True for a in self.agents}
-            self.agents = []
-
-        return self.observe(), reward_dict, done_dict, truncated_dict, info_dict
+        return self.observe(), list(reward_dict.values()), list(done_dict.values()), list(info_dict.values())
 
 
     def onNodeVisit(self, node, timeStamp):
@@ -367,3 +343,15 @@ class parallel_env(ParallelEnv):
 
 
         return agent_observation
+
+
+def serialize_obs(obs):
+    agent_states = [list(val) for val in obs['agent_state'].values()]
+    vertex_states = [val for val in obs['vertex_state'].values()]
+    serialized_obs = []
+
+    for states in agent_states:
+        serialized_obs.extend(states)
+    serialized_obs.extend(vertex_states)
+
+    return [float(val) for val in serialized_obs]
