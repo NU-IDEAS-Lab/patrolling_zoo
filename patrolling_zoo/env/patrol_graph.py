@@ -75,10 +75,17 @@ class PatrolGraph():
 
     def getAverageIdlenessTime(self, currentTime):
         ''' Returns the average idleness time of all nodes. '''
+
         nodes = self.graph.nodes
         number_of_nodes = len(nodes)
-        return sum([self.getNodeIdlenessTime(node, currentTime) for node in nodes])/number_of_nodes
+        return sum([self.getNodeIdlenessTime(node, currentTime) for node in nodes]) / float(number_of_nodes)
 
+
+    def getWorstIdlenessTime(self, currentTime):
+        ''' Returns the worst idleness time of all nodes. '''
+
+        nodes = self.graph.nodes
+        return max([self.getNodeIdlenessTime(node, currentTime) for node in nodes])
 
     def getNearestNode(self, pos, epsilon=None):
         ''' Returns the nearest node to the given position.
