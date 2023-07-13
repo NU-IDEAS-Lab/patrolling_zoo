@@ -28,6 +28,8 @@ class PatrolAgent():
         self.speed = self.startingSpeed
         self.edge = None
         self.lastNode = self.startingNode
+        self.lastAction = None
+        self.stepsTravelled = 0
      
 
 class parallel_env(ParallelEnv):
@@ -266,6 +268,10 @@ class parallel_env(ParallelEnv):
                 # Update the agent's position.
                 if action in self.pg.graph.nodes:
 
+                    if agent.lastAction != action:
+                        agent.lastAction = action
+                        agent.stepsTravelled = 0
+
                     # Determine the node to use as source node for shortest path calculation.
                     startIdx = 1
                     srcNode = agent.lastNode
@@ -298,17 +304,25 @@ class parallel_env(ParallelEnv):
                             if agent.lastNode == dstNode or not self.requireExplicitVisit:
                                 # The agent has reached its destination, visiting the node.
                                 # The agent receives a reward for visiting the node.
-                                reward_dict[agent] += self.onNodeVisit(agent.lastNode, self.step_count)
+                                self.onNodeVisit(agent.lastNode, self.step_count)
+                                # reward_dict[agent] += self.onNodeVisit(agent.lastNode, self.step_count)
                 
                         # The agent has exceeded its movement budget for this step.
                         if stepSize <= 0.0:
                             break
+                    
+                    if srcNode != dstNode:
+                        if agent.stepsTravelled > 1:
+                            reward_dict[agent] += np.log(agent.stepsTravelled)
+                        agent.stepsTravelled += 1
                 else:
-                    reward_dict[agent] = 0  # the action was invalid
+                    raise ValueError(f"Invalid action {action} for agent {agent.name}")
 
         # # Assign the idleness penalty.
-        # for agent in self.agents:
-        #     reward_dict[agent] -= self.pg.getAverageIdlenessTime(self.step_count)
+        for agent in self.agents:
+            # reward_dict[agent] -= np.log(self.pg.getStdDevIdlenessTime(self.step_count))
+            # reward_dict[agent] -= np.log(self.pg.getAverageIdlenessTime(self.step_count))
+            reward_dict[agent] -= np.log(self.pg.getWorstIdlenessTime(self.step_count))
         
         # Perform observations.
         for agent in self.agents:
@@ -350,9 +364,6 @@ class parallel_env(ParallelEnv):
             index = indices.index(node)
             self.pg.setNodeVisitTime(node, timeStamp)
             return self.alpha**max((index - self.reward_shift * len(indices))/self.pg.graph.number_of_nodes(), 0)
-        
-
-    
 
 
     def _moveTowardsNode(self, agent, node, stepSize):
