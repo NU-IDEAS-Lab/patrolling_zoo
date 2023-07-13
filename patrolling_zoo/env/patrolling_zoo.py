@@ -366,8 +366,10 @@ class parallel_env(ParallelEnv):
         reached = distCurrToNext <= stepSize
         step = distCurrToNext if reached else stepSize
         if distCurrToNext > 0.0:
-            agent.position = (agent.position[0] + (posNextNode[0] - agent.position[0]) * step / distCurrToNext,
-                                agent.position[1] + (posNextNode[1] - agent.position[1]) * step / distCurrToNext)
+            agent.position = (
+                agent.position[0] + np.cos(np.arctan(slope)) * step,
+                agent.position[1] + np.sin(np.arctan(slope)) * step
+            )
         
         # Set information about the edge which the agent is currently on.
         if reached:
