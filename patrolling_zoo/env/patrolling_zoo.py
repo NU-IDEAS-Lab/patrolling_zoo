@@ -149,7 +149,7 @@ class parallel_env(ParallelEnv):
         return observation, info
 
 
-    def render(self, figsize=(9, 6)):
+    def render(self, figsize=(12, 9)):
         ''' Renders the environment.
             
             Args:
@@ -178,7 +178,8 @@ class parallel_env(ParallelEnv):
                          font_size=10,
                          font_color='black'
         )
-        nx.draw_networkx_edge_labels(self.pg.graph, pos, edge_labels=nx.get_edge_attributes(self.pg.graph, 'weight'), font_size=7)
+        weights = {key: np.round(value, 1) for key, value in nx.get_edge_attributes(self.pg.graph, 'weight').items()}
+        nx.draw_networkx_edge_labels(self.pg.graph, pos, edge_labels=weights, font_size=7)
         
         # Draw the agents.
         for i, agent in enumerate(self.possible_agents):
@@ -321,8 +322,8 @@ class parallel_env(ParallelEnv):
         # # Assign the idleness penalty.
         for agent in self.agents:
             # reward_dict[agent] -= np.log(self.pg.getStdDevIdlenessTime(self.step_count))
-            # reward_dict[agent] -= np.log(self.pg.getAverageIdlenessTime(self.step_count))
-            reward_dict[agent] -= np.log(self.pg.getWorstIdlenessTime(self.step_count))
+            reward_dict[agent] -= np.log(self.pg.getAverageIdlenessTime(self.step_count))
+            #reward_dict[agent] -= np.log(self.pg.getWorstIdlenessTime(self.step_count))
         
         # Perform observations.
         for agent in self.agents:
