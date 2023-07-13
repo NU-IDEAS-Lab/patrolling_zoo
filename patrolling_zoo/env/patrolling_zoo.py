@@ -122,12 +122,19 @@ class parallel_env(ParallelEnv):
     def reset(self, seed=None, options=None):
         ''' Sets the environment to its initial state. '''
 
+        if seed != None:
+            random.seed(seed)
+
         # Reset the graph.
         self.pg.reset()
 
         # Reset the agents.
+        startingNodes = random.sample(list(self.pg.graph.nodes), len(self.possible_agents))
+        startingPositions = [self.pg.getNodePosition(i) for i in startingNodes]
         self.agents = copy(self.possible_agents)
         for agent in self.possible_agents:
+            agent.startingPosition = startingPositions[agent.id]
+            agent.startingNode = startingNodes[agent.id]
             agent.reset()
         
         # Reset other state.
@@ -140,7 +147,7 @@ class parallel_env(ParallelEnv):
         return observation, info
 
 
-    def render(self, figsize=(18, 12)):
+    def render(self, figsize=(9, 6)):
         ''' Renders the environment.
             
             Args:
@@ -179,7 +186,7 @@ class parallel_env(ParallelEnv):
             plt.plot([], [], color=color, marker=marker, linestyle='None', label=agent.name, alpha=0.5)
 
         plt.legend()
-        plt.text(0,0,f'Current step: {self.step_count}, Average idleness time: {self.pg.getAverageIdlenessTime(self.step_count)}')
+        plt.gcf().text(0,0,f'Current step: {self.step_count}, Average idleness time: {self.pg.getAverageIdlenessTime(self.step_count)}')
         plt.show()
 
 
@@ -359,8 +366,10 @@ class parallel_env(ParallelEnv):
         reached = distCurrToNext <= stepSize
         step = distCurrToNext if reached else stepSize
         if distCurrToNext > 0.0:
-            agent.position = (agent.position[0] + (posNextNode[0] - agent.position[0]) * step / distCurrToNext,
-                                agent.position[1] + (posNextNode[1] - agent.position[1]) * step / distCurrToNext)
+            agent.position = (
+                agent.position[0] + np.cos(np.arctan(slope)) * step,
+                agent.position[1] + np.sin(np.arctan(slope)) * step
+            )
         
         # Set information about the edge which the agent is currently on.
         if reached:

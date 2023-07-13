@@ -46,7 +46,7 @@ class PPO(BaseAlgorithm):
         self.learner = PPONetwork(num_actions=self.num_actions, num_agents=self.num_agents, observation_size=self.observation_size).to(self.device)
         self.optimizer = optim.Adam(self.learner.parameters(), lr=self.lr, eps=1e-5)
     
-    def train(self):
+    def train(self, seed=None):
         ''' Trains the policy. '''
 
         # Stats storage
@@ -76,7 +76,7 @@ class PPO(BaseAlgorithm):
             # collect an episode
             with torch.no_grad():
                 # collect observations and convert to batch of torch tensors
-                next_obs, info = self.env.reset(seed=None)
+                next_obs, info = self.env.reset(seed=seed)
 
                 # reset the episodic return
                 total_episodic_return = 0
@@ -212,7 +212,7 @@ class PPO(BaseAlgorithm):
         return stats
 
 
-    def evaluate(self, render=False, max_cycles=None):
+    def evaluate(self, render=False, max_cycles=None, seed=None):
         ''' Evaluates the policy. '''
 
         self.learner.eval()
@@ -223,7 +223,7 @@ class PPO(BaseAlgorithm):
         with torch.no_grad():
             # render 2 episodes out
             for episode in range(2):
-                obs, info = self.env.reset(seed=None)
+                obs, info = self.env.reset(seed=seed)
                 if render:
                     clear_output(wait=True)
                     self.env.render()
