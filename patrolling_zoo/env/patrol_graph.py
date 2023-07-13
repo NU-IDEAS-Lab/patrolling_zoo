@@ -87,6 +87,16 @@ class PatrolGraph():
         nodes = self.graph.nodes
         return max([self.getNodeIdlenessTime(node, currentTime) for node in nodes])
 
+
+    def getStdDevIdlenessTime(self, currentTime):
+        ''' Returns the standard deviation of idleness time of all nodes. '''
+
+        nodes = self.graph.nodes
+        number_of_nodes = len(nodes)
+        average_idleness_time = self.getAverageIdlenessTime(currentTime)
+        return math.sqrt(sum([math.pow(self.getNodeIdlenessTime(node, currentTime) - average_idleness_time, 2) for node in nodes]) / float(number_of_nodes))
+
+
     def getNearestNode(self, pos, epsilon=None):
         ''' Returns the nearest node to the given position.
             If epsilon is not None and no node is within epsilon, returns None. '''
