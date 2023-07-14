@@ -175,9 +175,12 @@ class parallel_env(ParallelEnv):
 
     def observe(self):
 
+        nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in self.pg.graph.nodes}
+        indices = sorted(nodes_idless, key=nodes_idless.get)
+
         obs = {
             "agent_state": {a: a.position for a in self.agents},
-            "vertex_state": {v: self.pg.getNodeIdlenessTime(v, self.step_count) for v in self.pg.graph.nodes}
+            "vertex_state": {v: indices.index(v) for v in self.pg.graph.nodes}
         }
         
         return serialize_obs(obs)
@@ -289,7 +292,7 @@ class parallel_env(ParallelEnv):
             indices = sorted(nodes_idless, key=nodes_idless.get)
             index = indices.index(node)
             self.pg.setNodeVisitTime(node, timeStamp)
-            return self.alpha**max((index - self.reward_shift * len(indices))/self.pg.graph.number_of_nodes(), 0)
+            return 10*(self.alpha**max((index - self.reward_shift * len(indices))/self.pg.graph.number_of_nodes(), 0)-1)
         
 
     

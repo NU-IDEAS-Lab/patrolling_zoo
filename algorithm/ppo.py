@@ -7,6 +7,9 @@ import numpy as np
 import time
 from IPython.display import clear_output
 
+from torch.utils.tensorboard import SummaryWriter
+
+
 
 from .algorithm import BaseAlgorithm
 
@@ -14,28 +17,38 @@ class PPO(BaseAlgorithm):
     ''' This algorithm implements PPO for the patrolling problem.
         Adapted from an example by Jet (https://github.com/jjshoots). '''
 
-    def __init__(self, env, device,
-            ent_coef = 0.1,
-            vf_coef = 0.1,
-            clip_coef = 0.1,
+    def __init__(self, env,
+            env_id = "patrolling-v0",
+            track = False,
+            wandb_project_name = "CleanRL",
+            wandb_entity = None,
+            ent_coef = 0.01,
+            vf_coef = 0.5,
+            clip_coef = 0.2,
             gamma = 0.99,
             learning_rate = 0.0001,
-            batch_size = 32,
-            stack_size = 4,
             frame_size = (64, 64),
-            num_steps = 500,
-            total_timesteps = 100,
+            num_steps = 128,
+            total_timesteps = 500000,
             gae_lambda = 0.95,
             update_epochs = 4,
             anneal_lr = True,
             num_minibatches = 4,
             norm_adv = True,
             clip_vloss = True,
+            max_grad_norm = 0.5,
+            target_kl = None,
         ):
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
         super().__init__(env, device)
 
-
+        self.env_id = env_id
+        self.track = track
+        self.wandb_project_name = wandb_project_name
+        self.wandb_entity = wandb_entity
+        
         self.num_env = 1
     
         self.ent_coef = ent_coef
@@ -44,25 +57,44 @@ class PPO(BaseAlgorithm):
         self.gamma = gamma
         self.gae_lambda = gae_lambda
         self.learning_rate = learning_rate
-        self.batch_size = batch_size
         self.update_epochs = update_epochs
-        self.stack_size = stack_size
         self.frame_size = frame_size
         self.num_steps = num_steps
         self.total_timesteps = total_timesteps
         self.anneal_lr = anneal_lr
+        self.batch_size = int(self.num_env * self.num_steps)
         self.num_minibatches = num_minibatches
         self.minibatch_size =  int(self.batch_size // self.num_minibatches)
         self.norm_adv = norm_adv
         self.clip_vloss = clip_vloss
 
+        self.max_grad_norm = max_grad_norm
+        self.target_kl = target_kl
+
         self.num_agents = len(env.possible_agents)
 
     
     def train(self):
+
+        run_name = f"{self.env_id}__{int(time.time())}"
+
+        if self.track:
+            import wandb
+
+            wandb.init(
+                project=self.wandb_project_name,
+                entity=self.wandb_entity,
+                sync_tensorboard=True,
+                name=run_name,
+                monitor_gym=True,
+                save_code=True,
+            )
+
+
+        writer = SummaryWriter(f"runs/{run_name}")
         
         env = self.env
-        device = self.device
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         ''' Trains the policy. '''
 
         # Stats storage
@@ -95,7 +127,7 @@ class PPO(BaseAlgorithm):
         next_done = torch.zeros(self.num_env).to(device)
         num_updates = self.total_timesteps // self.batch_size
 
-        for update in range(1, num_updates + 1):
+        for update in range(1, num_updates + 1):    
             # Annealing the rate if instructed to do so.
             if self.anneal_lr:
                 frac = 1.0 - (update - 1.0) / num_updates
@@ -125,7 +157,7 @@ class PPO(BaseAlgorithm):
                         writer.add_scalar("charts/episodic_return", item["episode"]["r"], global_step)
                         writer.add_scalar("charts/episodic_length", item["episode"]["l"], global_step)
                         break
-            
+                            
             # bootstrap value if not done
             with torch.no_grad():
                 next_value = agent.get_value(next_obs).reshape(1, -1)
@@ -196,39 +228,45 @@ class PPO(BaseAlgorithm):
                     entropy_loss = entropy.mean()
                     loss = pg_loss - self.ent_coef * entropy_loss + v_loss * self.vf_coef
 
-                    # Store statistics.
-                    stats["value_loss"] += [v_loss.item()]
-                    stats["policy_loss"] += [pg_loss.item()]
-                    stats["entropy_loss"] += [entropy_loss.item()]
-                    stats["total_loss"] += [loss.item()]
-                    stats["approx_kl"] += [approx_kl.item()]
-                    stats["clip_frac"] += [np.mean(clip_fracs)]
-
-                    # Take gradient step.
                     optimizer.zero_grad()
                     loss.backward()
+                    nn.utils.clip_grad_norm_(agent.parameters(), self.max_grad_norm)
                     optimizer.step()
+
+                if self.target_kl is not None:
+                    if approx_kl > self.target_kl:
+                        break
 
             y_pred, y_true = b_values.cpu().numpy(), b_returns.cpu().numpy()
             var_y = np.var(y_true)
             explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
-        
-            print(f"Training episode {episode}")
-            print(f"Episodic Return: {np.mean(total_episodic_return)}")
-            print(f"Value Loss: {np.mean(stats['value_loss'])}")
-            print("")
 
-            # Store episode statistics.
-            stats["episodic_return"] += [np.mean(total_episodic_return)]
-            stats["episodic_length"] += [end_step]
+            # TRY NOT TO MODIFY: record rewards for plotting purposes
+            writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
+            writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
+            writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
+            writer.add_scalar("losses/entropy", entropy_loss.item(), global_step)
+            writer.add_scalar("losses/old_approx_kl", old_approx_kl.item(), global_step)
+            writer.add_scalar("losses/approx_kl", approx_kl.item(), global_step)
+            writer.add_scalar("losses/clipfrac", np.mean(clipfracs), global_step)
+            writer.add_scalar("losses/explained_variance", explained_var, global_step)
+            #print("SPS:", int(global_step / (time.time() - start_time)))
+            writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
+            writer.add_scalar("charts/episodic_return", torch.sum(rewards), global_step)
+            self.agent = agent
 
-        return stats
+            print("Update: %s, total reward: %s, timestep: %s"%(update, int(torch.sum(rewards)), global_step))
+
+        env.close()
+        writer.close()
+
+        return agent
 
 
-    def evaluate(self, render=False, max_cycles=None):
+    def evaluate(self, agent, render=False, max_cycles=None):
         ''' Evaluates the policy. '''
 
-        self.learner.eval()
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         if max_cycles != None:
             self.env.maxSteps = max_cycles
@@ -236,19 +274,16 @@ class PPO(BaseAlgorithm):
         with torch.no_grad():
             # render 2 episodes out
             for episode in range(2):
-                obs, info = self.env.reset(seed=None)
+                obs = torch.Tensor(self.env.reset()).to(device)
                 if render:
                     clear_output(wait=True)
                     self.env.render()
-                obs = self.learner.batchify_obs(obs)
                 terms = [False]
                 truncs = [False]
                 while not any(terms) and not any(truncs):
-                    actions, logprobs, _, values = self.learner.get_action_and_value(obs)
-                    obs, rewards, terms, truncs, infos = self.env.step(self.learner.unbatchify(actions, self.env))
-                    obs = self.learner.batchify_obs(obs)
-                    terms = [terms[a] for a in terms]
-                    truncs = [truncs[a] for a in truncs]
+                    actions, logprobs, _, values = agent.get_action_and_value(obs)
+                    obs, reward, done, info = self.env.step(actions.cpu().numpy())
+                    obs = torch.Tensor(obs).to(device)
                     if render:
                         clear_output(wait=True)
                         self.env.render()
@@ -268,18 +303,34 @@ class Agent(nn.Module):
     def __init__(self, env):
         super().__init__()
         self.critic = nn.Sequential(
-            layer_init(nn.Linear(np.array(env.observation_space.shape).prod(), 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, 3), std=1.0),
+            layer_init(nn.Linear(np.array(env.observation_space.shape).prod(), 512)),
+            nn.ReLU(),
+            layer_init(nn.Linear(512, 1024)),
+            nn.ReLU(),
+            layer_init(nn.Linear(1024, 2048)),
+            nn.ReLU(),
+            layer_init(nn.Linear(2048, 4096)),
+            nn.ReLU(),
+            layer_init(nn.Linear(4096, 4096)),
+            nn.ReLU(),
+            layer_init(nn.Linear(4096, 2048)),
+            nn.ReLU(),
+            layer_init(nn.Linear(2048, 1024)),
+            nn.ReLU(),
+            layer_init(nn.Linear(1024, 3), std=1.0),
         )
         self.actor = nn.Sequential(
-            layer_init(nn.Linear(np.array(env.observation_space.shape).prod(), 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, env.action_space.n), std=0.01),
+            layer_init(nn.Linear(np.array(env.observation_space.shape).prod(), 512)),
+            nn.ReLU(),
+            layer_init(nn.Linear(512, 1024)),
+            nn.ReLU(),
+            layer_init(nn.Linear(1024, 2048)),
+            nn.ReLU(),
+            layer_init(nn.Linear(2048, 1024)),
+            nn.ReLU(),
+            layer_init(nn.Linear(1024, 512)),
+            nn.ReLU(),
+            layer_init(nn.Linear(512, env.action_space.n), std=0.01),
         )
 
     def get_value(self, x):
