@@ -305,8 +305,9 @@ class parallel_env(ParallelEnv):
                             if agent.lastNode == dstNode or not self.requireExplicitVisit:
                                 # The agent has reached its destination, visiting the node.
                                 # The agent receives a reward for visiting the node.
-                                self.onNodeVisit(agent.lastNode, self.step_count)
-                                # reward_dict[agent] += self.onNodeVisit(agent.lastNode, self.step_count)
+                                r = self.onNodeVisit(agent.lastNode, self.step_count)
+                                if srcNode != dstNode:
+                                    reward_dict[agent] += r
                 
                         # The agent has exceeded its movement budget for this step.
                         if stepSize <= 0.0:
