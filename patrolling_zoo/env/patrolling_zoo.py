@@ -28,6 +28,8 @@ class PatrolAgent():
         self.speed = self.startingSpeed
         self.edge = None
         self.lastNode = self.startingNode
+        self.lastAction = None
+        self.stepsTravelled = 0
      
 
 class parallel_env(ParallelEnv):
@@ -147,7 +149,7 @@ class parallel_env(ParallelEnv):
         return observation, info
 
 
-    def render(self, figsize=(9, 6)):
+    def render(self, figsize=(12, 9)):
         ''' Renders the environment.
             
             Args:
@@ -176,7 +178,8 @@ class parallel_env(ParallelEnv):
                          font_size=10,
                          font_color='black'
         )
-        nx.draw_networkx_edge_labels(self.pg.graph, pos, edge_labels=nx.get_edge_attributes(self.pg.graph, 'weight'), font_size=7)
+        weights = {key: np.round(value, 1) for key, value in nx.get_edge_attributes(self.pg.graph, 'weight').items()}
+        nx.draw_networkx_edge_labels(self.pg.graph, pos, edge_labels=weights, font_size=7)
         
         # Draw the agents.
         for i, agent in enumerate(self.possible_agents):
@@ -266,6 +269,10 @@ class parallel_env(ParallelEnv):
                 # Update the agent's position.
                 if action in self.pg.graph.nodes:
 
+                    if agent.lastAction != action:
+                        agent.lastAction = action
+                        agent.stepsTravelled = 0
+
                     # Determine the node to use as source node for shortest path calculation.
                     startIdx = 1
                     srcNode = agent.lastNode
@@ -298,17 +305,26 @@ class parallel_env(ParallelEnv):
                             if agent.lastNode == dstNode or not self.requireExplicitVisit:
                                 # The agent has reached its destination, visiting the node.
                                 # The agent receives a reward for visiting the node.
-                                reward_dict[agent] += self.onNodeVisit(agent.lastNode, self.step_count)
+                                r = self.onNodeVisit(agent.lastNode, self.step_count)
+                                if srcNode != dstNode:
+                                    reward_dict[agent] += r
                 
                         # The agent has exceeded its movement budget for this step.
                         if stepSize <= 0.0:
                             break
+                    
+                    if srcNode != dstNode:
+                        if agent.stepsTravelled > 1:
+                            reward_dict[agent] += np.log(agent.stepsTravelled)
+                        agent.stepsTravelled += 1
                 else:
-                    reward_dict[agent] = 0  # the action was invalid
+                    raise ValueError(f"Invalid action {action} for agent {agent.name}")
 
         # # Assign the idleness penalty.
-        # for agent in self.agents:
-        #     reward_dict[agent] -= self.pg.getAverageIdlenessTime(self.step_count)
+        for agent in self.agents:
+            # reward_dict[agent] -= np.log(self.pg.getStdDevIdlenessTime(self.step_count))
+            reward_dict[agent] -= np.log(self.pg.getAverageIdlenessTime(self.step_count))
+            #reward_dict[agent] -= np.log(self.pg.getWorstIdlenessTime(self.step_count))
         
         # Perform observations.
         for agent in self.agents:
@@ -350,9 +366,6 @@ class parallel_env(ParallelEnv):
             index = indices.index(node)
             self.pg.setNodeVisitTime(node, timeStamp)
             return self.alpha**max((index - self.reward_shift * len(indices))/self.pg.graph.number_of_nodes(), 0)
-        
-
-    
 
 
     def _moveTowardsNode(self, agent, node, stepSize):

@@ -212,17 +212,17 @@ class PPO(BaseAlgorithm):
         return stats
 
 
-    def evaluate(self, render=False, max_cycles=None, seed=None):
+    def evaluate(self, render=False, max_cycles=None, max_episodes=1, seed=None):
         ''' Evaluates the policy. '''
 
         self.learner.eval()
 
         if max_cycles != None:
-            self.env.maxSteps = max_cycles
+            self.env.max_cycles = max_cycles
 
         with torch.no_grad():
-            # render 2 episodes out
-            for episode in range(2):
+            # render max_episodes episodes out
+            for episode in range(max_episodes):
                 obs, info = self.env.reset(seed=seed)
                 if render:
                     clear_output(wait=True)

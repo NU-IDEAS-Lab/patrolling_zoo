@@ -3,8 +3,8 @@ class BaseAlgorithm:
         self.env = env
         self.device = device
 
-    def train(self, *args, **kwargs):
+    def train(self, *args, seed=None, **kwargs):
         raise NotImplementedError()
 
-    def evaluate(self, *args, **kwargs):
+    def evaluate(self, *args, seed=None, **kwargs):
         raise NotImplementedError()
