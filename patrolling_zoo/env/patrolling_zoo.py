@@ -351,7 +351,8 @@ class parallel_env(ParallelEnv):
             truncated_dict = {a: True for a in self.agents}
             self.agents = []
 
-            reward_dict[agent] += 10000.0 / self.pg.getAverageIdlenessTime(self.step_count)
+            reward_dict[agent] += 10000.0 / self.pg.getWorstIdlenessTime(self.step_count)
+            # reward_dict[agent] += 10000.0 / self.pg.getAverageIdlenessTime(self.step_count)
 
         return obs_dict, reward_dict, done_dict, truncated_dict, info_dict
 
@@ -370,15 +371,17 @@ class parallel_env(ParallelEnv):
         # nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in self.pg.graph.nodes}
         # indices = sorted(nodes_idless, key=nodes_idless.get)
 
-        nodesSorted = sorted(self.pg.graph.nodes(), key=lambda n: self.pg.graph.nodes[n]['visitTime'])
-        index = nodesSorted.index(node)
+        # nodesSorted = sorted(self.pg.graph.nodes(), key=lambda n: self.pg.graph.nodes[n]['visitTime'])
+        # index = nodesSorted.index(node)
 
         # print(f"IDLENESS TIME ORDERED: {nodesSorted}, {[self.pg.getNodeIdlenessTime(n, self.step_count) for n in nodesSorted]}")
 
+        avgIdleTime = self.pg.getAverageIdlenessTime(timeStamp)
         self.pg.setNodeVisitTime(node, timeStamp)
+        deltaAvgIdleTime = avgIdleTime - self.pg.getAverageIdlenessTime(timeStamp)
         
         # return a reward which is proportional to the rank of the node, where the most idle node has the highest reward
-        return self.alpha ** (self.pg.graph.number_of_nodes() - index)
+        return self.alpha * deltaAvgIdleTime
 
         # return self.alpha ** max((index - self.reward_shift * len(indices))/self.pg.graph.number_of_nodes(), 0)
 
