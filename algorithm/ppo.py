@@ -290,15 +290,23 @@ class PPONetwork(nn.Module):
             action = torch.tensor(action)
         action = action.to(self.device)
 
-        logprobs = []
         entropy = []
-        for i in range(self.num_agents):
-            probs = Categorical(logits = logits_split[i])
-            logprobs.append(probs.log_prob(action[i]).item())
-            entropy.append(probs.entropy().item())
-        logprobs = torch.tensor(logprobs).to(self.device)
-        entropy = torch.tensor(entropy).to(self.device)
+        probs = Categorical(logits = logits)
+        logprobs = probs.log_prob(action)
+        entropy = probs.entropy()
+        # logprobs = torch.tensor(logprobs).to(self.device)
+        # entropy = torch.tensor(entropy).to(self.device)
         return action, logprobs, entropy, self.critic(hidden)
+
+        # logprobs = []
+        # entropy = []
+        # for i in range(self.num_agents):
+        #     probs = Categorical(logits = logits_split[i])
+        #     logprobs.append(probs.log_prob(action[i]).item())
+        #     entropy.append(probs.entropy().item())
+        # logprobs = torch.tensor(logprobs).to(self.device)
+        # entropy = torch.tensor(entropy).to(self.device)
+        # return action, logprobs, entropy, self.critic(hidden)
 
 
     def batchify_obs(self, obs_space, obs, device):
