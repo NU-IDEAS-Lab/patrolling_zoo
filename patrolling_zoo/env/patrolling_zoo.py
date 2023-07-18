@@ -44,7 +44,6 @@ class parallel_env(ParallelEnv):
                  alpha = 10,
                  observation_radius = np.inf,
                  max_cycles: int = -1,
-                 reward_shift = None,
                  *args,
                  **kwargs):
         """
@@ -67,7 +66,6 @@ class parallel_env(ParallelEnv):
         self.max_cycles = max_cycles
         self.comms_model = comms_model
 
-        self.reward_shift = reward_shift
         self.alpha = alpha
 
         # Create the agents with random starting positions.
@@ -141,7 +139,6 @@ class parallel_env(ParallelEnv):
         
         # Reset other state.
         self.step_count = 0
-        self.rewards = dict.fromkeys(self.agents, 0)
         self.dones = dict.fromkeys(self.agents, False)
         
         observation = {agent: self.observe(agent) for agent in self.agents}
@@ -269,6 +266,9 @@ class parallel_env(ParallelEnv):
                 # Update the agent's position.
                 if action in self.pg.graph.nodes:
 
+                    # if action == self.pg.graph.number_of_nodes() - 2:
+                    #     reward_dict[agent] += 1000
+
                     if agent.lastAction != action:
                         agent.lastAction = action
                         agent.stepsTravelled = 0
@@ -301,13 +301,15 @@ class parallel_env(ParallelEnv):
 
                         # The agent has reached the next node.
                         if reached:
+                            same = agent.lastNode == nextNode
                             agent.lastNode = nextNode
                             if agent.lastNode == dstNode or not self.requireExplicitVisit:
                                 # The agent has reached its destination, visiting the node.
                                 # The agent receives a reward for visiting the node.
                                 r = self.onNodeVisit(agent.lastNode, self.step_count)
-                                if srcNode != dstNode:
-                                    reward_dict[agent] += r
+                                if not same:
+                                    # print(f"REACHED DESTINATION NODE {dstNode} WITH REWARD {r}")
+                                    reward_dict[agent] += 100.0 * r
                 
                         # The agent has exceeded its movement budget for this step.
                         if stepSize <= 0.0:
@@ -320,12 +322,15 @@ class parallel_env(ParallelEnv):
                 else:
                     raise ValueError(f"Invalid action {action} for agent {agent.name}")
 
-        # # Assign the idleness penalty.
-        for agent in self.agents:
-            # reward_dict[agent] -= np.log(self.pg.getStdDevIdlenessTime(self.step_count))
-            reward_dict[agent] -= np.log(self.pg.getAverageIdlenessTime(self.step_count))
-            #reward_dict[agent] -= np.log(self.pg.getWorstIdlenessTime(self.step_count))
+        # Assign the idleness penalty.
+        # for agent in self.agents:
+        #     # reward_dict[agent] -= np.log(self.pg.getStdDevIdlenessTime(self.step_count))
+        #     reward_dict[agent] -= np.log(self.pg.getAverageIdlenessTime(self.step_count))
+        #     #reward_dict[agent] -= np.log(self.pg.getWorstIdlenessTime(self.step_count))
         
+        # for agent in self.agents:
+        #     reward_dict[agent] = (self.pg.graph.number_of_nodes() * self.step_count) / (self.pg.getAverageIdlenessTime(self.step_count) + 0.0001)
+
         # Perform observations.
         for agent in self.agents:
 
@@ -346,6 +351,8 @@ class parallel_env(ParallelEnv):
             truncated_dict = {a: True for a in self.agents}
             self.agents = []
 
+            reward_dict[agent] += 10000.0 / self.pg.getAverageIdlenessTime(self.step_count)
+
         return obs_dict, reward_dict, done_dict, truncated_dict, info_dict
 
 
@@ -353,19 +360,27 @@ class parallel_env(ParallelEnv):
         ''' Called when an agent visits a node.
             Returns the reward for visiting the node, which is proportional to
             node idleness time. '''
-        if self.reward_shift is None:
-            # Method 0 is the one we thaought of by default
-            idleTime = self.pg.getNodeIdlenessTime(node, timeStamp) 
-            self.pg.setNodeVisitTime(node, timeStamp)
-            return idleTime - self.pg.getAverageIdlenessTime(self.step_count)
-        else :
-            # Here we rank the nodes in term of idleness and give a reward based on the rank.
-            # So the agent will be encouraged to visit the most idle node.
-            nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in self.pg.graph.nodes}
-            indices = sorted(nodes_idless, key=nodes_idless.get)
-            index = indices.index(node)
-            self.pg.setNodeVisitTime(node, timeStamp)
-            return self.alpha**max((index - self.reward_shift * len(indices))/self.pg.graph.number_of_nodes(), 0)
+
+        # idleTime = self.pg.getNodeIdlenessTime(node, timeStamp) 
+        # self.pg.setNodeVisitTime(node, timeStamp)
+        # return idleTime
+
+        # Here we rank the nodes in term of idleness and give a reward based on the rank.
+        # So the agent will be encouraged to visit the most idle node.
+        # nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in self.pg.graph.nodes}
+        # indices = sorted(nodes_idless, key=nodes_idless.get)
+
+        nodesSorted = sorted(self.pg.graph.nodes(), key=lambda n: self.pg.graph.nodes[n]['visitTime'])
+        index = nodesSorted.index(node)
+
+        # print(f"IDLENESS TIME ORDERED: {nodesSorted}, {[self.pg.getNodeIdlenessTime(n, self.step_count) for n in nodesSorted]}")
+
+        self.pg.setNodeVisitTime(node, timeStamp)
+        
+        # return a reward which is proportional to the rank of the node, where the most idle node has the highest reward
+        return self.alpha ** (self.pg.graph.number_of_nodes() - index)
+
+        # return self.alpha ** max((index - self.reward_shift * len(indices))/self.pg.graph.number_of_nodes(), 0)
 
 
     def _moveTowardsNode(self, agent, node, stepSize):
