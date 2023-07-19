@@ -128,6 +128,9 @@ class PPO(BaseAlgorithm):
         num_updates = self.total_timesteps // self.batch_size
 
         for update in range(1, num_updates + 1):    
+            next_obs = torch.Tensor(self.env.reset()).to(device)
+            next_done = torch.zeros(self.num_env).to(device)
+
             # Annealing the rate if instructed to do so.
             if self.anneal_lr:
                 frac = 1.0 - (update - 1.0) / num_updates
@@ -211,7 +214,7 @@ class PPO(BaseAlgorithm):
                     pg_loss = torch.max(pg_loss1, pg_loss2).mean()
 
                     # Value loss
-                    newvalue = newvalue.view(-1,3)
+                    newvalue = newvalue.view(-1,self.num_agents)
                     if self.clip_vloss:
                         v_loss_unclipped = (newvalue - b_returns[mb_inds]) ** 2
                         v_clipped = b_values[mb_inds] + torch.clamp(
@@ -255,7 +258,7 @@ class PPO(BaseAlgorithm):
             writer.add_scalar("charts/episodic_return", torch.sum(rewards), global_step)
             self.agent = agent
 
-            print("Update: %s, total reward: %s, timestep: %s"%(update, int(torch.sum(rewards)), global_step))
+            print("Update: %s, total reward: %.3f, timestep: %s"%(update, float(torch.sum(rewards)), global_step))
 
         env.close()
         writer.close()
@@ -302,43 +305,36 @@ def serialize_obs(obs):
 class Agent(nn.Module):
     def __init__(self, env):
         super().__init__()
+        self.env = env
+        self.num_agents = len(env.possible_agents)
+
         self.critic = nn.Sequential(
             layer_init(nn.Linear(np.array(env.observation_space.shape).prod(), 512)),
             nn.ReLU(),
             layer_init(nn.Linear(512, 1024)),
             nn.ReLU(),
-            layer_init(nn.Linear(1024, 2048)),
+            layer_init(nn.Linear(1024, 512)),
             nn.ReLU(),
-            layer_init(nn.Linear(2048, 4096)),
-            nn.ReLU(),
-            layer_init(nn.Linear(4096, 4096)),
-            nn.ReLU(),
-            layer_init(nn.Linear(4096, 2048)),
-            nn.ReLU(),
-            layer_init(nn.Linear(2048, 1024)),
-            nn.ReLU(),
-            layer_init(nn.Linear(1024, 3), std=1.0),
+            layer_init(nn.Linear(512, self.num_agents), std=1.0),
         )
+
         self.actor = nn.Sequential(
             layer_init(nn.Linear(np.array(env.observation_space.shape).prod(), 512)),
             nn.ReLU(),
             layer_init(nn.Linear(512, 1024)),
             nn.ReLU(),
-            layer_init(nn.Linear(1024, 2048)),
-            nn.ReLU(),
-            layer_init(nn.Linear(2048, 1024)),
-            nn.ReLU(),
             layer_init(nn.Linear(1024, 512)),
             nn.ReLU(),
-            layer_init(nn.Linear(512, env.action_space.n), std=0.01),
+            layer_init(nn.Linear(512, env.action_space.n*self.num_agents), std=0.01),
         )
+
 
     def get_value(self, x):
         return self.critic(x)
 
     def get_action_and_value(self, x, action=None):
         logits = self.actor(x)
-        logits = logits.view(-1, 3, 40)  # Reshape logits to size n*3*40
+        logits = logits.view(-1, self.num_agents, self.env.action_space.n)  
         n = logits.shape[0] # get the batch size
         if action is None:
             action = Categorical(logits=logits).sample()
@@ -346,7 +342,7 @@ class Agent(nn.Module):
             action = action.view(n, -1)  # Reshape the action tensor if provided
         logprobs = []
         for i in range(n): # loop over the batch dimension
-            single_action = action[i] # get a single action of shape (3,)
+            single_action = action[i] 
             single_logits = logits[i] # get the corresponding logits
             total_probs = Categorical(logits=single_logits)
             logprob = total_probs.log_prob(single_action)
@@ -361,7 +357,7 @@ class Agent(nn.Module):
 
         logprobs = []
         for i in range(action.shape[0]): # loop over the batch dimension
-            single_action = action[i] # get a single action of shape (3,)
+            single_action = action[i] 
             single_logits = logits[i] # get the corresponding logits
             total_probs = torch.distributions.Categorical(logits=single_logits)
             logprob = total_probs.log_prob(single_action)
