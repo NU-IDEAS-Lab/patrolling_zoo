@@ -24,9 +24,14 @@ class PatrolAgent():
     
     def reset(self):
         self.position = self.startingPosition
+        self.lastPosition = self.startingPosition
         self.speed = self.startingSpeed
         self.edge = None
         self.lastNode = self.startingNode
+        self.stay = 0
+        self.lastAction = None
+        self.stepsTravelled = 0
+
      
 
 class parallel_env(ParallelEnv):
@@ -42,7 +47,9 @@ class parallel_env(ParallelEnv):
                  alpha = 10,
                  observation_radius = np.inf,
                  max_cycles: int = -1,
-                 reward_shift = None,
+                 reward_method = "ranking",
+                 observe_method = "raw",
+                 stayLimit = np.inf,
                  *args,
                  **kwargs):
         """
@@ -66,8 +73,11 @@ class parallel_env(ParallelEnv):
         self.model = model
         self.model_name = model_name
 
-        self.reward_shift = reward_shift
+        self.reward_method = reward_method
+        self.observe_method = observe_method
         self.alpha = alpha
+        self.stayLimit = stayLimit
+
 
 
         # Create the agents with random starting positions.
@@ -162,9 +172,6 @@ class parallel_env(ParallelEnv):
         plt.show()
 
 
-    def observation_space(self):
-        ''' Returns the observation space for the given agent. '''
-        return self.observation_spaces
 
 
     def state(self):
@@ -175,15 +182,33 @@ class parallel_env(ParallelEnv):
 
     def observe(self):
 
-        nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in self.pg.graph.nodes}
-        indices = sorted(nodes_idless, key=nodes_idless.get)
-
-        obs = {
-            "agent_state": {a: a.position for a in self.agents},
-            "vertex_state": {v: indices.index(v) for v in self.pg.graph.nodes}
-        }
+        if self.observe_method == "ranking":
+            nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in self.pg.graph.nodes}
+            unique_sorted_idleness_times = sorted(list(set(nodes_idless.values())))
+            obs = {
+                "agent_state": {a: a.position for a in self.agents},
+                "vertex_state": {v: unique_sorted_idleness_times.index(nodes_idless[v]) for v in self.pg.graph.nodes}
+            }
+            return serialize_obs(obs)
         
-        return serialize_obs(obs)
+        if self.observe_method == "normalization":
+            nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in self.pg.graph.nodes}
+            min_ = min(nodes_idless.values())
+            max_ = max(nodes_idless.values())
+            obs = {
+                "agent_state": {a: a.position for a in self.agents},
+                "vertex_state": {v: (nodes_idless[v]-min_)/(max_ - min_) for v in self.pg.graph.nodes}
+            }
+            return serialize_obs(obs)
+
+        if self.observe_method == "raw":
+            nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in self.pg.graph.nodes}
+            obs = {
+                "agent_state": {a: a.position for a in self.agents},
+                "vertex_state": {v: nodes_idless[v] for v in self.pg.graph.nodes}
+            }
+            return serialize_obs(obs)
+
 
 
     def step(self, action_list=[]):
@@ -218,6 +243,13 @@ class parallel_env(ParallelEnv):
                 # Update the agent's position.
                 if action in self.pg.graph.nodes:
 
+                    if agent.lastAction != action:
+                        agent.lastAction = action
+                        agent.stepsTravelled = 0
+                    else:
+                        agent.stepsTravelled +=1
+
+
                     # Determine the node to use as source node for shortest path calculation.
                     startIdx = 1
                     srcNode = agent.lastNode
@@ -244,13 +276,27 @@ class parallel_env(ParallelEnv):
                         # print(f"Moving towards next node {nextNode} with step size {stepSize}")
                         reached, stepSize = self._moveTowardsNode(agent, nextNode, stepSize)
 
+
+                        if agent.position == agent.lastPosition:
+                            agent.stay += 1
+                        else:
+                            agent.lastPosition = agent.position
+                            agent.stay = 0
+                        if agent.stay > self.stayLimit:
+                            reward_dict[agent] -= 20*agent.stay
+        
+
                         # The agent has reached the next node.
                         if reached:
+                            same = agent.lastNode == nextNode
                             agent.lastNode = nextNode
-                            if agent.lastNode == dstNode or not self.requireExplicitVisit:
+                            self.pg.setNodeVisitTime(agent.lastNode, self.step_count)
+                            if (agent.lastNode == dstNode or not self.requireExplicitVisit) and not same:
                                 # The agent has reached its destination, visiting the node.
                                 # The agent receives a reward for visiting the node.
                                 reward_dict[agent] += self.onNodeVisit(agent.lastNode, self.step_count)
+                        if agent.stepsTravelled >= 1 :
+                            reward_dict[agent] += 10/self.pg.getAverageIdlenessTime(self.step_count) + 10*agent.stepsTravelled
                                 
                         # The agent has exceeded its movement budget for this step.
                         if stepSize <= 0.0:
@@ -280,19 +326,33 @@ class parallel_env(ParallelEnv):
         ''' Called when an agent visits a node.
             Returns the reward for visiting the node, which is proportional to
             node idleness time. '''
-        if self.reward_shift is None:
-            # Method 0 is the one we thaought of by default
-            idleTime = self.pg.getNodeIdlenessTime(node, timeStamp) 
-            self.pg.setNodeVisitTime(node, timeStamp)
-            return idleTime - self.pg.getAverageIdlenessTime(self.step_count)
-        else :
+        if self.reward_method == "raw" :
+            reward = self.pg.getNodeIdlenessTime(node, self.step_count)
+
+        if self.reward_method == "ranking" :
             # Here we rank the nodes in term of idleness and give a reward based on the rank.
             # So the agent will be encouraged to visit the most idle node.
             nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in self.pg.graph.nodes}
-            indices = sorted(nodes_idless, key=nodes_idless.get)
-            index = indices.index(node)
-            self.pg.setNodeVisitTime(node, timeStamp)
-            return 10*(self.alpha**max((index - self.reward_shift * len(indices))/self.pg.graph.number_of_nodes(), 0)-1)
+            unique_sorted_idleness_times = sorted(list(set(nodes_idless.values())))
+            index = unique_sorted_idleness_times.index(nodes_idless[node])
+            n = self.pg.graph.number_of_nodes()
+            reward = 50*(self.alpha**(index/n)-1)
+
+        if self.reward_method == "average" :
+            # Method 0 is the one we thaought of by default
+            idleTime = self.pg.getNodeIdlenessTime(node, timeStamp) 
+            reward = -self.pg.getAverageIdlenessTime(self.step_count)
+
+        if self.reward_method == "normalization" :
+            # Method 0 is the one we thaought of by default
+            nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in self.pg.graph.nodes}
+            min_ = min(nodes_idless.values())        
+            max_ = max(nodes_idless.values())
+            idleTime = self.pg.getNodeIdlenessTime(node, timeStamp) 
+            reward = (idleTime-min_)/(max_-min_)
+        
+        return reward
+
         
 
     
