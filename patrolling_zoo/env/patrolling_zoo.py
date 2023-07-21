@@ -275,7 +275,7 @@ class parallel_env(ParallelEnv):
             #             if d < 5.0:
             #                 obs[i, j, self.OBSERVATION_CHANNELS.OBSTACLE] = 0.0
 
-        elif self.observation_mode == "vector":
+        elif self.observationMode == "vector":
             # Calculate the shortest path distances from each agent to each node.
             vertexDistances = {}
             for a in agents:
