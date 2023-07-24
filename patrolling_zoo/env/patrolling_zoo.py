@@ -225,7 +225,7 @@ class parallel_env(ParallelEnv):
         ''' Returns the global state of the environment.
             This is useful for centralized training, decentralized execution. '''
         
-        raise NotImplementedError()
+        return self.observe(self.agents[0])
 
 
     def observe(self, agent):
@@ -262,7 +262,7 @@ class parallel_env(ParallelEnv):
                 dist = self._dist(pos1, pos2)
                 if dist > 0.0:
                     for i in range(int(dist)):
-                        obs[int(pos1[0] + (pos2[0] - pos1[0]) * i / dist), int(pos1[1] + (pos2[1] - pos1[1]) * i / dist), self.OBSERVATION_CHANNELS.OBSTACLE] = 0.0
+                        obs[int(pos1[0] + (pos2[0] - pos1[0]) * i / dist), int(pos1[1] + (pos2[1] - pos1[1]) * i / dist), self.OBSERVATION_CHANNELS.OBSTACLE] = 1.0
 
             # Fancier edge drawing.
             # for edge in self.pg.graph.edges:

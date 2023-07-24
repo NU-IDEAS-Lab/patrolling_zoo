@@ -77,6 +77,7 @@ class PPO(BaseAlgorithm):
             with torch.no_grad():
                 # collect observations and convert to batch of torch tensors
                 next_obs, info = self.env.reset(seed=seed)
+                next_obs = self.env.state()
 
                 # reset the episodic return
                 total_episodic_return = 0
@@ -93,6 +94,7 @@ class PPO(BaseAlgorithm):
                     next_obs, rewards, terms, truncs, infos = self.env.step(
                         self.learner.unbatchify(actions, self.env)
                     )
+                    next_obs = self.env.state()
 
                     # add to episode storage
                     rb_obs[step] = obs
@@ -312,12 +314,13 @@ class PPONetwork(nn.Module):
         # convert to list of np arrays
 
         #np.stack is a method that concencate the tensors along the new axis
-        obs = np.stack([obs[a] for a in obs], axis=0)
+        # obs = np.stack([obs[a] for a in obs if a.id == 0], axis=0)
+        print("obs.shape", obs.shape)
         # obs = np.stack([flatten(obs_space, obs[a]) for a in obs], axis=0)
 
         # transpose to (batch, channels, width, height)
         # print("obs.shape", obs.shape)
-        obs = obs.transpose(0, -1, 1, 2)
+        obs = obs.transpose(-1, 0, 1)
 
         # convert to torch
         obs = torch.tensor(obs).to(device)
