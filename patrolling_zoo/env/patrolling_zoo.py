@@ -396,7 +396,8 @@ class parallel_env(ParallelEnv):
         for agent in self.agents:
 
             # 3 communicaiton models here
-            agent_observation= self.observe_with_communication(agent)
+            # agent_observation = self.observe_with_communication(agent)
+            agent_observation = self.observe(agent)
             
             # Check if the agent is done
             done_dict[agent] = self.dones[agent]

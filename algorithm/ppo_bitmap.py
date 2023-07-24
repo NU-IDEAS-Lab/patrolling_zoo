@@ -64,7 +64,7 @@ class PPO(BaseAlgorithm):
         """ ALGO LOGIC: EPISODE STORAGE"""
         end_step = 0
         total_episodic_return = 0
-        rb_obs = torch.zeros((self.max_cycles, self.num_agents, self.stack_size, *self.frame_size)).to(self.device)
+        rb_obs = torch.zeros((self.max_cycles, self.num_agents, *self.frame_size)).to(self.device)
         rb_actions = torch.zeros((self.max_cycles, self.num_agents)).to(self.device)
         rb_logprobs = torch.zeros((self.max_cycles, self.num_agents)).to(self.device)
         rb_rewards = torch.zeros((self.max_cycles, self.num_agents)).to(self.device)
@@ -261,7 +261,7 @@ class PPONetwork(nn.Module):
             nn.MaxPool2d(2),
             nn.ReLU(),
             nn.Flatten(),
-            self._layer_init(nn.Linear(128 * 8 * 8, 512)),
+            self._layer_init(nn.Linear(128 * 12 * 12, 512)),
             nn.ReLU(),
         )
         self.actor = self._layer_init(nn.Linear(512, num_actions), std=0.01)
@@ -276,7 +276,6 @@ class PPONetwork(nn.Module):
         return self.critic(self.network(x / 255.0))
 
     def get_action_and_value(self, x, action=None):
-        print("x.shape", x.shape)
         hidden = self.network(x / 255.0)
         logits = self.actor(hidden)
         logits_split = torch.split(logits, split_size_or_sections=1, dim=0)
@@ -312,7 +311,6 @@ class PPONetwork(nn.Module):
         """Converts PZ style observations to batch of torch arrays."""
         # convert to list of np arrays
 
-        # print("obs.shape", obs.shape)
         #np.stack is a method that concencate the tensors along the new axis
         obs = np.stack([obs[a] for a in obs], axis=0)
         # obs = np.stack([flatten(obs_space, obs[a]) for a in obs], axis=0)
