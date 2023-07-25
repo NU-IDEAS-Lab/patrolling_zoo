@@ -45,6 +45,7 @@ class PPO(BaseAlgorithm):
         """ LEARNER SETUP """
         self.learner = PPONetwork(num_actions=self.num_actions, num_agents=self.num_agents, observation_size=self.observation_size, device=self.device).to(self.device)
         self.optimizer = optim.Adam(self.learner.parameters(), lr=self.lr, eps=1e-5)
+        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=total_episodes, eta_min=0, last_epoch=-1)
     
     def train(self, seed=None):
         ''' Trains the policy. '''
@@ -195,6 +196,8 @@ class PPO(BaseAlgorithm):
                     self.optimizer.zero_grad()
                     loss.backward()
                     self.optimizer.step()
+
+            self.scheduler.step()
 
             y_pred, y_true = b_values.cpu().numpy(), b_returns.cpu().numpy()
             var_y = np.var(y_true)
