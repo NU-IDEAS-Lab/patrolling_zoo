@@ -91,9 +91,8 @@ class parallel_env(ParallelEnv):
         minPosY = min(pos[p][1] for p in pos)
         maxPosY = max(pos[p][1] for p in pos)
 
-        # Create the observation space.
-        self.observation_spaces = spaces.Dict({agent: spaces.Dict({
-
+        # Create the state space.
+        state_space = {
             # The agent state is the position of each agent.
             "agent_state": spaces.Dict({
                 a: spaces.Box(
@@ -110,15 +109,20 @@ class parallel_env(ParallelEnv):
                     high = np.inf,
                 ) for v in range(self.pg.graph.number_of_nodes())
             }), # type: ignore
-
-            # # The second part is the shortest path cost from every agent to every node.
-            # "vertex_distances": spaces.Dict({
-            #     a: spaces.Box(
-            #         low = np.array([0.0] * self.pg.graph.number_of_nodes(), dtype=np.float32),
-            #         high = np.array([np.inf] * self.pg.graph.number_of_nodes(), dtype=np.float32),
-            #     ) for a in self.possible_agents
-            # }) # type: ignore
-        }) for agent in self.possible_agents}) # type: ignore
+        }
+        if self.observe_method == "old":
+            # The second part is the shortest path cost from every agent to every node.
+            state_space["vertex_distances"] = spaces.Dict({
+                a: spaces.Box(
+                    low = np.array([0.0] * self.pg.graph.number_of_nodes(), dtype=np.float32),
+                    high = np.array([np.inf] * self.pg.graph.number_of_nodes(), dtype=np.float32),
+                ) for a in self.possible_agents
+            }) # type: ignore
+        
+        self.state_space = spaces.Dict(state_space)
+        
+        # Create the observation space.
+        self.observation_spaces = spaces.Dict({agent: self.state_space for agent in self.possible_agents}) # type: ignore
 
 
     def reset(self, seed=None, options=None):
@@ -232,28 +236,30 @@ class parallel_env(ParallelEnv):
                 "agent_state": {a: a.position for a in self.agents},
                 "vertex_state": {v: nodes_idless[v] for v in self.pg.graph.nodes}
             }
+        elif self.observe_method == "old":
+            agents = [a for a in self.agents if self._dist(a.position, agent.position) <= agent.observationRadius]
+            vertices = [v for v in self.pg.graph.nodes if self._dist(self.pg.getNodePosition(v), agent.position) <= agent.observationRadius]
+
+            # Calculate the shortest path distances from each agent to each node.
+            vertexDistances = {}
+            for a in agents:
+                vDists = nx.shortest_path_length(self.pg.graph,
+                                      source=self.pg.getNearestNode(a.position),
+                                      weight='weight'
+                )
+                vertexDistances[a] = np.array([vDists[v] for v in self.pg.graph.nodes])
+
+            obs = {
+                "agent_state": {a: a.position for a in agents},
+                "vertex_state": {v: self.pg.getNodeIdlenessTime(v, self.step_count) for v in vertices},
+                "vertex_distances": vertexDistances
+            }
+        
         else:
             raise ValueError(f"Invalid observation method {self.observe_method}")
         
         return obs
 
-        # agents = [a for a in self.agents if self._dist(a.position, agent.position) <= agent.observationRadius]
-        # vertices = [v for v in self.pg.graph.nodes if self._dist(self.pg.getNodePosition(v), agent.position) <= agent.observationRadius]
-
-        # # Calculate the shortest path distances from each agent to each node.
-        # vertexDistances = {}
-        # for a in agents:
-        #     vDists = nx.shortest_path_length(self.pg.graph,
-        #                           source=self.pg.getNearestNode(a.position),
-        #                           weight='weight'
-        #     )
-        #     vertexDistances[a] = np.array([vDists[v] for v in self.pg.graph.nodes])
-
-        # return {
-        #     "agent_state": {a: a.position for a in agents},
-        #     "vertex_state": {v: self.pg.getNodeIdlenessTime(v, self.step_count) for v in vertices},
-        #     "vertex_distances": vertexDistances
-        # }
 
     def global_observation(self):
 
