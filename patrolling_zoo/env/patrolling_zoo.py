@@ -251,11 +251,11 @@ class parallel_env(ParallelEnv):
             # Calculate the shortest path distances from each agent to each node.
             vertexDistances = {}
             for a in agents:
-                vDists = nx.shortest_path_length(self.pg.graph,
-                                      source=self.pg.getNearestNode(a.position),
-                                      weight='weight'
-                )
-                vertexDistances[a] = np.array([vDists[v] for v in self.pg.graph.nodes])
+                vDists = np.zeros(self.pg.graph.number_of_nodes())
+                for v in self.pg.graph.nodes:
+                    path = self._getPathToNode(a, v)
+                    vDists[v] = nx.path_weight(self.pg.graph, path, weight='weight')
+                vertexDistances[a] = vDists
 
             obs = {
                 "agent_state": {a: a.position for a in agents},
@@ -266,11 +266,11 @@ class parallel_env(ParallelEnv):
             # Calculate the shortest path distances from each agent to each node.
             vertexDistances = {}
             for a in agents:
-                vDists = nx.shortest_path_length(self.pg.graph,
-                                      source=self.pg.getNearestNode(a.position),
-                                      weight='weight'
-                )
-                vertexDistances[a] = np.array([vDists[v] for v in self.pg.graph.nodes])
+                vDists = np.zeros(self.pg.graph.number_of_nodes())
+                for v in self.pg.graph.nodes:
+                    path = self._getPathToNode(a, v)
+                    vDists[v] = nx.path_weight(self.pg.graph, path, weight='weight')
+                vertexDistances[a] = vDists
 
             obs = {
                 "vertex_state": {v: self.pg.getNodeIdlenessTime(v, self.step_count) for v in vertices},
@@ -323,29 +323,21 @@ class parallel_env(ParallelEnv):
                     startIdx = 1
                     srcNode = agent.lastNode
                     dstNode = action
-                    # The agent is on an edge, so determine which connected node results in shortest path.
-                    if agent.edge != None:
-                        pathLen1 = nx.shortest_path_length(self.pg.graph, source=agent.edge[0], target=dstNode, weight='weight')
-                        pathLen2 = nx.shortest_path_length(self.pg.graph, source=agent.edge[1], target=dstNode, weight='weight')
-                        srcNode = agent.edge[0]
-                        if pathLen2 < pathLen1:
-                            srcNode = agent.edge[1]
-                        startIdx = 0
                     
                     # Calculate the shortest path.
-                    path = nx.shortest_path(self.pg.graph, source=srcNode, target=dstNode, weight='weight')
+                    path = self._getPathToNode(agent, dstNode)
                     pathLen = nx.path_weight(self.pg.graph, path, weight='weight')
                     
                     # Handle special case where the agent is already at the destination node.
-                    if srcNode == dstNode:
+                    if srcNode == dstNode or agent.edge != None:
                         startIdx = 0
 
                     idlenessDelta = self.pg.getNodeIdlenessTime(dstNode, self.step_count) - self.pg.getAverageIdlenessTime(self.step_count)
-                    if idlenessDelta >= 0:
-                        r = self.alpha * idlenessDelta / (1.0 + np.log(1.0 + pathLen) / np.log(1000000))
-                    else:
-                        r = self.alpha * idlenessDelta
-                    #r = self.alpha * idlenessDelta
+                    # if idlenessDelta >= 0:
+                    #     r = self.alpha * idlenessDelta / (1.0 + np.log(1.0 + pathLen) / np.log(1000000))
+                    # else:
+                    #     r = self.alpha * idlenessDelta
+                    r = self.alpha * idlenessDelta
                     reward_dict[agent] += r
 
                     # Take a step towards the next node.
@@ -472,6 +464,24 @@ class parallel_env(ParallelEnv):
 
         return np.sqrt(np.power(pos1[0] - pos2[0], 2) + np.power(pos1[1] - pos2[1], 2))
     
+
+    def _getPathToNode(self, agent, dstNode):
+        ''' Determines the shortest path for the agent to reach the given node. '''
+
+        # The agent is on an edge, so determine which connected node results in shortest path.
+        if agent.edge != None:
+            pathLen1 = nx.shortest_path_length(self.pg.graph, source=agent.edge[0], target=dstNode, weight='weight')
+            pathLen2 = nx.shortest_path_length(self.pg.graph, source=agent.edge[1], target=dstNode, weight='weight')
+            srcNode = agent.edge[0]
+            if pathLen2 < pathLen1:
+                srcNode = agent.edge[1]
+        else:
+            srcNode = agent.lastNode
+        
+        # Calculate the shortest path.
+        return nx.shortest_path(self.pg.graph, source=srcNode, target=dstNode, weight='weight')
+
+
 
     def observe_with_communication(self, agent):
         ''' Adds communicated states to the agent's observation. '''
