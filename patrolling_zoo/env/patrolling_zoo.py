@@ -124,6 +124,12 @@ class parallel_env(ParallelEnv):
         # Create the observation space.
         self.observation_spaces = spaces.Dict({agent: self.state_space for agent in self.possible_agents}) # type: ignore
 
+        # The state space is a complete observation of the environment.
+        # This is not part of the standard PettingZoo API, but is useful for centralized training.
+        self.state_space = self.observation_spaces[self.possible_agents[0]]
+
+        self.reset()
+
 
     def reset(self, seed=None, options=None):
         ''' Sets the environment to its initial state. '''
@@ -209,37 +215,39 @@ class parallel_env(ParallelEnv):
         ''' Returns the global state of the environment.
             This is useful for centralized training, decentralized execution. '''
         
-        raise NotImplementedError()
+        return self.observe(self.possible_agents[0], radius=np.inf)
 
-    def observe(self, agent):
+    def observe(self, agent, radius=None):
         ''' Returns the observation for the given agent.'''
 
+        if radius == None:
+            radius = agent.observationRadius
+
+        agents = [a for a in self.agents if self._dist(a.position, agent.position) <= radius]
+        vertices = [v for v in self.pg.graph.nodes if self._dist(self.pg.getNodePosition(v), agent.position) <= radius]
+
         if self.observe_method == "ranking":
-            nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in self.pg.graph.nodes}
+            nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in vertices}
             unique_sorted_idleness_times = sorted(list(set(nodes_idless.values())))
             obs = {
-                "agent_state": {a: a.position for a in self.agents},
-                "vertex_state": {v: unique_sorted_idleness_times.index(nodes_idless[v]) for v in self.pg.graph.nodes}
+                "agent_state": {a: a.position for a in agents},
+                "vertex_state": {v: unique_sorted_idleness_times.index(nodes_idless[v]) for v in vertices}
             }        
         elif self.observe_method == "normalization":
-            nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in self.pg.graph.nodes}
+            nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in vertices}
             min_ = min(nodes_idless.values())
             max_ = max(nodes_idless.values())
             obs = {
-                "agent_state": {a: a.position for a in self.agents},
-                "vertex_state": {v: (nodes_idless[v]-min_)/(max_ - min_) for v in self.pg.graph.nodes}
+                "agent_state": {a: a.position for a in agents},
+                "vertex_state": {v: (nodes_idless[v]-min_)/(max_ - min_) for v in vertices}
             }
-
         elif self.observe_method == "raw":
-            nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in self.pg.graph.nodes}
+            nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in vertices}
             obs = {
-                "agent_state": {a: a.position for a in self.agents},
-                "vertex_state": {v: nodes_idless[v] for v in self.pg.graph.nodes}
+                "agent_state": {a: a.position for a in agents},
+                "vertex_state": {v: nodes_idless[v] for v in vertices}
             }
         elif self.observe_method == "old":
-            agents = [a for a in self.agents if self._dist(a.position, agent.position) <= agent.observationRadius]
-            vertices = [v for v in self.pg.graph.nodes if self._dist(self.pg.getNodePosition(v), agent.position) <= agent.observationRadius]
-
             # Calculate the shortest path distances from each agent to each node.
             vertexDistances = {}
             for a in agents:
