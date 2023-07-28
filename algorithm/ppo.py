@@ -265,9 +265,11 @@ class PPONetwork(nn.Module):
             # nn.ReLU(),
             # nn.Flatten(),
             self._layer_init(nn.Linear(observation_size, 512)),
-            nn.ReLU(),      
+            nn.ReLU(),
             self._layer_init(nn.Linear(512, 512)),
             nn.ReLU(),
+            self._layer_init(nn.Linear(512, 512)),
+            nn.ReLU()
         )
         self.actor = self._layer_init(nn.Linear(512, num_actions), std=0.01)
         self.critic = self._layer_init(nn.Linear(512, 1))
