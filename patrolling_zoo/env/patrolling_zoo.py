@@ -93,14 +93,6 @@ class parallel_env(ParallelEnv):
 
         # Create the state space.
         state_space = {
-            # The agent state is the position of each agent.
-            "agent_state": spaces.Dict({
-                a: spaces.Box(
-                    low = np.array([minPosX, minPosY], dtype=np.float32),
-                    high = np.array([maxPosX, maxPosY], dtype=np.float32),
-                ) for a in self.possible_agents
-            }), # type: ignore
-
             # The vertex state is composed of two parts.
             # The first part is the idleness time of each node.
             "vertex_state": spaces.Dict({
@@ -110,6 +102,16 @@ class parallel_env(ParallelEnv):
                 ) for v in range(self.pg.graph.number_of_nodes())
             }), # type: ignore
         }
+
+        if self.observe_method != "ajg_new":
+            # Add agent Euclidean position.
+            state_space["agent_state"] = spaces.Dict({
+                a: spaces.Box(
+                    low = np.array([minPosX, minPosY], dtype=np.float32),
+                    high = np.array([maxPosX, maxPosY], dtype=np.float32),
+                ) for a in self.possible_agents
+            }) # type: ignore
+        
         if self.observe_method == "old":
             # The second part is the shortest path cost from every agent to every node.
             state_space["vertex_distances"] = spaces.Dict({
@@ -257,6 +259,20 @@ class parallel_env(ParallelEnv):
 
             obs = {
                 "agent_state": {a: a.position for a in agents},
+                "vertex_state": {v: self.pg.getNodeIdlenessTime(v, self.step_count) for v in vertices},
+                "vertex_distances": vertexDistances
+            }
+        elif self.observe_method == "ajg_new":
+            # Calculate the shortest path distances from each agent to each node.
+            vertexDistances = {}
+            for a in agents:
+                vDists = nx.shortest_path_length(self.pg.graph,
+                                      source=self.pg.getNearestNode(a.position),
+                                      weight='weight'
+                )
+                vertexDistances[a] = np.array([vDists[v] for v in self.pg.graph.nodes])
+
+            obs = {
                 "vertex_state": {v: self.pg.getNodeIdlenessTime(v, self.step_count) for v in vertices},
                 "vertex_distances": vertexDistances
             }
