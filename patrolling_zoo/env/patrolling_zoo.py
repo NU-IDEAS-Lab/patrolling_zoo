@@ -119,14 +119,12 @@ class parallel_env(ParallelEnv):
                 ) for a in self.possible_agents
             }) # type: ignore
         
+        # The state space is a complete observation of the environment.
+        # This is not part of the standard PettingZoo API, but is useful for centralized training.
         self.state_space = spaces.Dict(state_space)
         
         # Create the observation space.
         self.observation_spaces = spaces.Dict({agent: self.state_space for agent in self.possible_agents}) # type: ignore
-
-        # The state space is a complete observation of the environment.
-        # This is not part of the standard PettingZoo API, but is useful for centralized training.
-        self.state_space = self.observation_spaces[self.possible_agents[0]]
 
         self.reset()
 
