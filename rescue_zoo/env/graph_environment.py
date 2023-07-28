@@ -1,9 +1,8 @@
-import numpy as np
 import networkx as nx
 import math
 import matplotlib.pyplot as plt
 
-class PatrolGraph():
+class GraphEnvironment():
     ''' This reads a graph file of the format provided by
         https://github.com/davidbsp/patrolling_sim '''
 
@@ -39,14 +38,9 @@ class PatrolGraph():
                 for _ in range(numEdges):
                     j = int(file.readline())
                     direction = str(file.readline()) # not useful!
-                    cost = int(file.readline()) # we no longer use this cost value, as it does not correspond to the actual euclidean distance.
-                    self.graph.add_edge(i, j)
-        
-        # Set a weight on each edge which corresponds to the actual euclidean distance.
-        for edge in self.graph.edges:
-            i = edge[0]
-            j = edge[1]
-            self.graph.edges[i, j]["weight"] = self._dist(self.graph.nodes[i]["pos"], self.graph.nodes[j]["pos"])
+                    cost = int(file.readline())
+                    self.graph.add_edge(i, j, weight = cost)
+
 
     def reset(self):
         ''' Resets the graph to initial state. '''
@@ -81,26 +75,9 @@ class PatrolGraph():
 
     def getAverageIdlenessTime(self, currentTime):
         ''' Returns the average idleness time of all nodes. '''
-
         nodes = self.graph.nodes
         number_of_nodes = len(nodes)
-        return sum([self.getNodeIdlenessTime(node, currentTime) for node in nodes]) / float(number_of_nodes)
-
-
-    def getWorstIdlenessTime(self, currentTime):
-        ''' Returns the worst idleness time of all nodes. '''
-
-        nodes = self.graph.nodes
-        return max([self.getNodeIdlenessTime(node, currentTime) for node in nodes])
-
-
-    def getStdDevIdlenessTime(self, currentTime):
-        ''' Returns the standard deviation of idleness time of all nodes. '''
-
-        nodes = self.graph.nodes
-        number_of_nodes = len(nodes)
-        average_idleness_time = self.getAverageIdlenessTime(currentTime)
-        return math.sqrt(sum([math.pow(self.getNodeIdlenessTime(node, currentTime) - average_idleness_time, 2) for node in nodes]) / float(number_of_nodes))
+        return sum([self.getNodeIdlenessTime(node, currentTime) for node in nodes])/number_of_nodes
 
 
     def getNearestNode(self, pos, epsilon=None):
@@ -132,7 +109,20 @@ class PatrolGraph():
             origins.append(self.getNearestNode(pos))
         return origins
     
-    def _dist(self, pos1, pos2):
-        ''' Calculates the Euclidean distance between two points. '''
 
-        return np.sqrt(np.power(pos1[0] - pos2[0], 2) + np.power(pos1[1] - pos2[1], 2))
+    def PlotGraph(self, figsize=(18, 12)):
+        """
+        PlotGraph function plots the graph using matplotlib and networkx libraries.
+
+        Args:
+            figsize (tuple, optional): The size of the figure in inches. Defaults to (18, 12).
+
+        Returns:
+            None
+        """
+        fig, ax = plt.subplots(figsize=figsize)
+        pos = nx.get_node_attributes(self.graph, 'pos')
+        edge_labels = nx.get_edge_attributes(self.graph, 'weight')
+        nx.draw_networkx(self.graph, pos, with_labels=True, node_color='lightblue', node_size=600,font_size=10, font_color='black')
+        nx.draw_networkx_edge_labels(self.graph, pos, edge_labels=edge_labels, font_size=7)
+        # After executing the function do not forget plt.show()
