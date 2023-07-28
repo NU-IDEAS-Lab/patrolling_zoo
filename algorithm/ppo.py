@@ -229,16 +229,18 @@ class PPO(BaseAlgorithm):
             # render max_episodes episodes out
             for episode in range(max_episodes):
                 obs, info = self.env.reset(seed=seed)
+                obs = self.env.state()
                 if render:
                     clear_output(wait=True)
                     self.env.render()
-                obs = self.learner.batchify_obs(self.env.observation_space(self.env.possible_agents[0]), obs, self.device)
+                obs = self.learner.batchify_obs(self.env.state_space, obs, self.device)
                 terms = [False]
                 truncs = [False]
                 while not any(terms) and not any(truncs):
                     actions, logprobs, _, values = self.learner.get_action_and_value(obs)
                     obs, rewards, terms, truncs, infos = self.env.step(self.learner.unbatchify(actions, self.env))
-                    obs = self.learner.batchify_obs(self.env.observation_space(self.env.possible_agents[0]), obs, self.device)
+                    obs = self.env.state()
+                    obs = self.learner.batchify_obs(self.env.state_space, obs, self.device)
                     terms = [terms[a] for a in terms]
                     truncs = [truncs[a] for a in truncs]
                     if render:
