@@ -212,7 +212,7 @@ class parallel_env(ParallelEnv):
         ''' Returns the global state of the environment.
             This is useful for centralized training, decentralized execution. '''
         
-        return self.observe(self.agents[0], radius=np.inf)
+        return self.observe(self.possible_agents[0], radius=np.inf)
 
     def observe(self, agent, radius=None):
         ''' Returns the observation for the given agent.'''
