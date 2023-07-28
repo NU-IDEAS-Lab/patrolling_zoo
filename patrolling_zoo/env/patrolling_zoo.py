@@ -112,7 +112,7 @@ class parallel_env(ParallelEnv):
                 ) for a in self.possible_agents
             }) # type: ignore
         
-        if self.observe_method == "old":
+        if self.observe_method == "old" or self.observe_method == "ajg_new":
             # The second part is the shortest path cost from every agent to every node.
             state_space["vertex_distances"] = spaces.Dict({
                 a: spaces.Box(
@@ -283,17 +283,6 @@ class parallel_env(ParallelEnv):
         return obs
 
 
-    def global_observation(self):
-
-        obs = {
-            "agent_state": {a: a.position for a in self.agents},
-            "vertex_state": {v: self.pg.getNodeIdlenessTime(v, self.step_count) for v in self.pg.graph.nodes}
-        }
-        
-        return obs
-
-
-
     def step(self, action_dict={}):
         ''''
         Perform a step in the environment based on the given action dictionary.
@@ -401,7 +390,8 @@ class parallel_env(ParallelEnv):
         for agent in self.agents:
 
             # 3 communicaiton models here
-            agent_observation= self.observe_with_communication(agent)
+            # agent_observation = self.observe_with_communication(agent)
+            agent_observation = self.observe(agent)
             
             # Check if the agent is done
             done_dict[agent] = self.dones[agent]
