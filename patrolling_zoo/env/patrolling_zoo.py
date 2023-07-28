@@ -323,13 +323,18 @@ class parallel_env(ParallelEnv):
                     
                     # Calculate the shortest path.
                     path = nx.shortest_path(self.pg.graph, source=srcNode, target=dstNode, weight='weight')
+                    pathLen = nx.path_weight(self.pg.graph, path, weight='weight')
                     
                     # Handle special case where the agent is already at the destination node.
                     if srcNode == dstNode:
                         startIdx = 0
 
-
-                    r = self.alpha * (self.pg.getNodeIdlenessTime(dstNode, self.step_count) - self.pg.getAverageIdlenessTime(self.step_count))
+                    idlenessDelta = self.pg.getNodeIdlenessTime(dstNode, self.step_count) - self.pg.getAverageIdlenessTime(self.step_count)
+                    if idlenessDelta >= 0:
+                        r = self.alpha * idlenessDelta / (1.0 + np.log(1.0 + pathLen) / np.log(1000000))
+                    else:
+                        r = self.alpha * idlenessDelta
+                    #r = self.alpha * idlenessDelta
                     reward_dict[agent] += r
 
                     # Take a step towards the next node.
