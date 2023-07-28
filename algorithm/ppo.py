@@ -126,7 +126,7 @@ class PPO(BaseAlgorithm):
                 rb_returns = rb_advantages + rb_values
 
             # convert our episodes to batch of individual transitions
-            b_obs = torch.flatten(rb_obs[:end_step], start_dim=0, end_dim=0)
+            b_obs = rb_obs[:end_step]
             b_logprobs = torch.flatten(rb_logprobs[:end_step], start_dim=0, end_dim=1)
             b_actions = torch.flatten(rb_actions[:end_step], start_dim=0, end_dim=1)
             b_returns = torch.flatten(rb_returns[:end_step], start_dim=0, end_dim=1)
@@ -273,7 +273,7 @@ class PPONetwork(nn.Module):
             self._layer_init(nn.Linear(512, 512)),
             nn.ReLU()
         )
-        self.actor = self._layer_init(nn.Linear(512, num_actions), std=0.01)
+        self.actor = self._layer_init(nn.Linear(512, num_actions * num_agents), std=0.01)
         self.critic = self._layer_init(nn.Linear(512, 1))
 
     def _layer_init(self, layer, std=np.sqrt(2), bias_const=0.0):
@@ -287,7 +287,7 @@ class PPONetwork(nn.Module):
     def get_action_and_value(self, x, action=None):
         hidden = self.network(x / 255.0)
         logits = self.actor(hidden)
-        logits_split = torch.split(logits, split_size_or_sections=1, dim=0)
+        logits_split = torch.split(logits, split_size_or_sections=int(self.num_actions), dim=1)
 
         if action is None:
             action = []
@@ -320,9 +320,8 @@ class PPONetwork(nn.Module):
         """Converts PZ style observations to batch of torch arrays."""
         # convert to list of np arrays
 
-        #np.stack is a method that concencate the tensors along the new axis
-        # obs = np.stack([flatten(obs_space, obs[a]) for a in obs], axis=0)
-        obs = flatten(obs_space, obs)
+        obs = flatten(obs_space, obs).reshape(1, -1)
+
         # convert to torch
         obs = torch.tensor(obs).to(device)
 
