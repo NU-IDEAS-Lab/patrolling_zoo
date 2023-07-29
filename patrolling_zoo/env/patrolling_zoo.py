@@ -311,6 +311,8 @@ class parallel_env(ParallelEnv):
 
                 # Update the agent's position.
                 if action in self.pg.graph.nodes:
+                    # Destination node is the action value.
+                    dstNode = action
 
                     # if action == self.pg.graph.number_of_nodes() - 2:
                     #     reward_dict[agent] += 1000
@@ -319,20 +321,12 @@ class parallel_env(ParallelEnv):
                         agent.lastAction = action
                         agent.stepsTravelled = 0
 
-                    # Determine the node to use as source node for shortest path calculation.
-                    srcNode = agent.lastNode
-                    dstNode = action
                     
                     # Calculate the shortest path.
                     path = self._getPathToNode(agent, dstNode)
                     pathLen = self._getAgentPathLength(agent, path)
                     
-                    # Handle special case where the agent is already at the destination node.
-                    if srcNode == dstNode or agent.edge != None:
-                        startIdx = 0
-                    else:
-                        startIdx = 1
-
+                    # Provide reward for moving towards a node.
                     idlenessDelta = self.pg.getNodeIdlenessTime(dstNode, self.step_count) - self.pg.getAverageIdlenessTime(self.step_count)
                     # if idlenessDelta >= 0:
                     #     r = self.alpha * idlenessDelta / (1.0 + np.log(1.0 + pathLen) / np.log(1000000))
@@ -343,7 +337,7 @@ class parallel_env(ParallelEnv):
 
                     # Take a step towards the next node.
                     stepSize = agent.speed
-                    for nextNode in path[startIdx:]:
+                    for nextNode in path:
                         # print(f"Moving towards next node {nextNode} with step size {stepSize}")
                         reached, stepSize = self._moveTowardsNode(agent, nextNode, stepSize)
 
@@ -469,18 +463,27 @@ class parallel_env(ParallelEnv):
     def _getPathToNode(self, agent, dstNode):
         ''' Determines the shortest path for the agent to reach the given node. '''
 
+        path = []
+
         # The agent is on an edge, so determine which connected node results in shortest path.
         if agent.edge != None:
-            pathLen1 = nx.shortest_path_length(self.pg.graph, source=agent.edge[0], target=dstNode, weight='weight')
-            pathLen2 = nx.shortest_path_length(self.pg.graph, source=agent.edge[1], target=dstNode, weight='weight')
-            srcNode = agent.edge[0]
+            path1 = nx.shortest_path(self.pg.graph, source=agent.edge[0], target=dstNode, weight='weight')
+            pathLen1 = self._getAgentPathLength(agent, path1)
+            path2 = nx.shortest_path(self.pg.graph, source=agent.edge[1], target=dstNode, weight='weight')
+            pathLen2 = self._getAgentPathLength(agent, path2)
+            path = path1
             if pathLen2 < pathLen1:
-                srcNode = agent.edge[1]
-        else:
-            srcNode = agent.lastNode
+                path = path2
         
-        # Calculate the shortest path.
-        return nx.shortest_path(self.pg.graph, source=srcNode, target=dstNode, weight='weight')
+        # The agent is on a node. Simply calculate the shortest path.
+        else:
+            path = nx.shortest_path(self.pg.graph, source=agent.lastNode, target=dstNode, weight='weight')
+
+            # Remove the first node from the path if the destination is different than the current node.
+            if agent.lastNode != dstNode:
+                path = path[1:]
+        
+        return path
 
 
     def _getAgentPathLength(self, agent, path):
