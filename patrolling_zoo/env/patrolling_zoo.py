@@ -28,8 +28,6 @@ class PatrolAgent():
         self.speed = self.startingSpeed
         self.edge = None
         self.lastNode = self.startingNode
-        self.lastAction = None
-        self.stepsTravelled = 0
      
 
 class parallel_env(ParallelEnv):
@@ -311,17 +309,10 @@ class parallel_env(ParallelEnv):
 
                 # Update the agent's position.
                 if action in self.pg.graph.nodes:
+                    
                     # Destination node is the action value.
                     dstNode = action
 
-                    # if action == self.pg.graph.number_of_nodes() - 2:
-                    #     reward_dict[agent] += 1000
-
-                    if agent.lastAction != action:
-                        agent.lastAction = action
-                        agent.stepsTravelled = 0
-
-                    
                     # Calculate the shortest path.
                     path = self._getPathToNode(agent, dstNode)
                     pathLen = self._getAgentPathLength(agent, path)
@@ -338,29 +329,19 @@ class parallel_env(ParallelEnv):
                     # Take a step towards the next node.
                     stepSize = agent.speed
                     for nextNode in path:
-                        # print(f"Moving towards next node {nextNode} with step size {stepSize}")
                         reached, stepSize = self._moveTowardsNode(agent, nextNode, stepSize)
 
                         # The agent has reached the next node.
                         if reached:
-                            same = agent.lastNode == nextNode
-                            agent.lastNode = nextNode
-                            if agent.lastNode == dstNode or not self.requireExplicitVisit:
+                            if nextNode == dstNode or not self.requireExplicitVisit:
                                 # The agent has reached its destination, visiting the node.
                                 # The agent receives a reward for visiting the node.
-                                r = self.onNodeVisit(agent.lastNode, self.step_count)
-                                # if not same:
-                                #     # print(f"REACHED DESTINATION NODE {dstNode} WITH REWARD {r}")
-                                #     reward_dict[agent] += 100.0 * r
+                                r = self.onNodeVisit(nextNode, self.step_count)
+                                reward_dict[agent] += 100.0 * r
                 
                         # The agent has exceeded its movement budget for this step.
                         if stepSize <= 0.0:
                             break
-
-                    # if srcNode != dstNode:
-                    #     if agent.stepsTravelled > 1:
-                    #         reward_dict[agent] += np.log(agent.stepsTravelled)
-                    #     agent.stepsTravelled += 1
                 else:
                     raise ValueError(f"Invalid action {action} for agent {agent.name}")
 
@@ -404,27 +385,16 @@ class parallel_env(ParallelEnv):
         ''' Called when an agent visits a node.
             Returns the reward for visiting the node, which is proportional to
             node idleness time. '''
-
-        # idleTime = self.pg.getNodeIdlenessTime(node, timeStamp) 
-        # self.pg.setNodeVisitTime(node, timeStamp)
-        # return idleTime
-
-        # Here we rank the nodes in term of idleness and give a reward based on the rank.
-        # So the agent will be encouraged to visit the most idle node.
-        # nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in self.pg.graph.nodes}
-        # indices = sorted(nodes_idless, key=nodes_idless.get)
-
-        # nodesSorted = sorted(self.pg.graph.nodes(), key=lambda n: self.pg.graph.nodes[n]['visitTime'])
-        # index = nodesSorted.index(node)
-
-        # print(f"IDLENESS TIME ORDERED: {nodesSorted}, {[self.pg.getNodeIdlenessTime(n, self.step_count) for n in nodesSorted]}")
-
-        avgIdleTime = self.pg.getAverageIdlenessTime(timeStamp)
+        
         self.pg.setNodeVisitTime(node, timeStamp)
-        deltaAvgIdleTime = avgIdleTime - self.pg.getAverageIdlenessTime(timeStamp)
+        return 0.0
+
+        # avgIdleTime = self.pg.getAverageIdlenessTime(timeStamp)
+        # self.pg.setNodeVisitTime(node, timeStamp)
+        # deltaAvgIdleTime = avgIdleTime - self.pg.getAverageIdlenessTime(timeStamp)
         
         # return a reward which is proportional to the rank of the node, where the most idle node has the highest reward
-        return self.alpha * deltaAvgIdleTime
+        # return self.alpha * deltaAvgIdleTime
 
         # return self.alpha ** max((index - self.reward_shift * len(indices))/self.pg.graph.number_of_nodes(), 0)
 
@@ -445,10 +415,11 @@ class parallel_env(ParallelEnv):
                 agent.position[1] + (posNextNode[1] - agent.position[1]) * step / distCurrToNext
             )
         
-        # Set information about the edge which the agent is currently on.
+        # Set information about the node/edge which the agent is currently on.
         if reached:
+            agent.lastNode = node
             agent.edge = None
-        else:
+        elif agent.lastNode != node:
             agent.edge = (agent.lastNode, node)
 
         return reached, stepSize - distCurrToNext
