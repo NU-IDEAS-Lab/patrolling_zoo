@@ -284,10 +284,10 @@ class PPONetwork(nn.Module):
         return layer
 
     def get_value(self, x):
-        return self.critic(self.network(x / 255.0))
+        return self.critic(self.network(x))
 
     def get_action_and_value(self, x, action=None):
-        hidden = self.network(x / 255.0)
+        hidden = self.network(x)
         logits = self.actor(hidden)
         logits_split = torch.split(logits, split_size_or_sections=int(self.num_actions), dim=1)
 
