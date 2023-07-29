@@ -267,11 +267,11 @@ class parallel_env(ParallelEnv):
                 vDists = np.zeros(self.pg.graph.number_of_nodes())
                 for v in self.pg.graph.nodes:
                     path = self._getPathToNode(a, v)
-                    vDists[v] = self._getAgentPathLength(a, path)
+                    vDists[v] = np.log(1.0 + self._getAgentPathLength(a, path))
                 vertexDistances[a] = vDists
 
             obs = {
-                "vertex_state": {v: self.pg.getNodeIdlenessTime(v, self.step_count) for v in vertices},
+                "vertex_state": {v: np.log(1.0 + self.pg.getNodeIdlenessTime(v, self.step_count)) for v in vertices},
                 "vertex_distances": vertexDistances
             }
         
