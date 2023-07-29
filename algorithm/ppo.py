@@ -239,10 +239,11 @@ class PPO(BaseAlgorithm):
                 while not any(terms) and not any(truncs):
                     actions, logprobs, _, values = self.learner.get_action_and_value(obs)
                     obs, rewards, terms, truncs, infos = self.env.step(self.learner.unbatchify(actions, self.env))
-                    obs = self.env.state()
-                    obs = self.learner.batchify_obs(self.env.state_space, obs, self.device)
                     terms = [terms[a] for a in terms]
                     truncs = [truncs[a] for a in truncs]
+                    if not any(terms) and not any(truncs):
+                        obs = self.env.state()
+                        obs = self.learner.batchify_obs(self.env.state_space, obs, self.device)
                     if render:
                         clear_output(wait=True)
                         self.env.render()
