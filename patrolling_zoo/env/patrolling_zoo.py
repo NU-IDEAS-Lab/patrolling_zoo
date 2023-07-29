@@ -262,16 +262,32 @@ class parallel_env(ParallelEnv):
             }
         elif self.observe_method == "ajg_new":
             # Calculate the shortest path distances from each agent to each node.
-            vertexDistances = {}
+            vDists = np.zeros((len(agents), self.pg.graph.number_of_nodes()))
             for a in agents:
-                vDists = np.zeros(self.pg.graph.number_of_nodes())
                 for v in self.pg.graph.nodes:
                     path = self._getPathToNode(a, v)
-                    vDists[v] = np.log(1.0 + self._getAgentPathLength(a, path))
-                vertexDistances[a] = vDists
+                    vDists[a.id, v] = self._getAgentPathLength(a, path)
+            
+            # Normalize.
+            if np.size(vDists) > 0:
+                vDists = self._minMaxNormalize(vDists)
+
+            # Convert to dictionary.
+            vertexDistances = {}
+            for a in agents:
+                vertexDistances[a] = vDists[a.id]
+
+            # Create numpy array of idleness times.
+            idlenessTimes = np.zeros(self.pg.graph.number_of_nodes())
+            for v in vertices:
+                idlenessTimes[v] = self.pg.getNodeIdlenessTime(v, self.step_count)
+            
+            # Normalize.
+            if np.size(idlenessTimes) > 0:
+                idlenessTimes = self._minMaxNormalize(idlenessTimes)
 
             obs = {
-                "vertex_state": {v: np.log(1.0 + self.pg.getNodeIdlenessTime(v, self.step_count)) for v in vertices},
+                "vertex_state": {v: idlenessTimes[v] for v in vertices},
                 "vertex_distances": vertexDistances
             }
         
@@ -467,6 +483,13 @@ class parallel_env(ParallelEnv):
         pathLen += nx.path_weight(self.pg.graph, path, weight='weight')
 
         return pathLen
+
+
+    def _minMaxNormalize(self, x, eps=1e-8):
+        ''' Normalizes numpy array x to be between 0 and 1. '''
+
+        xMin = np.min(x)
+        return (x - xMin) / (np.max(x) - xMin + eps)
 
 
     def observe_with_communication(self, agent):
