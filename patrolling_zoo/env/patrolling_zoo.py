@@ -276,8 +276,8 @@ class parallel_env(ParallelEnv):
                     vDists[a.id, v] = self._getAgentPathLength(a, path)
             
             # Normalize.
-            # if np.size(vDists) > 0:
-            #     vDists = self._minMaxNormalize(vDists)
+            if np.size(vDists) > 0:
+                vDists = self._minMaxNormalize(vDists, minimum=0.0, maximum=self.pg.longestPathLength)
 
             # Convert to dictionary.
             vertexDistances = {}
@@ -290,8 +290,11 @@ class parallel_env(ParallelEnv):
                 idlenessTimes[v] = self.pg.getNodeIdlenessTime(v, self.step_count)
             
             # Normalize.
-            # if np.size(idlenessTimes) > 0:
-            #     idlenessTimes = self._minMaxNormalize(idlenessTimes)
+            if np.size(idlenessTimes) > 0:
+                if np.min(idlenessTimes) == np.max(idlenessTimes):
+                    idlenessTimes = np.ones(self.pg.graph.number_of_nodes())
+                else:
+                    idlenessTimes = self._minMaxNormalize(idlenessTimes)
 
             obs = {
                 "vertex_state": {v: idlenessTimes[v] for v in vertices},
@@ -491,11 +494,14 @@ class parallel_env(ParallelEnv):
         return pathLen
 
 
-    def _minMaxNormalize(self, x, eps=1e-8):
-        ''' Normalizes numpy array x to be between 0 and 1. '''
+    def _minMaxNormalize(self, x, eps=1e-8, a=0.0, b=1.0, maximum=None, minimum=None):
+        ''' Normalizes numpy array x to be between a and b. '''
 
-        xMin = np.min(x)
-        return (x - xMin) / (np.max(x) - xMin + eps)
+        if maximum is None:
+            maximum = np.max(x)
+        if minimum is None:
+            minimum = np.min(x)
+        return (x - minimum) / (maximum - minimum + eps)
 
 
     def observe_with_communication(self, agent):
