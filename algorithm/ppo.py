@@ -165,8 +165,8 @@ class PPO(BaseAlgorithm):
                     )
 
                     # Policy loss
-                    pg_loss1 = -b_advantages[batch_index] * ratio
-                    pg_loss2 = -b_advantages[batch_index] * torch.clamp(
+                    pg_loss1 = -advantages * ratio
+                    pg_loss2 = -advantages * torch.clamp(
                         ratio, 1 - self.clip_coef, 1 + self.clip_coef
                     )
                     pg_loss = torch.max(pg_loss1, pg_loss2).mean()
