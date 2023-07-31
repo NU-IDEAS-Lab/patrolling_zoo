@@ -23,7 +23,8 @@ class PPO(BaseAlgorithm):
             stack_size = 4,
             frame_size = (64, 64),
             max_cycles = 500,
-            total_episodes = 40
+            total_episodes = 40,
+            max_grad_norm = 0.5
         ):
         super().__init__(env, device)
 
@@ -37,6 +38,7 @@ class PPO(BaseAlgorithm):
         self.frame_size = frame_size
         self.max_cycles = max_cycles
         self.total_episodes = total_episodes
+        self.max_grad_norm = max_grad_norm
 
         self.num_agents = len(env.possible_agents)
         self.num_actions = env.action_space(env.possible_agents[0]).n
@@ -197,6 +199,7 @@ class PPO(BaseAlgorithm):
                     # Take gradient step.
                     self.optimizer.zero_grad()
                     loss.backward()
+                    torch.nn.utils.clip_grad_norm_(self.learner.parameters(), self.max_grad_norm)
                     self.optimizer.step()
 
             self.scheduler.step()
