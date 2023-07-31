@@ -110,8 +110,15 @@ class parallel_env(ParallelEnv):
                 ) for a in self.possible_agents
             }) # type: ignore
         
-        if self.observe_method == "old" or self.observe_method == "ajg_new":
+        if self.observe_method == "old":
             # The second part is the shortest path cost from every agent to every node.
+            state_space["vertex_distances"] = spaces.Dict({
+                a: spaces.Box(
+                    low = np.array([0.0] * self.pg.graph.number_of_nodes(), dtype=np.float32),
+                    high = np.array([np.inf] * self.pg.graph.number_of_nodes(), dtype=np.float32),
+                ) for a in self.possible_agents
+            }) # type: ignore
+        elif self.observe_method == "ajg_new":
             state_space["vertex_distances"] = spaces.Dict({
                 a: spaces.Box(
                     low = np.array([0.0] * self.pg.graph.number_of_nodes(), dtype=np.float32),
@@ -269,22 +276,22 @@ class parallel_env(ParallelEnv):
                     vDists[a.id, v] = self._getAgentPathLength(a, path)
             
             # Normalize.
-            if np.size(vDists) > 0:
-                vDists = self._minMaxNormalize(vDists)
+            # if np.size(vDists) > 0:
+            #     vDists = self._minMaxNormalize(vDists)
 
             # Convert to dictionary.
             vertexDistances = {}
             for a in agents:
                 vertexDistances[a] = vDists[a.id]
-
+            
             # Create numpy array of idleness times.
             idlenessTimes = np.zeros(self.pg.graph.number_of_nodes())
             for v in vertices:
                 idlenessTimes[v] = self.pg.getNodeIdlenessTime(v, self.step_count)
             
             # Normalize.
-            if np.size(idlenessTimes) > 0:
-                idlenessTimes = self._minMaxNormalize(idlenessTimes)
+            # if np.size(idlenessTimes) > 0:
+            #     idlenessTimes = self._minMaxNormalize(idlenessTimes)
 
             obs = {
                 "vertex_state": {v: idlenessTimes[v] for v in vertices},
@@ -334,7 +341,8 @@ class parallel_env(ParallelEnv):
                     pathLen = self._getAgentPathLength(agent, path)
                     
                     # Provide reward for moving towards a node.
-                    idlenessDelta = self.pg.getNodeIdlenessTime(dstNode, self.step_count) - self.pg.getAverageIdlenessTime(self.step_count)
+                    # idlenessDelta = self.pg.getNodeIdlenessTime(dstNode, self.step_count) - self.pg.getAverageIdlenessTime(self.step_count)
+                    idlenessDelta = self.pg.getNodeIdlenessTime(dstNode, self.step_count) / self.pg.getAverageIdlenessTime(self.step_count)
                     # if idlenessDelta >= 0:
                     #     r = self.alpha * idlenessDelta / (1.0 + np.log(1.0 + pathLen) / np.log(1000000))
                     # else:
@@ -438,7 +446,7 @@ class parallel_env(ParallelEnv):
         elif agent.lastNode != node:
             agent.edge = (agent.lastNode, node)
 
-        return reached, stepSize - distCurrToNext
+        return reached, max(stepSize - distCurrToNext, 0.0)
 
 
     def _dist(self, pos1, pos2):
@@ -477,9 +485,7 @@ class parallel_env(ParallelEnv):
         ''' Calculates the length of the given path for the given agent. '''
 
         pathLen = 0.0
-        if agent.edge != None:
-            pathLen += self._dist(agent.position, self.pg.getNodePosition(path[0]))
-        
+        pathLen += self._dist(agent.position, self.pg.getNodePosition(path[0]))
         pathLen += nx.path_weight(self.pg.graph, path, weight='weight')
 
         return pathLen
