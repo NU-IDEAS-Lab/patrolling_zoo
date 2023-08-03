@@ -47,6 +47,14 @@ class PatrolGraph():
             i = edge[0]
             j = edge[1]
             self.graph.edges[i, j]["weight"] = self._dist(self.graph.nodes[i]["pos"], self.graph.nodes[j]["pos"])
+        
+        # Compute the absolute longest path.
+        self.longestPathLength = 0.0
+        all_pairs = nx.all_pairs_dijkstra_path_length(self.graph, weight="weight")
+        for i in all_pairs:
+            if i[1][j] > self.longestPathLength:
+                self.longestPathLength = i[1][j]
+
 
     def reset(self):
         ''' Resets the graph to initial state. '''
