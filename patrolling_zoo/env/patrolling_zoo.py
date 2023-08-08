@@ -399,11 +399,14 @@ class parallel_env(ParallelEnv):
 
         # Check truncation conditions.
         if self.max_cycles >= 0 and self.step_count >= self.max_cycles:
+            # Provide an end-of-episode reward.
+            for agent in self.agents:
+                reward_dict[agent] += 10000.0 / self.pg.getWorstIdlenessTime(self.step_count)
+                # reward_dict[agent] += 10000.0 / self.pg.getAverageIdlenessTime(self.step_count)
+                # reward_dict[agent] /= self._minMaxNormalize(self.pg.getWorstIdlenessTime(self.step_count), minimum=0.0, maximum=self.max_cycles)
+            
             truncated_dict = {a: True for a in self.agents}
             self.agents = []
-
-            reward_dict[agent] += 10000.0 / self.pg.getWorstIdlenessTime(self.step_count)
-            # reward_dict[agent] += 10000.0 / self.pg.getAverageIdlenessTime(self.step_count)
 
         return obs_dict, reward_dict, done_dict, truncated_dict, info_dict
 
