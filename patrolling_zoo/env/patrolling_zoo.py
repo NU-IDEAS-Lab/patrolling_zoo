@@ -346,10 +346,10 @@ class parallel_env(ParallelEnv):
                     # Provide reward for moving towards a node.
                     idlenessDelta = self.pg.getNodeIdlenessTime(dstNode, self.step_count) - self.pg.getAverageIdlenessTime(self.step_count)
                     # idlenessDelta = self.pg.getNodeIdlenessTime(dstNode, self.step_count) / self.pg.getAverageIdlenessTime(self.step_count)
-                    # if idlenessDelta >= 0:
-                    #     r = self.alpha * idlenessDelta / (1.0 + np.log(1.0 + pathLen) / np.log(1000000))
-                    # else:
-                    #     r = self.alpha * idlenessDelta
+                    if idlenessDelta >= 0:
+                        r = self.alpha * idlenessDelta / (1.0 + np.log(1.0 + pathLen) / np.log(1000000))
+                    else:
+                        r = self.alpha * idlenessDelta
                     r = self.alpha * idlenessDelta
                     reward_dict[agent] += r
 
@@ -401,7 +401,7 @@ class parallel_env(ParallelEnv):
         if self.max_cycles >= 0 and self.step_count >= self.max_cycles:
             # Provide an end-of-episode reward.
             for agent in self.agents:
-                reward_dict[agent] += 10000.0 / self.pg.getWorstIdlenessTime(self.step_count)
+                reward_dict[agent] += 100.0 * self.max_cycles / self.pg.getWorstIdlenessTime(self.step_count)
                 # reward_dict[agent] += 10000.0 / self.pg.getAverageIdlenessTime(self.step_count)
                 # reward_dict[agent] /= self._minMaxNormalize(self.pg.getWorstIdlenessTime(self.step_count), minimum=0.0, maximum=self.max_cycles)
             
