@@ -344,14 +344,14 @@ class parallel_env(ParallelEnv):
                     pathLen = self._getAgentPathLength(agent, path)
                     
                     # Provide reward for moving towards a node.
-                    idlenessDelta = self.pg.getNodeIdlenessTime(dstNode, self.step_count) - self.pg.getAverageIdlenessTime(self.step_count)
+                    #idlenessDelta = self.pg.getNodeIdlenessTime(dstNode, self.step_count) - self.pg.getAverageIdlenessTime(self.step_count)
                     # idlenessDelta = self.pg.getNodeIdlenessTime(dstNode, self.step_count) / self.pg.getAverageIdlenessTime(self.step_count)
-                    if idlenessDelta >= 0:
-                        r = self.alpha * idlenessDelta / (1.0 + np.log(1.0 + pathLen) / np.log(1000000))
-                    else:
-                        r = self.alpha * idlenessDelta
-                    r = self.alpha * idlenessDelta
-                    reward_dict[agent] += r
+                    #if idlenessDelta >= 0:
+                    #    r = self.alpha * idlenessDelta / (1.0 + np.log(1.0 + pathLen) / np.log(1000000))
+                    #else:
+                    #    r = self.alpha * idlenessDelta
+                    #r = self.alpha * idlenessDelta
+                    #reward_dict[agent] += r
 
                     # Take a step towards the next node.
                     stepSize = agent.speed
@@ -364,7 +364,7 @@ class parallel_env(ParallelEnv):
                                 # The agent has reached its destination, visiting the node.
                                 # The agent receives a reward for visiting the node.
                                 r = self.onNodeVisit(nextNode, self.step_count)
-                                reward_dict[agent] += 100.0 * r
+                                #reward_dict[agent] += 100.0 * r
                 
                         # The agent has exceeded its movement budget for this step.
                         if stepSize <= 0.0:
@@ -378,8 +378,8 @@ class parallel_env(ParallelEnv):
         #     reward_dict[agent] -= np.log(self.pg.getAverageIdlenessTime(self.step_count))
         #     #reward_dict[agent] -= np.log(self.pg.getWorstIdlenessTime(self.step_count))
         
-        # for agent in self.agents:
-        #     reward_dict[agent] = (self.pg.graph.number_of_nodes() * self.step_count) / (self.pg.getAverageIdlenessTime(self.step_count) + 0.0001)
+        for agent in self.agents:
+            reward_dict[agent] = self.step_count / (self.pg.getAverageIdlenessTime(self.step_count) + 1e-8)
 
         # Perform observations.
         for agent in self.agents:
