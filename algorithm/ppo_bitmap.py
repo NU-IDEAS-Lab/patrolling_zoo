@@ -5,6 +5,7 @@ import torch.optim as optim
 from torch.distributions.categorical import Categorical
 import numpy as np
 from IPython.display import clear_output
+from supersuit import frame_stack_v1
 
 
 from .algorithm import BaseAlgorithm
@@ -38,6 +39,8 @@ class PPO(BaseAlgorithm):
         self.max_cycles = max_cycles
         self.total_episodes = total_episodes
 
+        self.env = frame_stack_v1(self.env, stack_size=stack_size)
+
         self.num_agents = len(env.possible_agents)
         self.num_actions = env.action_space(env.possible_agents[0]).n
         self.observation_size = flatten_space(env.observation_space(env.possible_agents[0])).shape[0]
@@ -64,7 +67,7 @@ class PPO(BaseAlgorithm):
         """ ALGO LOGIC: EPISODE STORAGE"""
         end_step = 0
         total_episodic_return = 0
-        rb_obs = torch.zeros((self.max_cycles, self.num_agents, *self.frame_size)).to(self.device)
+        rb_obs = torch.zeros((self.max_cycles, self.num_agents, self.stack_size, *self.frame_size)).to(self.device)
         rb_actions = torch.zeros((self.max_cycles, self.num_agents)).to(self.device)
         rb_logprobs = torch.zeros((self.max_cycles, self.num_agents)).to(self.device)
         rb_rewards = torch.zeros((self.max_cycles, self.num_agents)).to(self.device)
@@ -263,7 +266,7 @@ class PPONetwork(nn.Module):
             nn.MaxPool2d(2),
             nn.ReLU(),
             nn.Flatten(),
-            self._layer_init(nn.Linear(128 * 12 * 12, 512)),
+            self._layer_init(nn.Linear(144, 512)),
             nn.ReLU(),
         )
         self.actor = self._layer_init(nn.Linear(512, num_actions), std=0.01)
