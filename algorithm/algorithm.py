@@ -3,7 +3,7 @@ import time
 import torch
 
 class BaseAlgorithm:
-    def __init__(self, env, device):
+    def __init__(self, env, device="cpu"):
         self.env = env
         self.device = device
 

@@ -69,12 +69,12 @@ class parallel_env(ParallelEnv):
         self.alpha = alpha
 
         # Create the agents with random starting positions.
-        startingNodes = random.sample(list(self.pg.graph.nodes), num_agents)
-        startingPositions = [self.pg.getNodePosition(i) for i in startingNodes]
+        self.agentOrigins = random.sample(list(self.pg.graph.nodes), num_agents)
+        startingPositions = [self.pg.getNodePosition(i) for i in self.agentOrigins]
         self.possible_agents = [
             PatrolAgent(i, startingPositions[i],
                         speed = speed,
-                        startingNode = startingNodes[i],
+                        startingNode = self.agentOrigins[i],
                         observationRadius = self.observationRadius
             ) for i in range(num_agents)
         ]
@@ -146,12 +146,12 @@ class parallel_env(ParallelEnv):
         self.pg.reset()
 
         # Reset the agents.
-        startingNodes = random.sample(list(self.pg.graph.nodes), len(self.possible_agents))
-        startingPositions = [self.pg.getNodePosition(i) for i in startingNodes]
+        self.agentOrigins = random.sample(list(self.pg.graph.nodes), len(self.possible_agents))
+        startingPositions = [self.pg.getNodePosition(i) for i in self.agentOrigins]
         self.agents = copy(self.possible_agents)
         for agent in self.possible_agents:
             agent.startingPosition = startingPositions[agent.id]
-            agent.startingNode = startingNodes[agent.id]
+            agent.startingNode = self.agentOrigins[agent.id]
             agent.reset()
         
         # Reset other state.
@@ -329,7 +329,6 @@ class parallel_env(ParallelEnv):
 
         # Perform actions.
         for agent in self.agents:
-            # If the agent is at a node, not transitioning
             if agent in action_dict:
                 action = action_dict[agent]
 
