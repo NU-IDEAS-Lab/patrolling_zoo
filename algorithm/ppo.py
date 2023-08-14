@@ -18,6 +18,7 @@ class PPO(BaseAlgorithm):
             vf_coef = 0.1,
             clip_coef = 0.1,
             gamma = 0.99,
+            gae_lambda = 0.95,
             lr = 0.0001,
             batch_size = 1,
             stack_size = 4,
@@ -31,6 +32,7 @@ class PPO(BaseAlgorithm):
         self.vf_coef = vf_coef
         self.clip_coef = clip_coef
         self.gamma = gamma
+        self.gae_lambda = gae_lambda
         self.lr = lr
         self.batch_size = batch_size
         self.stack_size = stack_size
@@ -120,7 +122,7 @@ class PPO(BaseAlgorithm):
                         + self.gamma * rb_values[t + 1] * rb_terms[t + 1]
                         - rb_values[t]
                     )
-                    rb_advantages[t] = delta + self.gamma * self.gamma * rb_advantages[t + 1]
+                    rb_advantages[t] = delta + self.gamma * self.gae_lambda * rb_advantages[t + 1]
                 rb_returns = rb_advantages + rb_values
 
             # convert our episodes to batch of individual transitions
@@ -163,8 +165,8 @@ class PPO(BaseAlgorithm):
                     )
 
                     # Policy loss
-                    pg_loss1 = -b_advantages[batch_index] * ratio
-                    pg_loss2 = -b_advantages[batch_index] * torch.clamp(
+                    pg_loss1 = -advantages * ratio
+                    pg_loss2 = -advantages * torch.clamp(
                         ratio, 1 - self.clip_coef, 1 + self.clip_coef
                     )
                     pg_loss = torch.max(pg_loss1, pg_loss2).mean()
