@@ -18,3 +18,11 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
 ]
+
+[tool.setuptools]
+packages = [
+    "patrolling_zoo",
+    "algorithm",
+    "test",
+    "patrolling_zoo.env",
+]
