@@ -43,8 +43,8 @@ class parallel_env(ParallelEnv):
                  speed = 1.0,
                  alpha = 10,
                  observation_radius = np.inf,
+                 observe_method = "raw",
                  max_cycles: int = -1,
-                 reward_shift = None,
                  *args,
                  **kwargs):
         """
@@ -66,8 +66,8 @@ class parallel_env(ParallelEnv):
         self.observationRadius = observation_radius
         self.max_cycles = max_cycles
         self.comms_model = comms_model
+        self.observe_method = observe_method
 
-        self.reward_shift = reward_shift
         self.alpha = alpha
 
         # Create the agents with random starting positions.
@@ -111,13 +111,13 @@ class parallel_env(ParallelEnv):
                 ) for v in range(self.pg.graph.number_of_nodes())
             }), # type: ignore
 
-            # The second part is the shortest path cost from every agent to every node.
-            "vertex_distances": spaces.Dict({
-                a: spaces.Box(
-                    low = np.array([0.0] * self.pg.graph.number_of_nodes(), dtype=np.float32),
-                    high = np.array([np.inf] * self.pg.graph.number_of_nodes(), dtype=np.float32),
-                ) for a in self.possible_agents
-            }) # type: ignore
+            # # The second part is the shortest path cost from every agent to every node.
+            # "vertex_distances": spaces.Dict({
+            #     a: spaces.Box(
+            #         low = np.array([0.0] * self.pg.graph.number_of_nodes(), dtype=np.float32),
+            #         high = np.array([np.inf] * self.pg.graph.number_of_nodes(), dtype=np.float32),
+            #     ) for a in self.possible_agents
+            # }) # type: ignore
         }) for agent in self.possible_agents}) # type: ignore
 
         # The state space is a complete observation of the environment.
@@ -147,7 +147,6 @@ class parallel_env(ParallelEnv):
         
         # Reset other state.
         self.step_count = 0
-        self.rewards = dict.fromkeys(self.agents, 0)
         self.dones = dict.fromkeys(self.agents, False)
         
         observation = {agent: self.observe(agent) for agent in self.agents}
@@ -217,26 +216,50 @@ class parallel_env(ParallelEnv):
     def observe(self, agent, radius=None):
         ''' Returns the observation for the given agent.'''
 
-        if radius == None:
-            radius = agent.observationRadius
+        if self.observe_method == "ranking":
+            nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in self.pg.graph.nodes}
+            unique_sorted_idleness_times = sorted(list(set(nodes_idless.values())))
+            obs = {
+                "agent_state": {a: a.position for a in self.agents},
+                "vertex_state": {v: unique_sorted_idleness_times.index(nodes_idless[v]) for v in self.pg.graph.nodes}
+            }        
+        elif self.observe_method == "normalization":
+            nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in self.pg.graph.nodes}
+            min_ = min(nodes_idless.values())
+            max_ = max(nodes_idless.values())
+            obs = {
+                "agent_state": {a: a.position for a in self.agents},
+                "vertex_state": {v: (nodes_idless[v]-min_)/(max_ - min_) for v in self.pg.graph.nodes}
+            }
 
-        agents = [a for a in self.agents if self._dist(a.position, agent.position) <= radius]
-        vertices = [v for v in self.pg.graph.nodes if self._dist(self.pg.getNodePosition(v), agent.position) <= radius]
+        elif self.observe_method == "raw":
+            nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in self.pg.graph.nodes}
+            obs = {
+                "agent_state": {a: a.position for a in self.agents},
+                "vertex_state": {v: nodes_idless[v] for v in self.pg.graph.nodes}
+            }
+        else:
+            raise ValueError(f"Invalid observation method {self.observe_method}")
+        
+        return obs
 
-        # Calculate the shortest path distances from each agent to each node.
-        vertexDistances = {}
-        for a in agents:
-            vDists = nx.shortest_path_length(self.pg.graph,
-                                  source=self.pg.getNearestNode(a.position),
-                                  weight='weight'
-            )
-            vertexDistances[a] = np.array([vDists[v] for v in self.pg.graph.nodes])
+        # agents = [a for a in self.agents if self._dist(a.position, agent.position) <= agent.observationRadius]
+        # vertices = [v for v in self.pg.graph.nodes if self._dist(self.pg.getNodePosition(v), agent.position) <= agent.observationRadius]
 
-        return {
-            "agent_state": {a: a.position for a in agents},
-            "vertex_state": {v: self.pg.getNodeIdlenessTime(v, self.step_count) for v in vertices},
-            "vertex_distances": vertexDistances
-        }
+        # # Calculate the shortest path distances from each agent to each node.
+        # vertexDistances = {}
+        # for a in agents:
+        #     vDists = nx.shortest_path_length(self.pg.graph,
+        #                           source=self.pg.getNearestNode(a.position),
+        #                           weight='weight'
+        #     )
+        #     vertexDistances[a] = np.array([vDists[v] for v in self.pg.graph.nodes])
+
+        # return {
+        #     "agent_state": {a: a.position for a in agents},
+        #     "vertex_state": {v: self.pg.getNodeIdlenessTime(v, self.step_count) for v in vertices},
+        #     "vertex_distances": vertexDistances
+        # }
 
     def global_observation(self):
 
@@ -278,6 +301,9 @@ class parallel_env(ParallelEnv):
                 # Update the agent's position.
                 if action in self.pg.graph.nodes:
 
+                    # if action == self.pg.graph.number_of_nodes() - 2:
+                    #     reward_dict[agent] += 1000
+
                     if agent.lastAction != action:
                         agent.lastAction = action
                         agent.stepsTravelled = 0
@@ -302,6 +328,10 @@ class parallel_env(ParallelEnv):
                     if srcNode == dstNode:
                         startIdx = 0
 
+
+                    r = self.alpha * (self.pg.getNodeIdlenessTime(dstNode, self.step_count) - self.pg.getAverageIdlenessTime(self.step_count))
+                    reward_dict[agent] += r
+
                     # Take a step towards the next node.
                     stepSize = agent.speed
                     for nextNode in path[startIdx:]:
@@ -310,31 +340,36 @@ class parallel_env(ParallelEnv):
 
                         # The agent has reached the next node.
                         if reached:
+                            same = agent.lastNode == nextNode
                             agent.lastNode = nextNode
                             if agent.lastNode == dstNode or not self.requireExplicitVisit:
                                 # The agent has reached its destination, visiting the node.
                                 # The agent receives a reward for visiting the node.
                                 r = self.onNodeVisit(agent.lastNode, self.step_count)
-                                if srcNode != dstNode:
-                                    reward_dict[agent] += r
+                                # if not same:
+                                #     # print(f"REACHED DESTINATION NODE {dstNode} WITH REWARD {r}")
+                                #     reward_dict[agent] += 100.0 * r
                 
                         # The agent has exceeded its movement budget for this step.
                         if stepSize <= 0.0:
                             break
-                    
-                    if srcNode != dstNode:
-                        if agent.stepsTravelled > 1:
-                            reward_dict[agent] += np.log(agent.stepsTravelled)
-                        agent.stepsTravelled += 1
+
+                    # if srcNode != dstNode:
+                    #     if agent.stepsTravelled > 1:
+                    #         reward_dict[agent] += np.log(agent.stepsTravelled)
+                    #     agent.stepsTravelled += 1
                 else:
                     raise ValueError(f"Invalid action {action} for agent {agent.name}")
 
-        # # Assign the idleness penalty.
-        for agent in self.agents:
-            # reward_dict[agent] -= np.log(self.pg.getStdDevIdlenessTime(self.step_count))
-            reward_dict[agent] -= np.log(self.pg.getAverageIdlenessTime(self.step_count))
-            #reward_dict[agent] -= np.log(self.pg.getWorstIdlenessTime(self.step_count))
+        # Assign the idleness penalty.
+        # for agent in self.agents:
+        #     # reward_dict[agent] -= np.log(self.pg.getStdDevIdlenessTime(self.step_count))
+        #     reward_dict[agent] -= np.log(self.pg.getAverageIdlenessTime(self.step_count))
+        #     #reward_dict[agent] -= np.log(self.pg.getWorstIdlenessTime(self.step_count))
         
+        # for agent in self.agents:
+        #     reward_dict[agent] = (self.pg.graph.number_of_nodes() * self.step_count) / (self.pg.getAverageIdlenessTime(self.step_count) + 0.0001)
+
         # Perform observations.
         for agent in self.agents:
 
@@ -355,6 +390,9 @@ class parallel_env(ParallelEnv):
             truncated_dict = {a: True for a in self.agents}
             self.agents = []
 
+            reward_dict[agent] += 10000.0 / self.pg.getWorstIdlenessTime(self.step_count)
+            # reward_dict[agent] += 10000.0 / self.pg.getAverageIdlenessTime(self.step_count)
+
         return obs_dict, reward_dict, done_dict, truncated_dict, info_dict
 
 
@@ -362,19 +400,29 @@ class parallel_env(ParallelEnv):
         ''' Called when an agent visits a node.
             Returns the reward for visiting the node, which is proportional to
             node idleness time. '''
-        if self.reward_shift is None:
-            # Method 0 is the one we thaought of by default
-            idleTime = self.pg.getNodeIdlenessTime(node, timeStamp) 
-            self.pg.setNodeVisitTime(node, timeStamp)
-            return idleTime - self.pg.getAverageIdlenessTime(self.step_count)
-        else :
-            # Here we rank the nodes in term of idleness and give a reward based on the rank.
-            # So the agent will be encouraged to visit the most idle node.
-            nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in self.pg.graph.nodes}
-            indices = sorted(nodes_idless, key=nodes_idless.get)
-            index = indices.index(node)
-            self.pg.setNodeVisitTime(node, timeStamp)
-            return self.alpha**max((index - self.reward_shift * len(indices))/self.pg.graph.number_of_nodes(), 0)
+
+        # idleTime = self.pg.getNodeIdlenessTime(node, timeStamp) 
+        # self.pg.setNodeVisitTime(node, timeStamp)
+        # return idleTime
+
+        # Here we rank the nodes in term of idleness and give a reward based on the rank.
+        # So the agent will be encouraged to visit the most idle node.
+        # nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in self.pg.graph.nodes}
+        # indices = sorted(nodes_idless, key=nodes_idless.get)
+
+        # nodesSorted = sorted(self.pg.graph.nodes(), key=lambda n: self.pg.graph.nodes[n]['visitTime'])
+        # index = nodesSorted.index(node)
+
+        # print(f"IDLENESS TIME ORDERED: {nodesSorted}, {[self.pg.getNodeIdlenessTime(n, self.step_count) for n in nodesSorted]}")
+
+        avgIdleTime = self.pg.getAverageIdlenessTime(timeStamp)
+        self.pg.setNodeVisitTime(node, timeStamp)
+        deltaAvgIdleTime = avgIdleTime - self.pg.getAverageIdlenessTime(timeStamp)
+        
+        # return a reward which is proportional to the rank of the node, where the most idle node has the highest reward
+        return self.alpha * deltaAvgIdleTime
+
+        # return self.alpha ** max((index - self.reward_shift * len(indices))/self.pg.graph.number_of_nodes(), 0)
 
 
     def _moveTowardsNode(self, agent, node, stepSize):

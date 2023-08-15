@@ -43,8 +43,9 @@ class PPO(BaseAlgorithm):
         self.observation_size = flatten_space(env.state_space).shape[0]
 
         """ LEARNER SETUP """
-        self.learner = PPONetwork(num_actions=self.num_actions, num_agents=self.num_agents, observation_size=self.observation_size).to(self.device)
+        self.learner = PPONetwork(num_actions=self.num_actions, num_agents=self.num_agents, observation_size=self.observation_size, device=self.device).to(self.device)
         self.optimizer = optim.Adam(self.learner.parameters(), lr=self.lr, eps=1e-5)
+        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=total_episodes, eta_min=0, last_epoch=-1)
     
     def train(self, seed=None):
         ''' Trains the policy. '''
@@ -198,6 +199,8 @@ class PPO(BaseAlgorithm):
                     loss.backward()
                     self.optimizer.step()
 
+            self.scheduler.step()
+
             y_pred, y_true = b_values.cpu().numpy(), b_returns.cpu().numpy()
             var_y = np.var(y_true)
             explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
@@ -244,11 +247,12 @@ class PPO(BaseAlgorithm):
 
 
 class PPONetwork(nn.Module):
-    def __init__(self, num_actions, num_agents, observation_size):
+    def __init__(self, num_actions, num_agents, observation_size, device):
         super().__init__()
 
         self.num_actions = num_actions
         self.num_agents = num_agents
+        self.device = device
 
 
         self.network = nn.Sequential(
@@ -276,30 +280,38 @@ class PPONetwork(nn.Module):
         return layer
 
     def get_value(self, x):
-        return self.critic(self.network(x / 255.0))
+        return self.critic(self.network(x))
 
     def get_action_and_value(self, x, action=None):
-        hidden = self.network(x / 255.0)
+        hidden = self.network(x)
         logits = self.actor(hidden)
-        total_probs =Categorical(logits=logits)
-        #split the (3,40) logits into 3 (1,40) logits for every agents
-        splits_logits = torch.split(logits, split_size_or_sections=1, dim=0)
+        logits_split = torch.split(logits, split_size_or_sections=1, dim=0)
+
         if action is None:
             action = []
-            logprobs = []
-            entropy = []
             for i in range(self.num_agents):
-                split_logits = splits_logits[i]
-                probs = Categorical(logits= split_logits)
-                temp = probs.sample()
-                action.append(temp.item())
-                logprobs.append(probs.log_prob(temp).item())
-                entropy.append(probs.entropy().item())
-            logprobs = torch.tensor(logprobs)
+                probs = Categorical(logits = logits_split[i])
+                action.append(probs.sample().item())
             action = torch.tensor(action)
-            entropy = torch.tensor(entropy)
-            return action, logprobs, entropy, self.critic(hidden)
-        return action, total_probs.log_prob(action), total_probs.entropy(), self.critic(hidden)
+        action = action.to(self.device)
+
+        entropy = []
+        probs = Categorical(logits = logits)
+        logprobs = probs.log_prob(action)
+        entropy = probs.entropy()
+        # logprobs = torch.tensor(logprobs).to(self.device)
+        # entropy = torch.tensor(entropy).to(self.device)
+        return action, logprobs, entropy, self.critic(hidden)
+
+        # logprobs = []
+        # entropy = []
+        # for i in range(self.num_agents):
+        #     probs = Categorical(logits = logits_split[i])
+        #     logprobs.append(probs.log_prob(action[i]).item())
+        #     entropy.append(probs.entropy().item())
+        # logprobs = torch.tensor(logprobs).to(self.device)
+        # entropy = torch.tensor(entropy).to(self.device)
+        # return action, logprobs, entropy, self.critic(hidden)
 
 
     def batchify_obs(self, obs_space, obs, device):
