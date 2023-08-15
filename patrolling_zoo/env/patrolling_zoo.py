@@ -120,6 +120,12 @@ class parallel_env(ParallelEnv):
             # }) # type: ignore
         }) for agent in self.possible_agents}) # type: ignore
 
+        # The state space is a complete observation of the environment.
+        # This is not part of the standard PettingZoo API, but is useful for centralized training.
+        self.state_space = self.observation_spaces[self.possible_agents[0]]
+
+        self.reset()
+
 
     def reset(self, seed=None, options=None):
         ''' Sets the environment to its initial state. '''
@@ -205,9 +211,9 @@ class parallel_env(ParallelEnv):
         ''' Returns the global state of the environment.
             This is useful for centralized training, decentralized execution. '''
         
-        raise NotImplementedError()
+        return self.observe(self.possible_agents[0], radius=np.inf)
 
-    def observe(self, agent):
+    def observe(self, agent, radius=None):
         ''' Returns the observation for the given agent.'''
 
         if self.observe_method == "ranking":
