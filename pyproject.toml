@@ -22,7 +22,13 @@ classifiers = [
 [tool.setuptools]
 packages = [
     "patrolling_zoo",
+    "patrolling_zoo.env",
     "algorithm",
     "test",
-    "patrolling_zoo.env",
+    "onpolicy",
+    "onpolicy.algorithms",
+    "onpolicy.algorithms.r_mappo",
+    "onpolicy.algorithms.r_mappo.algorithm",
+    "onpolicy.algorithms.utils",
+    "onpolicy.utils",
 ]
