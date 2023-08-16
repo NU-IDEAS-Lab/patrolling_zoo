@@ -78,15 +78,26 @@ class PatrollingEnv(object):
 
     def step(self, action):
 
+        # Modify the action to be compatible with the PZ environment.
         action = {self.env.possible_agents[i]: action[i] for i in range(self.num_agents)}
+
+        # Take a step.
         obs, reward, done, trunc, info = self.env.step(action)
+
+        # Convert the done dict to a list.
+        done = [done[a] for a in self.env.possible_agents]
+        # Convert the trunc dict to a list.
+        trunc = [trunc[a] for a in self.env.possible_agents]
+
+        # Consider the episode done if any agent is done OR truncated.
+        done = [d or t for d, t in zip(done, trunc)]
+
         obs = self._obs_wrapper(obs)
         reward = [reward[a] for a in self.env.possible_agents]
         if self.share_reward:
             global_reward = np.sum(reward)
             reward = [[global_reward]] * self.num_agents
 
-        done = [done[a] for a in self.env.possible_agents]
         info = self._info_wrapper(info)
         return obs, reward, done, info
 
