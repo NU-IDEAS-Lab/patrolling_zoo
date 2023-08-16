@@ -45,16 +45,17 @@ class PatrollingEnv(object):
         pg = PatrolGraph(args.graph_file)
 
         self.env = parallel_env(
-            patrol_graph= pg,
-            num_agents= args.num_agents,
-            # commis_model= args.comms_model,
-            # require_explicit_visit= args.require_explicit_visit,
+            patrol_graph = pg,
+            num_agents = args.num_agents,
+            # comms_model = args.comms_model,
+            # require_explicit_visit = args.require_explicit_visit,
             # speed = args.speed,
+            speed = 10,
             # alpha = args.alpha,
-            # observation_radius= args.observation_radius,
+            # observation_radius = args.observation_radius,
             # observe_method = args.observe_method,
             max_cycles = args.num_env_steps,
-            observe_method = "raw"
+            observe_method = "ajg_new"
         )
             
         self.max_steps = self.env.max_cycles
@@ -102,7 +103,7 @@ class PatrollingEnv(object):
 
         # Flatten the PZ observation.
         obs = flatten(self.env.observation_spaces, obs)
-        obs = np.reshape(obs, (1, self.num_agents, -1))
+        obs = np.reshape(obs, (self.num_agents, -1))
 
         if self.num_agents == 1:
             return obs[np.newaxis, :]
