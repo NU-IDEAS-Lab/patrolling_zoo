@@ -76,9 +76,9 @@ class PatrollingEnv(object):
         return obs
 
     def step(self, action):
-        obs, reward, done, info = self.env.step(action)
+        obs, reward, done, trunc, info = self.env.step(action)
         obs = self._obs_wrapper(obs)
-        reward = reward.reshape(self.num_agents, 1)
+        reward = [reward[a] for a in self.env.possible_agents]
         if self.share_reward:
             global_reward = np.sum(reward)
             reward = [[global_reward]] * self.num_agents
