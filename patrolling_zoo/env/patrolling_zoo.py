@@ -39,7 +39,8 @@ class parallel_env(ParallelEnv):
                  comms_model = CommunicationModel(model = "bernoulli"),
                  require_explicit_visit = True,
                  speed = 1.0,
-                 alpha = 10,
+                 alpha = 10.0,
+                 beta = 100.0,
                  observation_radius = np.inf,
                  observe_method = "raw",
                  max_cycles: int = -1,
@@ -67,6 +68,7 @@ class parallel_env(ParallelEnv):
         self.observe_method = observe_method
 
         self.alpha = alpha
+        self.beta = beta
 
         # Create the agents with random starting positions.
         startingNodes = random.sample(list(self.pg.graph.nodes), num_agents)
@@ -385,7 +387,7 @@ class parallel_env(ParallelEnv):
         #     #reward_dict[agent] -= np.log(self.pg.getWorstIdlenessTime(self.step_count))
         
         for agent in self.agents:
-            reward_dict[agent] += self.step_count / (self.pg.getAverageIdlenessTime(self.step_count) + 1e-8)
+            reward_dict[agent] += self.beta * self.step_count / (self.pg.getAverageIdlenessTime(self.step_count) + 1e-8)
 
         # Perform observations.
         for agent in self.agents:
@@ -407,7 +409,7 @@ class parallel_env(ParallelEnv):
         if self.max_cycles >= 0 and self.step_count >= self.max_cycles:
             # Provide an end-of-episode reward.
             for agent in self.agents:
-                reward_dict[agent] += 100.0 * self.max_cycles / (self.pg.getWorstIdlenessTime(self.step_count) + 1e-8)
+                reward_dict[agent] += self.beta * self.max_cycles / (self.pg.getWorstIdlenessTime(self.step_count) + 1e-8)
                 # reward_dict[agent] += 10000.0 / self.pg.getAverageIdlenessTime(self.step_count)
                 # reward_dict[agent] /= self._minMaxNormalize(self.pg.getWorstIdlenessTime(self.step_count), minimum=0.0, maximum=self.max_cycles)
             
