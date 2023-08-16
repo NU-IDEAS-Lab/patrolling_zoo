@@ -113,15 +113,15 @@ class PatrollingRunner(Runner):
         
         # update env_infos if done
         dones_env = np.all(dones, axis=-1)
-        if np.any(dones_env):
-            for done, info in zip(dones_env, infos):
-                if done:
-                    self.env_infos["goal"].append(info["score_reward"])
-                    if info["score_reward"] > 0:
-                        self.env_infos["win_rate"].append(1)
-                    else:
-                        self.env_infos["win_rate"].append(0)
-                    self.env_infos["steps"].append(info["max_steps"] - info["steps_left"])
+        # if np.any(dones_env):
+        #     for done, info in zip(dones_env, infos):
+        #         if done:
+        #             self.env_infos["goal"].append(info["score_reward"])
+        #             if info["score_reward"] > 0:
+        #                 self.env_infos["win_rate"].append(1)
+        #             else:
+        #                 self.env_infos["win_rate"].append(0)
+        #             self.env_infos["steps"].append(info["max_steps"] - info["steps_left"])
 
         # reset rnn and mask args for done envs
         rnn_states[dones_env == True] = np.zeros(((dones_env == True).sum(), self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
