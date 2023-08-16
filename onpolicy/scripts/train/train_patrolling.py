@@ -134,6 +134,10 @@ def main(args, parsed_args=None):
     if not run_dir.exists():
         os.makedirs(str(run_dir))
 
+    # get date and time in format 20230816-150432
+    import datetime
+    date_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+
     # wandb
     if all_args.use_wandb:
         run = wandb.init(config=all_args,
@@ -141,9 +145,10 @@ def main(args, parsed_args=None):
                             entity=all_args.user_name,
                             notes=socket.gethostname(),
                             name="-".join([
-                            all_args.algorithm_name,
-                            all_args.experiment_name,
-                            "seed" + str(all_args.seed)
+                                all_args.algorithm_name,
+                                all_args.experiment_name,
+                                str(date_time),
+                                "seed" + str(all_args.seed)
                             ]),
                             group=all_args.graph_name,
                             dir=str(run_dir),
