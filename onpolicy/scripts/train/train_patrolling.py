@@ -56,9 +56,9 @@ def make_eval_env(all_args):
 
 
 def parse_args(args, parser):
-    parser.add_argument("--scenario_name", type=str,
-                        default="academy_3_vs_1_with_keeper", 
-                        help="which scenario to run on.")
+    parser.add_argument("--graph_name", type=str,
+                        default="4nodes", 
+                        help="which graph to run on.")
     parser.add_argument("--num_agents", type=int, default=3,
                         help="number of controlled players.")
     parser.add_argument("--representation", type=str, default="simple115v2", 
@@ -94,9 +94,12 @@ def parse_args(args, parser):
     return all_args
 
 
-def main(args):
-    parser = get_config()
-    all_args = parse_args(args, parser)
+def main(args, parsed_args=None):
+    if parsed_args is None:
+        parser = get_config()
+        all_args = parse_args(args, parser)
+    else:
+        all_args = parsed_args
 
     if all_args.algorithm_name == "rmappo":
         print("u are choosing to use rmappo, we set use_recurrent_policy to be True")
@@ -127,25 +130,25 @@ def main(args):
 
     # run dir
     run_dir = Path(os.path.split(os.path.dirname(os.path.abspath(__file__)))[
-                   0] + "/results") / all_args.env_name / all_args.scenario_name / all_args.algorithm_name / all_args.experiment_name
+                   0] + "/results") / all_args.env_name / all_args.graph_name / all_args.algorithm_name / all_args.experiment_name
     if not run_dir.exists():
         os.makedirs(str(run_dir))
 
     # wandb
     if all_args.use_wandb:
         run = wandb.init(config=all_args,
-                         project=all_args.env_name,
-                         entity=all_args.user_name,
-                         notes=socket.gethostname(),
-                         name="-".join([
+                            project=all_args.env_name,
+                            entity=all_args.user_name,
+                            notes=socket.gethostname(),
+                            name="-".join([
                             all_args.algorithm_name,
                             all_args.experiment_name,
                             "seed" + str(all_args.seed)
-                         ]),
-                         group=all_args.scenario_name,
-                         dir=str(run_dir),
-                         job_type="training",
-                         reinit=True)
+                            ]),
+                            group=all_args.graph_name,
+                            dir=str(run_dir),
+                            job_type="training",
+                            reinit=True)
     else:
         if not run_dir.exists():
             curr_run = 'run1'
@@ -161,11 +164,11 @@ def main(args):
 
     setproctitle.setproctitle("-".join([
         all_args.env_name, 
-        all_args.scenario_name, 
+        all_args.graph_name, 
         all_args.algorithm_name, 
         all_args.experiment_name
     ]) + "@" + all_args.user_name)
-    
+
     # seed
     torch.manual_seed(all_args.seed)
     torch.cuda.manual_seed_all(all_args.seed)
@@ -194,7 +197,7 @@ def main(args):
 
     runner = Runner(config)
     runner.run()
-    
+
     # post process
     envs.close()
     if all_args.use_eval and eval_envs is not envs:
