@@ -45,11 +45,6 @@ class PatrollingRunner(Runner):
             # compute return and update network
             self.compute()
             train_infos = self.train()
-
-            # Add idleness information to train_infos.
-            avgIdleness = [env.env.pg.getAverageIdlenessTime(env.env.step_count) for env in self.envs.envs]
-            avgAvgIdleness = np.mean(avgIdleness)
-            train_infos["average_idleness"] = avgAvgIdleness
             
             # post process
             total_num_steps = (episode + 1) * self.episode_length * self.n_rollout_threads
@@ -127,6 +122,9 @@ class PatrollingRunner(Runner):
         #             else:
         #                 self.env_infos["win_rate"].append(0)
         #             self.env_infos["steps"].append(info["max_steps"] - info["steps_left"])
+
+        # Add the average idleness time to env infos.
+        self.env_infos["avg_idleness"] = [i["avg_idleness"] for i in infos]
 
         # reset rnn and mask args for done envs
         rnn_states[dones_env == True] = np.zeros(((dones_env == True).sum(), self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
