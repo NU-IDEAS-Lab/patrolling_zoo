@@ -195,8 +195,12 @@ def main(args, parsed_args=None):
         raise NotImplementedError
         from onpolicy.runner.separated.football_runner import FootballRunner as Runner
 
-    runner = Runner(config)
-    runner.run()
+    try:
+        runner = Runner(config)
+        runner.run()
+    except KeyboardInterrupt:
+        wandb.finish()
+        print("wandb finished")
 
     # post process
     envs.close()

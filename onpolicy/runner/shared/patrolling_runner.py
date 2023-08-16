@@ -45,6 +45,11 @@ class PatrollingRunner(Runner):
             # compute return and update network
             self.compute()
             train_infos = self.train()
+
+            # Add idleness information to train_infos.
+            avgIdleness = [env.env.pg.getAverageIdlenessTime(env.env.step_count) for env in self.envs.envs]
+            avgAvgIdleness = np.mean(avgIdleness)
+            train_infos["average_idleness"] = avgAvgIdleness
             
             # post process
             total_num_steps = (episode + 1) * self.episode_length * self.n_rollout_threads
