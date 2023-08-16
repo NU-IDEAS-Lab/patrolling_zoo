@@ -121,7 +121,6 @@ dependencies:
   - pytorch-cuda=11.7
   - pytorch-mutex=1.0
   - pyu2f=0.1.5
-  - pywin32=305
   - pyzmq=25.1.0
   - re2=2022.04.01
   - requests=2.29.0
@@ -142,8 +141,6 @@ dependencies:
   - traitlets=5.7.1
   - typing_extensions=4.6.3
   - urllib3=1.26.16
-  - vc=14.2
-  - vs2015_runtime=14.27.29016
   - wcwidth=0.2.5
   - werkzeug=2.3.6
   - wheel=0.38.4
