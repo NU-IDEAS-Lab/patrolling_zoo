@@ -204,8 +204,8 @@ def main(args, parsed_args=None):
         runner = Runner(config)
         runner.run()
     except KeyboardInterrupt:
-        wandb.finish()
-        print("wandb finished")
+        wandb.finish(exit_code=1)
+        print("wandb due to keyboard interrupt")
 
     # post process
     envs.close()
