@@ -1,6 +1,7 @@
 from .distributions import Bernoulli, Categorical, DiagGaussian
 import torch
 import torch.nn as nn
+import numpy as np
 
 class ACTLayer(nn.Module):
     """
@@ -18,19 +19,19 @@ class ACTLayer(nn.Module):
         if action_space.__class__.__name__ == "Discrete":
             action_dim = action_space.n
             self.action_out = Categorical(inputs_dim, action_dim, use_orthogonal, gain)
-        elif action_space.__class__.__name__ == "Box":
-            action_dim = action_space.shape[0]
-            self.action_out = DiagGaussian(inputs_dim, action_dim, use_orthogonal, gain)
-        elif action_space.__class__.__name__ == "MultiBinary":
-            action_dim = action_space.shape[0]
-            self.action_out = Bernoulli(inputs_dim, action_dim, use_orthogonal, gain)
-        elif action_space.__class__.__name__ == "MultiDiscrete":
+        elif action_space.__class__.__name__ == "MultiDiscrete"  or (action_space.__class__.__name__ == "Box" and action_space.dtype == np.int64):
             self.multi_discrete = True
             action_dims = action_space.high - action_space.low + 1
             self.action_outs = []
             for action_dim in action_dims:
                 self.action_outs.append(Categorical(inputs_dim, action_dim, use_orthogonal, gain))
             self.action_outs = nn.ModuleList(self.action_outs)
+        elif action_space.__class__.__name__ == "Box":
+            action_dim = action_space.shape[0]
+            self.action_out = DiagGaussian(inputs_dim, action_dim, use_orthogonal, gain)
+        elif action_space.__class__.__name__ == "MultiBinary":
+            action_dim = action_space.shape[0]
+            self.action_out = Bernoulli(inputs_dim, action_dim, use_orthogonal, gain)
         else:  # discrete + continous
             self.mixed_action = True
             continous_dim = action_space[0].shape[0]
