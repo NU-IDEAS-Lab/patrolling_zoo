@@ -94,13 +94,7 @@ def parse_args(args, parser):
     return all_args
 
 
-def main(args, parsed_args=None):
-    if parsed_args is None:
-        parser = get_config()
-        all_args = parse_args(args, parser)
-    else:
-        all_args = parsed_args
-
+def validateArgs(all_args):
     if all_args.algorithm_name == "rmappo":
         print("u are choosing to use rmappo, we set use_recurrent_policy to be True")
         all_args.use_recurrent_policy = True
@@ -114,6 +108,15 @@ def main(args, parsed_args=None):
         all_args.use_centralized_V = False
     else:
         raise NotImplementedError
+
+
+def main(args, parsed_args=None):
+    if parsed_args is None:
+        parser = get_config()
+        all_args = parse_args(args, parser)
+    else:
+        all_args = parsed_args
+    validateArgs(all_args)
 
     # cuda
     if all_args.cuda and torch.cuda.is_available():

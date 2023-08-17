@@ -231,7 +231,11 @@ class PatrollingRunner(Runner):
             self.writter.add_scalars("eval_step", {"expected_step": eval_step}, total_num_steps)
 
     @torch.no_grad()
-    def render(self):        
+    def render(self, ipython_clear_output=True):        
+
+        if ipython_clear_output:
+            from IPython.display import clear_output
+
         # reset envs and init rnn and mask
         render_env = self.envs
 
@@ -266,14 +270,15 @@ class PatrollingRunner(Runner):
                 # step
                 render_obs, render_rewards, render_dones, render_infos = render_env.step(render_actions_env)
 
+                if not np.any(render_dones):
+                    if ipython_clear_output:
+                        clear_output(wait = True)
+                    render_env.envs[0].env.render()
+
                 # append frame
                 if self.all_args.save_gifs:        
                     image = render_infos[0]["frame"]
                     frames.append(image)
-            
-            # print goal
-            render_goals[i_episode] = render_rewards[0, 0]
-            print("goal in episode {}: {}".format(i_episode, render_rewards[0, 0]))
 
             # save gif
             if self.all_args.save_gifs:
@@ -283,5 +288,4 @@ class PatrollingRunner(Runner):
                     format="GIF",
                     duration=self.all_args.ifi,
                 )
-        
-        print("expected goal: {}".format(np.mean(render_goals)))
+    
