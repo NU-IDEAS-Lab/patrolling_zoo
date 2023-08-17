@@ -61,6 +61,8 @@ def parse_args(args, parser):
                         help="which graph to run on.")
     parser.add_argument("--num_agents", type=int, default=3,
                         help="number of controlled players.")
+    parser.add_argument("--agent_speed", type=float, default=10.0,
+                        help="the speed of each agent")
     parser.add_argument("--representation", type=str, default="simple115v2", 
                         choices=["simple115v2", "extracted", "pixels_gray", 
                                  "pixels"],
