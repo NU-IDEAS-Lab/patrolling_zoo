@@ -18,6 +18,7 @@ class PPO(BaseAlgorithm):
             vf_coef = 0.1,
             clip_coef = 0.1,
             gamma = 0.99,
+            gae_lambda = 0.95,
             lr = 0.0001,
             batch_size = 1,
             stack_size = 4,
@@ -31,6 +32,7 @@ class PPO(BaseAlgorithm):
         self.vf_coef = vf_coef
         self.clip_coef = clip_coef
         self.gamma = gamma
+        self.gae_lambda = gae_lambda
         self.lr = lr
         self.batch_size = batch_size
         self.stack_size = stack_size
@@ -40,7 +42,7 @@ class PPO(BaseAlgorithm):
 
         self.num_agents = len(env.possible_agents)
         self.num_actions = env.action_space(env.possible_agents[0]).n
-        self.observation_size = flatten_space(env.observation_space(env.possible_agents[0])).shape[0]
+        self.observation_size = flatten_space(env.state_space).shape[0]
 
         """ LEARNER SETUP """
         self.learner = PPONetwork(num_actions=self.num_actions, num_agents=self.num_agents, observation_size=self.observation_size, device=self.device).to(self.device)
@@ -65,7 +67,7 @@ class PPO(BaseAlgorithm):
         """ ALGO LOGIC: EPISODE STORAGE"""
         end_step = 0
         total_episodic_return = 0
-        rb_obs = torch.zeros((self.max_cycles, self.num_agents, self.observation_size)).to(self.device)
+        rb_obs = torch.zeros((self.max_cycles, self.observation_size)).to(self.device)
         rb_actions = torch.zeros((self.max_cycles, self.num_agents)).to(self.device)
         rb_logprobs = torch.zeros((self.max_cycles, self.num_agents)).to(self.device)
         rb_rewards = torch.zeros((self.max_cycles, self.num_agents)).to(self.device)
@@ -78,6 +80,7 @@ class PPO(BaseAlgorithm):
             with torch.no_grad():
                 # collect observations and convert to batch of torch tensors
                 next_obs, info = self.env.reset(seed=seed)
+                next_obs = self.env.state()
 
                 # reset the episodic return
                 total_episodic_return = 0
@@ -86,7 +89,7 @@ class PPO(BaseAlgorithm):
                 for step in range(0, self.max_cycles):
                     # rollover the observation
                     
-                    obs = self.learner.batchify_obs(self.env.observation_space(self.env.possible_agents[0]), next_obs, self.device)
+                    obs = self.learner.batchify_obs(self.env.state_space, next_obs, self.device)
 
                     actions, logprobs, _, values = self.learner.get_action_and_value(obs)
 
@@ -94,9 +97,10 @@ class PPO(BaseAlgorithm):
                     next_obs, rewards, terms, truncs, infos = self.env.step(
                         self.learner.unbatchify(actions, self.env)
                     )
+                    next_obs = self.env.state()
 
                     # add to episode storage
-                    rb_obs[step] = torch.reshape(obs, (self.num_agents, self.observation_size))
+                    rb_obs[step] = obs
                     rb_rewards[step] = self.learner.batchify(rewards, self.device)
                     rb_terms[step] = self.learner.batchify(terms, self.device)
                     rb_actions[step] = actions
@@ -120,11 +124,11 @@ class PPO(BaseAlgorithm):
                         + self.gamma * rb_values[t + 1] * rb_terms[t + 1]
                         - rb_values[t]
                     )
-                    rb_advantages[t] = delta + self.gamma * self.gamma * rb_advantages[t + 1]
+                    rb_advantages[t] = delta + self.gamma * self.gae_lambda * rb_advantages[t + 1]
                 rb_returns = rb_advantages + rb_values
 
             # convert our episodes to batch of individual transitions
-            b_obs = torch.flatten(rb_obs[:end_step], start_dim=0, end_dim=1)
+            b_obs = torch.flatten(rb_obs[:end_step], start_dim=0, end_dim=0)
             b_logprobs = torch.flatten(rb_logprobs[:end_step], start_dim=0, end_dim=1)
             b_actions = torch.flatten(rb_actions[:end_step], start_dim=0, end_dim=1)
             b_returns = torch.flatten(rb_returns[:end_step], start_dim=0, end_dim=1)
@@ -163,8 +167,8 @@ class PPO(BaseAlgorithm):
                     )
 
                     # Policy loss
-                    pg_loss1 = -b_advantages[batch_index] * ratio
-                    pg_loss2 = -b_advantages[batch_index] * torch.clamp(
+                    pg_loss1 = -advantages * ratio
+                    pg_loss2 = -advantages * torch.clamp(
                         ratio, 1 - self.clip_coef, 1 + self.clip_coef
                     )
                     pg_loss = torch.max(pg_loss1, pg_loss2).mean()
@@ -317,7 +321,8 @@ class PPONetwork(nn.Module):
         # convert to list of np arrays
 
         #np.stack is a method that concencate the tensors along the new axis
-        obs = np.stack([flatten(obs_space, obs[a]) for a in obs], axis=0)
+        # obs = np.stack([flatten(obs_space, obs[a]) for a in obs], axis=0)
+        obs = flatten(obs_space, obs)
         # convert to torch
         obs = torch.tensor(obs).to(device)
 
