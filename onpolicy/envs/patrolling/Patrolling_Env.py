@@ -68,7 +68,7 @@ class PatrollingEnv(object):
         self.share_observation_space = []
 
         # Set up spaces.
-        self.action_space = [flatten_space(self.env.action_spaces[a]) for a in self.env.possible_agents]
+        self.action_space = [self.env.action_spaces[a] for a in self.env.possible_agents]
         self.observation_space = [flatten_space(self.env.observation_spaces[a]) for a in self.env.possible_agents]
         self.share_observation_space = [flatten_space(self.env.state_space) for a in self.env.possible_agents]
 
