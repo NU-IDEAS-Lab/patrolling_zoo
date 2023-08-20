@@ -90,6 +90,8 @@ def parse_args(args, parser):
                         help="by default, do not save render video. If set, save video.")
     parser.add_argument("--video_dir", type=str, default="", 
                         help="directory to save videos.")
+    parser.add_argument("--cuda_idx", type=int, default=0, 
+                        help="Index of the GPU to use")
                         
     all_args = parser.parse_known_args(args)[0]
 
@@ -123,7 +125,7 @@ def main(args, parsed_args=None):
     # cuda
     if all_args.cuda and torch.cuda.is_available():
         print("choose to use gpu...")
-        device = torch.device("cuda:0")
+        device = torch.device(f"cuda:{all_args.cuda_idx}")
         torch.set_num_threads(all_args.n_training_threads)
         if all_args.cuda_deterministic:
             torch.backends.cudnn.benchmark = False
