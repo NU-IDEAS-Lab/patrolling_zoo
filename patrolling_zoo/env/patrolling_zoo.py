@@ -122,6 +122,7 @@ class parallel_env(ParallelEnv):
                 ) for a in self.possible_agents
             }) # type: ignore
         elif self.observe_method == "ajg_new":
+            state_space["agent_id"] = spaces.Discrete(num_agents)
             state_space["vertex_distances"] = spaces.Dict({
                 a: spaces.Box(
                     low = np.array([0.0] * self.pg.graph.number_of_nodes(), dtype=np.float32),
@@ -306,6 +307,7 @@ class parallel_env(ParallelEnv):
                     idlenessTimes = self._minMaxNormalize(idlenessTimes)
 
             obs = {
+                "agent_id": agent.id,
                 "vertex_state": {v: idlenessTimes[v] for v in vertices},
                 "vertex_distances": vertexDistances
             }
