@@ -54,9 +54,8 @@ class PatrollingEnv(object):
             alpha = 1.0,
             beta = 1000.0,
             # observation_radius = args.observation_radius,
-            # observe_method = args.observe_method,
-            max_cycles = args.episode_length,
-            observe_method = "ajg_new"
+            observe_method = args.observe_method,
+            max_cycles = args.episode_length
         )
             
         self.max_steps = self.env.max_cycles
