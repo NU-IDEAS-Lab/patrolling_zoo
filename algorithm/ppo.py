@@ -24,7 +24,8 @@ class PPO(BaseAlgorithm):
             stack_size = 4,
             frame_size = (64, 64),
             max_cycles = 500,
-            total_episodes = 40
+            total_episodes = 40,
+            max_grad_norm = 0.5
         ):
         super().__init__(env, device)
 
@@ -39,6 +40,7 @@ class PPO(BaseAlgorithm):
         self.frame_size = frame_size
         self.max_cycles = max_cycles
         self.total_episodes = total_episodes
+        self.max_grad_norm = max_grad_norm
 
         self.num_agents = len(env.possible_agents)
         self.num_actions = env.action_space(env.possible_agents[0]).n
@@ -128,7 +130,7 @@ class PPO(BaseAlgorithm):
                 rb_returns = rb_advantages + rb_values
 
             # convert our episodes to batch of individual transitions
-            b_obs = torch.flatten(rb_obs[:end_step], start_dim=0, end_dim=0)
+            b_obs = rb_obs[:end_step]
             b_logprobs = torch.flatten(rb_logprobs[:end_step], start_dim=0, end_dim=1)
             b_actions = torch.flatten(rb_actions[:end_step], start_dim=0, end_dim=1)
             b_returns = torch.flatten(rb_returns[:end_step], start_dim=0, end_dim=1)
@@ -199,6 +201,7 @@ class PPO(BaseAlgorithm):
                     # Take gradient step.
                     self.optimizer.zero_grad()
                     loss.backward()
+                    torch.nn.utils.clip_grad_norm_(self.learner.parameters(), self.max_grad_norm)
                     self.optimizer.step()
 
             self.scheduler.step()
@@ -231,18 +234,21 @@ class PPO(BaseAlgorithm):
             # render max_episodes episodes out
             for episode in range(max_episodes):
                 obs, info = self.env.reset(seed=seed)
+                obs = self.env.state()
                 if render:
                     clear_output(wait=True)
                     self.env.render()
-                obs = self.learner.batchify_obs(self.env.observation_space(self.env.possible_agents[0]), obs, self.device)
+                obs = self.learner.batchify_obs(self.env.state_space, obs, self.device)
                 terms = [False]
                 truncs = [False]
                 while not any(terms) and not any(truncs):
                     actions, logprobs, _, values = self.learner.get_action_and_value(obs)
                     obs, rewards, terms, truncs, infos = self.env.step(self.learner.unbatchify(actions, self.env))
-                    obs = self.learner.batchify_obs(self.env.observation_space(self.env.possible_agents[0]), obs, self.device)
                     terms = [terms[a] for a in terms]
                     truncs = [truncs[a] for a in truncs]
+                    if not any(terms) and not any(truncs):
+                        obs = self.env.state()
+                        obs = self.learner.batchify_obs(self.env.state_space, obs, self.device)
                     if render:
                         clear_output(wait=True)
                         self.env.render()
@@ -269,11 +275,13 @@ class PPONetwork(nn.Module):
             # nn.ReLU(),
             # nn.Flatten(),
             self._layer_init(nn.Linear(observation_size, 512)),
-            nn.ReLU(),      
+            nn.ReLU(),
             self._layer_init(nn.Linear(512, 512)),
             nn.ReLU(),
+            self._layer_init(nn.Linear(512, 512)),
+            nn.ReLU()
         )
-        self.actor = self._layer_init(nn.Linear(512, num_actions), std=0.01)
+        self.actor = self._layer_init(nn.Linear(512, num_actions * num_agents), std=0.01)
         self.critic = self._layer_init(nn.Linear(512, 1))
 
     def _layer_init(self, layer, std=np.sqrt(2), bias_const=0.0):
@@ -287,7 +295,7 @@ class PPONetwork(nn.Module):
     def get_action_and_value(self, x, action=None):
         hidden = self.network(x)
         logits = self.actor(hidden)
-        logits_split = torch.split(logits, split_size_or_sections=1, dim=0)
+        logits_split = torch.split(logits, split_size_or_sections=int(self.num_actions), dim=1)
 
         if action is None:
             action = []
@@ -320,9 +328,8 @@ class PPONetwork(nn.Module):
         """Converts PZ style observations to batch of torch arrays."""
         # convert to list of np arrays
 
-        #np.stack is a method that concencate the tensors along the new axis
-        # obs = np.stack([flatten(obs_space, obs[a]) for a in obs], axis=0)
-        obs = flatten(obs_space, obs)
+        obs = flatten(obs_space, obs).reshape(1, -1)
+
         # convert to torch
         obs = torch.tensor(obs).to(device)
 

@@ -139,12 +139,6 @@ class parallel_env(ParallelEnv):
 
         self.reset()
 
-        # The state space is a complete observation of the environment.
-        # This is not part of the standard PettingZoo API, but is useful for centralized training.
-        self.state_space = self.observation_spaces[self.possible_agents[0]]
-
-        self.reset()
-
 
     def reset(self, seed=None, options=None):
         ''' Sets the environment to its initial state. '''
@@ -419,7 +413,7 @@ class parallel_env(ParallelEnv):
             # Provide an end-of-episode reward.
             for agent in self.agents:
                 # reward_dict[agent] += self.beta * self.max_cycles / (self.pg.getWorstIdlenessTime(self.step_count) + 1e-8)
-                reward_dict[agent] += self.beta * self.max_cycles / self.pg.getAverageIdlenessTime(self.step_count)
+                reward_dict[agent] += self.beta * self.max_cycles / (self.pg.getAverageIdlenessTime(self.step_count) + 1e-8)
                 # reward_dict[agent] /= self._minMaxNormalize(self.pg.getWorstIdlenessTime(self.step_count), minimum=0.0, maximum=self.max_cycles)
             
             truncated_dict = {a: True for a in self.agents}
