@@ -449,8 +449,8 @@ class parallel_env(ParallelEnv):
         #     reward_dict[agent] -= np.log(self.pg.getAverageIdlenessTime(self.step_count))
         #     #reward_dict[agent] -= np.log(self.pg.getWorstIdlenessTime(self.step_count))
         
-        # for agent in self.agents:
-        #     reward_dict[agent] += self.beta * self.step_count / (self.pg.getAverageIdlenessTime(self.step_count) + 1e-8)
+        for agent in self.agents:
+            reward_dict[agent] += self.beta * self.step_count / (self.pg.getAverageIdlenessTime(self.step_count) + 1e-8)
 
         # Perform observations.
         for agent in self.agents:
@@ -471,9 +471,9 @@ class parallel_env(ParallelEnv):
         # Check truncation conditions.
         if self.max_cycles >= 0 and self.step_count >= self.max_cycles:
             # Provide an end-of-episode reward.
-            for agent in self.agents:
+            # for agent in self.agents:
                 # reward_dict[agent] += self.beta * self.max_cycles / (self.pg.getWorstIdlenessTime(self.step_count) + 1e-8)
-                reward_dict[agent] += self.beta * self.max_cycles / (self.pg.getAverageIdlenessTime(self.step_count) + 1e-8)
+                # reward_dict[agent] += self.beta * self.max_cycles / (self.pg.getAverageIdlenessTime(self.step_count) + 1e-8)
                 # reward_dict[agent] /= self._minMaxNormalize(self.pg.getWorstIdlenessTime(self.step_count), minimum=0.0, maximum=self.max_cycles)
             
             truncated_dict = {a: True for a in self.agents}
