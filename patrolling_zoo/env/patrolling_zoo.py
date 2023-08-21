@@ -98,7 +98,7 @@ class parallel_env(ParallelEnv):
         minPosY = min(pos[p][1] for p in pos)
         maxPosY = max(pos[p][1] for p in pos)
 
-        # Create the state space.
+        # Create the state space as a bitmap.
         if self.observe_method == "bitmap":
             state_space = spaces.Box(
                 low=-1.0,
@@ -106,6 +106,8 @@ class parallel_env(ParallelEnv):
                 shape=(self.pg.widthPixels, self.pg.heightPixels, len(self.OBSERVATION_CHANNELS)),# + self.pg.graph.number_of_nodes()),
                 dtype=np.float32,
             )
+        
+        # Create the state space as a feature-engineered vector.
         else:
             state_space = {
                 # The vertex state is composed of two parts.
@@ -143,10 +145,12 @@ class parallel_env(ParallelEnv):
                         high = np.array([np.inf] * self.pg.graph.number_of_nodes(), dtype=np.float32),
                     ) for a in self.possible_agents
                 }) # type: ignore
+            
+            state_space = spaces.Dict(state_space)
         
         # The state space is a complete observation of the environment.
         # This is not part of the standard PettingZoo API, but is useful for centralized training.
-        self.state_space = spaces.Dict(state_space)
+        self.state_space = state_space
         
         # Create the observation space.
         self.observation_spaces = spaces.Dict({agent: self.state_space for agent in self.possible_agents}) # type: ignore
