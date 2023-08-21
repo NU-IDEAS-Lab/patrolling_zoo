@@ -7,6 +7,7 @@ import math
 from matplotlib import pyplot as plt
 import networkx as nx
 from copy import copy
+from enum import IntEnum
 
 
 class PatrolAgent():
@@ -36,6 +37,11 @@ class parallel_env(ParallelEnv):
         "name": "patrolling_zoo_environment_v0",
     }
 
+    class OBSERVATION_CHANNELS(IntEnum):
+        AGENT_ID = 0
+        IDLENESS = 1
+        OBSTACLE = 2
+
     def __init__(self, patrol_graph, num_agents,
                  comms_model = CommunicationModel(model = "bernoulli"),
                  require_explicit_visit = True,
@@ -43,7 +49,7 @@ class parallel_env(ParallelEnv):
                  alpha = 10.0,
                  beta = 100.0,
                  observation_radius = np.inf,
-                 observe_method = "raw",
+                 observation_mode = "ajg_new",
                  max_cycles: int = -1,
                  *args,
                  **kwargs):
@@ -93,42 +99,50 @@ class parallel_env(ParallelEnv):
         maxPosY = max(pos[p][1] for p in pos)
 
         # Create the state space.
-        state_space = {
-            # The vertex state is composed of two parts.
-            # The first part is the idleness time of each node.
-            "vertex_state": spaces.Dict({
-                v: spaces.Box(
-                    low = 0.0,
-                    high = np.inf,
-                ) for v in range(self.pg.graph.number_of_nodes())
-            }), # type: ignore
-        }
+        if self.observe_method == "bitmap":
+            state_space = spaces.Box(
+                low=-1.0,
+                high=np.inf,
+                shape=(self.pg.widthPixels, self.pg.heightPixels, len(self.OBSERVATION_CHANNELS)),# + self.pg.graph.number_of_nodes()),
+                dtype=np.float32,
+            )
+        else:
+            state_space = {
+                # The vertex state is composed of two parts.
+                # The first part is the idleness time of each node.
+                "vertex_state": spaces.Dict({
+                    v: spaces.Box(
+                        low = 0.0,
+                        high = np.inf,
+                    ) for v in range(self.pg.graph.number_of_nodes())
+                }), # type: ignore
+            }
 
-        if self.observe_method != "ajg_new":
-            # Add agent Euclidean position.
-            state_space["agent_state"] = spaces.Dict({
-                a: spaces.Box(
-                    low = np.array([minPosX, minPosY], dtype=np.float32),
-                    high = np.array([maxPosX, maxPosY], dtype=np.float32),
-                ) for a in self.possible_agents
-            }) # type: ignore
-        
-        if self.observe_method == "old":
-            # The second part is the shortest path cost from every agent to every node.
-            state_space["vertex_distances"] = spaces.Dict({
-                a: spaces.Box(
-                    low = np.array([0.0] * self.pg.graph.number_of_nodes(), dtype=np.float32),
-                    high = np.array([np.inf] * self.pg.graph.number_of_nodes(), dtype=np.float32),
-                ) for a in self.possible_agents
-            }) # type: ignore
-        elif self.observe_method == "ajg_new":
-            state_space["agent_id"] = spaces.Discrete(num_agents)
-            state_space["vertex_distances"] = spaces.Dict({
-                a: spaces.Box(
-                    low = np.array([0.0] * self.pg.graph.number_of_nodes(), dtype=np.float32),
-                    high = np.array([np.inf] * self.pg.graph.number_of_nodes(), dtype=np.float32),
-                ) for a in self.possible_agents
-            }) # type: ignore
+            if self.observe_method in ["normalization", "ranking", "raw", "old"]:
+                # Add agent Euclidean position.
+                state_space["agent_state"] = spaces.Dict({
+                    a: spaces.Box(
+                        low = np.array([minPosX, minPosY], dtype=np.float32),
+                        high = np.array([maxPosX, maxPosY], dtype=np.float32),
+                    ) for a in self.possible_agents
+                }) # type: ignore
+            
+            if self.observe_method == "old":
+                # The second part is the shortest path cost from every agent to every node.
+                state_space["vertex_distances"] = spaces.Dict({
+                    a: spaces.Box(
+                        low = np.array([0.0] * self.pg.graph.number_of_nodes(), dtype=np.float32),
+                        high = np.array([np.inf] * self.pg.graph.number_of_nodes(), dtype=np.float32),
+                    ) for a in self.possible_agents
+                }) # type: ignore
+            elif self.observe_method == "ajg_new":
+                state_space["agent_id"] = spaces.Discrete(num_agents)
+                state_space["vertex_distances"] = spaces.Dict({
+                    a: spaces.Box(
+                        low = np.array([0.0] * self.pg.graph.number_of_nodes(), dtype=np.float32),
+                        high = np.array([np.inf] * self.pg.graph.number_of_nodes(), dtype=np.float32),
+                    ) for a in self.possible_agents
+                }) # type: ignore
         
         # The state space is a complete observation of the environment.
         # This is not part of the standard PettingZoo API, but is useful for centralized training.
@@ -220,6 +234,7 @@ class parallel_env(ParallelEnv):
         ''' Returns the action space for the given agent. '''
         return self.action_spaces[agent]
 
+
     def state(self):
         ''' Returns the global state of the environment.
             This is useful for centralized training, decentralized execution. '''
@@ -306,11 +321,52 @@ class parallel_env(ParallelEnv):
                 "vertex_distances": vertexDistances
             }
         
+        elif self.observe_method == "bitmap":
+            # Calculate the shortest path distances from each agent to each node.
+            obs = -1.0 * np.ones(self.observation_space(agent).shape, dtype=np.float32)
+
+            # Add agents to the observation.
+            for a in agents:
+                obs[int(a.position[0]), int(a.position[1]), self.OBSERVATION_CHANNELS.AGENT_ID] = a.id
+            
+            # Add vertices to the observation.
+            for v in vertices:
+                pos = self.pg.getNodePosition(v)
+                obs[int(pos[0]), int(pos[1]), self.OBSERVATION_CHANNELS.IDLENESS] = self.pg.getNodeIdlenessTime(v, self.step_count)
+            
+            # Create a connectivity matrix for each vertex and then add it to the remaining channels in the observation.
+            # We assume that the agent always knows the graph in advance.
+            # for v in self.pg.graph.nodes:
+            #     pos = self.pg.getNodePosition(v)
+            #     edges = self.pg.graph.edges(v)
+            #     for _, neighbor in edges:
+            #         obs[int(pos[0]), int(pos[1]), len(self.OBSERVATION_CHANNELS) + neighbor] = 1.0
+
+            # Add a connectivity channel which "draws" lines for each edge.
+            for edge in self.pg.graph.edges:
+                pos1 = self.pg.getNodePosition(edge[0])
+                pos2 = self.pg.getNodePosition(edge[1])
+                dist = self._dist(pos1, pos2)
+                if dist > 0.0:
+                    for i in range(int(dist)):
+                        obs[int(pos1[0] + (pos2[0] - pos1[0]) * i / dist), int(pos1[1] + (pos2[1] - pos1[1]) * i / dist), self.OBSERVATION_CHANNELS.OBSTACLE] = 1.0
+
+            # Fancier edge drawing.
+            # for edge in self.pg.graph.edges:
+            #     pos1 = np.array(self.pg.getNodePosition(edge[0]))
+            #     pos2 = np.array(self.pg.getNodePosition(edge[1]))
+            #     for i in range(obs.shape[0]):
+            #         for j in range(obs.shape[1]):
+            #             pos3 = np.array((i, j))
+            #             d = np.cross(pos2 - pos1, pos3 - pos1) / np.linalg.norm(pos2 - pos1)
+            #             if d < 5.0:
+            #                 obs[i, j, self.OBSERVATION_CHANNELS.OBSTACLE] = 0.0
+
+        
         else:
             raise ValueError(f"Invalid observation method {self.observe_method}")
         
         return obs
-
 
     def step(self, action_dict={}):
         ''''
