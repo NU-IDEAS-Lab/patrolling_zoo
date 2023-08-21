@@ -49,7 +49,7 @@ class parallel_env(ParallelEnv):
                  alpha = 10.0,
                  beta = 100.0,
                  observation_radius = np.inf,
-                 observation_mode = "ajg_new",
+                 observe_method = "ajg_new",
                  max_cycles: int = -1,
                  *args,
                  **kwargs):
