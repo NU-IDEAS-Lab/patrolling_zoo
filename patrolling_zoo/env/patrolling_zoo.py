@@ -51,6 +51,7 @@ class parallel_env(ParallelEnv):
                  observation_radius = np.inf,
                  observe_method = "ajg_new",
                  max_cycles: int = -1,
+                 reward_interval: int = -1,
                  *args,
                  **kwargs):
         """
@@ -73,6 +74,8 @@ class parallel_env(ParallelEnv):
         self.max_cycles = max_cycles
         self.comms_model = comms_model
         self.observe_method = observe_method
+
+        self.reward_interval = reward_interval
 
         self.alpha = alpha
         self.beta = beta
@@ -452,8 +455,8 @@ class parallel_env(ParallelEnv):
         #     reward_dict[agent] -= np.log(self.pg.getAverageIdlenessTime(self.step_count))
         #     #reward_dict[agent] -= np.log(self.pg.getWorstIdlenessTime(self.step_count))
         
-        for agent in self.agents:
-            reward_dict[agent] += self.beta * self.step_count / (self.pg.getAverageIdlenessTime(self.step_count) + 1e-8)
+        # for agent in self.agents:
+        #     reward_dict[agent] += self.beta * self.step_count / (self.pg.getAverageIdlenessTime(self.step_count) + 1e-8)
 
         # Perform observations.
         for agent in self.agents:
@@ -474,13 +477,20 @@ class parallel_env(ParallelEnv):
         # Check truncation conditions.
         if self.max_cycles >= 0 and self.step_count >= self.max_cycles:
             # Provide an end-of-episode reward.
-            # for agent in self.agents:
+            for agent in self.agents:
                 # reward_dict[agent] += self.beta * self.max_cycles / (self.pg.getWorstIdlenessTime(self.step_count) + 1e-8)
                 # reward_dict[agent] += self.beta * self.max_cycles / (self.pg.getAverageIdlenessTime(self.step_count) + 1e-8)
+                reward_dict[agent] += self.beta / self._minMaxNormalize(self.pg.getAverageIdlenessTime(self.step_count), minimum=0.0, maximum=self.max_cycles)
                 # reward_dict[agent] /= self._minMaxNormalize(self.pg.getWorstIdlenessTime(self.step_count), minimum=0.0, maximum=self.max_cycles)
             
             truncated_dict = {a: True for a in self.agents}
             self.agents = []
+        
+        # Provide a reward at a fixed interval.
+        elif self.reward_interval >= 0 and self.step_count % self.reward_interval == 0:
+            for agent in self.agents:
+                # reward_dict[agent] += self.beta * self.step_count / (self.pg.getAverageIdlenessTime(self.step_count) + 1e-8)
+                reward_dict[agent] += self.beta / self._minMaxNormalize(self.pg.getAverageIdlenessTime(self.step_count), minimum=0.0, maximum=self.max_cycles)
 
         return obs_dict, reward_dict, done_dict, truncated_dict, info_dict
 
