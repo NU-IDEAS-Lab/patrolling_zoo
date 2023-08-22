@@ -107,7 +107,7 @@ class parallel_env(ParallelEnv):
         # Add to the dictionary depending on the observation method.
 
         # Add agent id.
-        if self.observe_method in ["ajg_new", "bitmap"]:
+        if self.observe_method in ["ajg_new"]:
             state_space["agent_id"] = spaces.Discrete(num_agents)
 
         # Add vertex idleness time.
@@ -139,14 +139,15 @@ class parallel_env(ParallelEnv):
         
         # Add bitmap observation.
         if self.observe_method in ["bitmap"]:
-            state_space["bitmap"] = spaces.Box(
+            state_space = spaces.Box(
                 low=-1.0,
                 high=np.inf,
                 shape=(self.pg.widthPixels, self.pg.heightPixels, len(self.OBSERVATION_CHANNELS)),# + self.pg.graph.number_of_nodes()),
                 dtype=np.float32,
             )
         
-        state_space = spaces.Dict(state_space)
+        if type(state_space) == dict:
+            state_space = spaces.Dict(state_space)
         
         # The state space is a complete observation of the environment.
         # This is not part of the standard PettingZoo API, but is useful for centralized training.
@@ -256,7 +257,7 @@ class parallel_env(ParallelEnv):
         obs = {}
 
         # Add agent ID.
-        if self.observe_method in ["ajg_new", "bitmap"]:
+        if self.observe_method in ["ajg_new"]:
             obs["agent_id"] = agent.id
 
         # Add agent position.
@@ -330,8 +331,11 @@ class parallel_env(ParallelEnv):
 
         # Add bitmap observation.
         if self.observe_method in ["bitmap"]:
-            # Calculate the shortest path distances from each agent to each node.
-            bitmap = -1.0 * np.ones(self.observation_space(agent)["bitmap"].shape, dtype=np.float32)
+            # Create an image which defaults to -1.
+            bitmap = -1.0 * np.ones(self.observation_space(agent).shape, dtype=np.float32)
+
+            # Set the observing agent's ID in the (0, 0) position. This is a bit hacky.
+            bitmap[0, 0, self.OBSERVATION_CHANNELS.AGENT_ID] = agent.id
 
             # Add agents to the observation.
             for a in agents:
@@ -370,10 +374,10 @@ class parallel_env(ParallelEnv):
             #             if d < 5.0:
             #                 bitmap[i, j, self.OBSERVATION_CHANNELS.OBSTACLE] = 0.0
 
-            obs["bitmap"] = bitmap
+            obs = bitmap
 
         
-        if obs == {}:
+        if len(obs) < 1:
             raise ValueError(f"Invalid observation method {self.observe_method}")
         
         return obs

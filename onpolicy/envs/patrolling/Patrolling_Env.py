@@ -3,6 +3,7 @@ import random
 from patrolling_zoo.env.patrolling_zoo import parallel_env
 from patrolling_zoo.env.patrol_graph import PatrolGraph
 from gymnasium.spaces.utils import flatten, flatten_space
+from gymnasium.spaces import Dict
 import numpy as np
 
 
@@ -67,10 +68,20 @@ class PatrollingEnv(object):
         self.observation_space = []
         self.share_observation_space = []
 
-        # Set up spaces.
+        # Set up action space.
         self.action_space = [self.env.action_spaces[a] for a in self.env.possible_agents]
-        self.observation_space = [flatten_space(self.env.observation_spaces[a]) for a in self.env.possible_agents]
-        self.share_observation_space = [flatten_space(self.env.state_space) for a in self.env.possible_agents]
+
+        # Set up observation space.
+        self.flatten_observations = False
+        if type(self.env.state_space) == Dict:
+            self.flatten_observations = True
+        
+        if self.flatten_observations:
+            self.observation_space = [flatten_space(self.env.observation_spaces[a]) for a in self.env.possible_agents]
+            self.share_observation_space = [flatten_space(self.env.state_space) for a in self.env.possible_agents]
+        else:
+            self.observation_space = [self.env.observation_spaces[a] for a in self.env.possible_agents]
+            self.share_observation_space = [self.env.state_space for a in self.env.possible_agents]
 
     def reset(self):
         obs, _ = self.env.reset()
@@ -114,8 +125,11 @@ class PatrollingEnv(object):
     def _obs_wrapper(self, obs):
 
         # Flatten the PZ observation.
-        obs = flatten(self.env.observation_spaces, obs)
-        obs = np.reshape(obs, (self.num_agents, -1))
+        if self.flatten_observations:
+            obs = flatten(self.env.observation_spaces, obs)
+            obs = np.reshape(obs, (self.num_agents, -1))
+        else:
+            obs = [obs[a] for a in self.env.possible_agents]
 
         if self.num_agents == 1:
             return obs[np.newaxis, :]
