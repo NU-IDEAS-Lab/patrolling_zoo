@@ -40,7 +40,7 @@ class parallel_env(ParallelEnv):
     class OBSERVATION_CHANNELS(IntEnum):
         AGENT_ID = 0
         IDLENESS = 1
-        OBSTACLE = 2
+        GRAPH = 2
 
     def __init__(self, patrol_graph, num_agents,
                  comms_model = CommunicationModel(model = "bernoulli"),
@@ -140,7 +140,7 @@ class parallel_env(ParallelEnv):
         # Add bitmap observation.
         if self.observe_method in ["bitmap"]:
             state_space = spaces.Box(
-                low=-1.0,
+                low=-2.0,
                 high=np.inf,
                 shape=(self.pg.widthPixels, self.pg.heightPixels, len(self.OBSERVATION_CHANNELS)),# + self.pg.graph.number_of_nodes()),
                 dtype=np.float32,
@@ -341,7 +341,7 @@ class parallel_env(ParallelEnv):
             for a in agents:
                 bitmap[int(a.position[0]), int(a.position[1]), self.OBSERVATION_CHANNELS.AGENT_ID] = a.id
             
-            # Add vertices to the observation.
+            # Add vertex idleness times to the observation.
             for v in vertices:
                 pos = self.pg.getNodePosition(v)
                 bitmap[int(pos[0]), int(pos[1]), self.OBSERVATION_CHANNELS.IDLENESS] = self.pg.getNodeIdlenessTime(v, self.step_count)
@@ -354,14 +354,19 @@ class parallel_env(ParallelEnv):
             #     for _, neighbor in edges:
             #         bitmap[int(pos[0]), int(pos[1]), len(self.OBSERVATION_CHANNELS) + neighbor] = 1.0
 
-            # Add a connectivity channel which "draws" lines for each edge.
+            # Add vertices to the graph channel.
+            for v in vertices:
+                pos = self.pg.getNodePosition(v)
+                bitmap[int(pos[0]), int(pos[1]), self.OBSERVATION_CHANNELS.GRAPH] = v
+
+            # Add edges to the graph channel.
             for edge in self.pg.graph.edges:
                 pos1 = self.pg.getNodePosition(edge[0])
                 pos2 = self.pg.getNodePosition(edge[1])
                 dist = self._dist(pos1, pos2)
                 if dist > 0.0:
                     for i in range(int(dist)):
-                        bitmap[int(pos1[0] + (pos2[0] - pos1[0]) * i / dist), int(pos1[1] + (pos2[1] - pos1[1]) * i / dist), self.OBSERVATION_CHANNELS.OBSTACLE] = 1.0
+                        bitmap[int(pos1[0] + (pos2[0] - pos1[0]) * i / dist), int(pos1[1] + (pos2[1] - pos1[1]) * i / dist), self.OBSERVATION_CHANNELS.GRAPH] = -2.0
 
             # Fancier edge drawing.
             # for edge in self.pg.graph.edges:
