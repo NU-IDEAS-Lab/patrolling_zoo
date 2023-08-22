@@ -1,0 +1,25 @@
+2023-08-15 12:11:31,031 INFO    MainThread:26492 [wandb_setup.py:_flush():76] Current SDK version is 0.15.8
+2023-08-15 12:11:31,031 INFO    MainThread:26492 [wandb_setup.py:_flush():76] Configure stats pid to 26492
+2023-08-15 12:11:31,031 INFO    MainThread:26492 [wandb_setup.py:_flush():76] Loading settings from C:\Users\Anthony\.config\wandb\settings
+2023-08-15 12:11:31,031 INFO    MainThread:26492 [wandb_setup.py:_flush():76] Loading settings from C:\Users\Anthony\Development\patrolling_zoo2\wandb\settings
+2023-08-15 12:11:31,031 INFO    MainThread:26492 [wandb_setup.py:_flush():76] Loading settings from environment variables: {}
+2023-08-15 12:11:31,031 INFO    MainThread:26492 [wandb_setup.py:_flush():76] Applying setup settings: {'_disable_service': False}
+2023-08-15 12:11:31,031 INFO    MainThread:26492 [wandb_setup.py:_flush():76] Inferring run settings from compute environment: {'program_relpath': 'onpolicy\\scripts\\train\\train_football.py', 'program': 'C:\\Users\\Anthony\\Development\\patrolling_zoo2\\onpolicy\\scripts\\train\\train_football.py'}
+2023-08-15 12:11:31,031 INFO    MainThread:26492 [wandb_setup.py:_flush():76] Applying login settings: {'mode': 'offline'}
+2023-08-15 12:11:31,031 INFO    MainThread:26492 [wandb_init.py:_log_setup():507] Logging user logs to C:\Users\Anthony\Development\patrolling_zoo2\onpolicy\scripts\results\Football\academy_3_vs_1_with_keeper\rmappo\check\wandb\offline-run-20230815_121131-1z06f962\logs\debug.log
+2023-08-15 12:11:31,031 INFO    MainThread:26492 [wandb_init.py:_log_setup():508] Logging internal logs to C:\Users\Anthony\Development\patrolling_zoo2\onpolicy\scripts\results\Football\academy_3_vs_1_with_keeper\rmappo\check\wandb\offline-run-20230815_121131-1z06f962\logs\debug-internal.log
+2023-08-15 12:11:31,031 INFO    MainThread:26492 [wandb_init.py:init():547] calling init triggers
+2023-08-15 12:11:31,031 INFO    MainThread:26492 [wandb_init.py:init():554] wandb.init called with sweep_config: {}
+config: {'algorithm_name': 'rmappo', 'experiment_name': 'check', 'seed': 1, 'cuda': True, 'cuda_deterministic': True, 'n_training_threads': 1, 'n_rollout_threads': 50, 'n_eval_rollout_threads': 100, 'n_render_rollout_threads': 1, 'num_env_steps': 2500, 'user_name': 'yuchao', 'use_wandb': True, 'env_name': 'Football', 'use_obs_instead_of_state': False, 'episode_length': 200, 'share_policy': True, 'use_centralized_V': True, 'stacked_frames': 1, 'use_stacked_frames': False, 'hidden_size': 64, 'layer_N': 1, 'use_ReLU': True, 'use_popart': False, 'use_valuenorm': True, 'use_feature_normalization': True, 'use_orthogonal': True, 'gain': 0.01, 'use_naive_recurrent_policy': False, 'use_recurrent_policy': True, 'recurrent_N': 1, 'data_chunk_length': 10, 'lr': 0.0005, 'critic_lr': 0.0005, 'opti_eps': 1e-05, 'weight_decay': 0, 'ppo_epoch': 15, 'use_clipped_value_loss': True, 'clip_param': 0.2, 'num_mini_batch': 2, 'entropy_coef': 0.01, 'value_loss_coef': 1, 'use_max_grad_norm': True, 'max_grad_norm': 10.0, 'use_gae': True, 'gamma': 0.99, 'gae_lambda': 0.95, 'use_proper_time_limits': False, 'use_huber_loss': True, 'use_value_active_masks': True, 'use_policy_active_masks': True, 'huber_delta': 10.0, 'use_linear_lr_decay': False, 'save_interval': 200000, 'log_interval': 200000, 'use_eval': True, 'eval_interval': 400000, 'eval_episodes': 100, 'save_gifs': False, 'use_render': False, 'render_episodes': 5, 'ifi': 0.1, 'model_dir': None, 'scenario_name': 'academy_3_vs_1_with_keeper', 'num_agents': 3, 'representation': 'simple115v2', 'rewards': 'scoring,checkpoints', 'smm_width': 96, 'smm_height': 72, 'remove_redundancy': False, 'zero_feature': False, 'eval_deterministic': True, 'share_reward': True, 'save_videos': False, 'video_dir': ''}
+2023-08-15 12:11:31,031 INFO    MainThread:26492 [wandb_init.py:init():596] starting backend
+2023-08-15 12:11:31,031 INFO    MainThread:26492 [wandb_init.py:init():600] setting up manager
+2023-08-15 12:11:31,031 INFO    MainThread:26492 [backend.py:_multiprocessing_setup():106] multiprocessing start_methods=spawn, using: spawn
+2023-08-15 12:11:31,049 INFO    MainThread:26492 [wandb_init.py:init():606] backend started and connected
+2023-08-15 12:11:31,057 INFO    MainThread:26492 [wandb_init.py:init():697] updated telemetry
+2023-08-15 12:11:31,203 INFO    MainThread:26492 [wandb_init.py:init():730] communicating run to backend with 60.0 second timeout
+2023-08-15 12:11:31,203 INFO    MainThread:26492 [wandb_init.py:init():781] starting run threads in backend
+2023-08-15 12:11:34,199 INFO    MainThread:26492 [wandb_run.py:_console_start():2159] atexit reg
+2023-08-15 12:11:34,199 INFO    MainThread:26492 [wandb_run.py:_redirect():2014] redirect: wrap_raw
+2023-08-15 12:11:34,199 INFO    MainThread:26492 [wandb_run.py:_redirect():2079] Wrapping output streams.
+2023-08-15 12:11:34,199 INFO    MainThread:26492 [wandb_run.py:_redirect():2104] Redirects installed.
+2023-08-15 12:11:34,199 INFO    MainThread:26492 [wandb_init.py:init():822] run started, returning control to user process

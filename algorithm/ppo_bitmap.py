@@ -5,6 +5,7 @@ import torch.optim as optim
 from torch.distributions.categorical import Categorical
 import numpy as np
 from IPython.display import clear_output
+from supersuit import frame_stack_v1
 
 
 from .algorithm import BaseAlgorithm
@@ -18,14 +19,12 @@ class PPO(BaseAlgorithm):
             vf_coef = 0.1,
             clip_coef = 0.1,
             gamma = 0.99,
-            gae_lambda = 0.95,
             lr = 0.0001,
             batch_size = 1,
             stack_size = 4,
             frame_size = (64, 64),
             max_cycles = 500,
-            total_episodes = 40,
-            max_grad_norm = 0.5
+            total_episodes = 40
         ):
         super().__init__(env, device)
 
@@ -33,23 +32,22 @@ class PPO(BaseAlgorithm):
         self.vf_coef = vf_coef
         self.clip_coef = clip_coef
         self.gamma = gamma
-        self.gae_lambda = gae_lambda
         self.lr = lr
         self.batch_size = batch_size
         self.stack_size = stack_size
         self.frame_size = frame_size
         self.max_cycles = max_cycles
         self.total_episodes = total_episodes
-        self.max_grad_norm = max_grad_norm
+
+        self.env = frame_stack_v1(self.env, stack_size=stack_size)
 
         self.num_agents = len(env.possible_agents)
         self.num_actions = env.action_space(env.possible_agents[0]).n
-        self.observation_size = flatten_space(env.state_space).shape[0]
+        self.observation_size = flatten_space(env.observation_space(env.possible_agents[0])).shape[0]
 
         """ LEARNER SETUP """
         self.learner = PPONetwork(num_actions=self.num_actions, num_agents=self.num_agents, observation_size=self.observation_size, device=self.device).to(self.device)
         self.optimizer = optim.Adam(self.learner.parameters(), lr=self.lr, eps=1e-5)
-        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=total_episodes, eta_min=0, last_epoch=-1)
     
     def train(self, seed=None):
         ''' Trains the policy. '''
@@ -69,7 +67,7 @@ class PPO(BaseAlgorithm):
         """ ALGO LOGIC: EPISODE STORAGE"""
         end_step = 0
         total_episodic_return = 0
-        rb_obs = torch.zeros((self.max_cycles, self.observation_size)).to(self.device)
+        rb_obs = torch.zeros((self.max_cycles, self.num_agents, self.stack_size, *self.frame_size)).to(self.device)
         rb_actions = torch.zeros((self.max_cycles, self.num_agents)).to(self.device)
         rb_logprobs = torch.zeros((self.max_cycles, self.num_agents)).to(self.device)
         rb_rewards = torch.zeros((self.max_cycles, self.num_agents)).to(self.device)
@@ -91,7 +89,7 @@ class PPO(BaseAlgorithm):
                 for step in range(0, self.max_cycles):
                     # rollover the observation
                     
-                    obs = self.learner.batchify_obs(self.env.state_space, next_obs, self.device)
+                    obs = self.learner.batchify_obs(self.env.observation_space(self.env.possible_agents[0]), next_obs, self.device)
 
                     actions, logprobs, _, values = self.learner.get_action_and_value(obs)
 
@@ -126,11 +124,11 @@ class PPO(BaseAlgorithm):
                         + self.gamma * rb_values[t + 1] * rb_terms[t + 1]
                         - rb_values[t]
                     )
-                    rb_advantages[t] = delta + self.gamma * self.gae_lambda * rb_advantages[t + 1]
+                    rb_advantages[t] = delta + self.gamma * self.gamma * rb_advantages[t + 1]
                 rb_returns = rb_advantages + rb_values
 
             # convert our episodes to batch of individual transitions
-            b_obs = rb_obs[:end_step]
+            b_obs = torch.flatten(rb_obs[:end_step], start_dim=0, end_dim=1)
             b_logprobs = torch.flatten(rb_logprobs[:end_step], start_dim=0, end_dim=1)
             b_actions = torch.flatten(rb_actions[:end_step], start_dim=0, end_dim=1)
             b_returns = torch.flatten(rb_returns[:end_step], start_dim=0, end_dim=1)
@@ -169,8 +167,8 @@ class PPO(BaseAlgorithm):
                     )
 
                     # Policy loss
-                    pg_loss1 = -advantages * ratio
-                    pg_loss2 = -advantages * torch.clamp(
+                    pg_loss1 = -b_advantages[batch_index] * ratio
+                    pg_loss2 = -b_advantages[batch_index] * torch.clamp(
                         ratio, 1 - self.clip_coef, 1 + self.clip_coef
                     )
                     pg_loss = torch.max(pg_loss1, pg_loss2).mean()
@@ -201,10 +199,7 @@ class PPO(BaseAlgorithm):
                     # Take gradient step.
                     self.optimizer.zero_grad()
                     loss.backward()
-                    torch.nn.utils.clip_grad_norm_(self.learner.parameters(), self.max_grad_norm)
                     self.optimizer.step()
-
-            self.scheduler.step()
 
             y_pred, y_true = b_values.cpu().numpy(), b_returns.cpu().numpy()
             var_y = np.var(y_true)
@@ -234,21 +229,18 @@ class PPO(BaseAlgorithm):
             # render max_episodes episodes out
             for episode in range(max_episodes):
                 obs, info = self.env.reset(seed=seed)
-                obs = self.env.state()
                 if render:
                     clear_output(wait=True)
                     self.env.render()
-                obs = self.learner.batchify_obs(self.env.state_space, obs, self.device)
+                obs = self.learner.batchify_obs(self.env.observation_space(self.env.possible_agents[0]), obs, self.device)
                 terms = [False]
                 truncs = [False]
                 while not any(terms) and not any(truncs):
                     actions, logprobs, _, values = self.learner.get_action_and_value(obs)
                     obs, rewards, terms, truncs, infos = self.env.step(self.learner.unbatchify(actions, self.env))
+                    obs = self.learner.batchify_obs(self.env.observation_space(self.env.possible_agents[0]), obs, self.device)
                     terms = [terms[a] for a in terms]
                     truncs = [truncs[a] for a in truncs]
-                    if not any(terms) and not any(truncs):
-                        obs = self.env.state()
-                        obs = self.learner.batchify_obs(self.env.state_space, obs, self.device)
                     if render:
                         clear_output(wait=True)
                         self.env.render()
@@ -264,24 +256,20 @@ class PPONetwork(nn.Module):
 
 
         self.network = nn.Sequential(
-            # self._layer_init(nn.Conv2d(4, 32, 3, padding=1)),
-            # nn.MaxPool2d(2),
-            # nn.ReLU(),
-            # self._layer_init(nn.Conv2d(32, 64, 3, padding=1)),
-            # nn.MaxPool2d(2),
-            # nn.ReLU(),
-            # self._layer_init(nn.Conv2d(64, 128, 3, padding=1)),
-            # nn.MaxPool2d(2),
-            # nn.ReLU(),
-            # nn.Flatten(),
-            self._layer_init(nn.Linear(observation_size, 512)),
+            self._layer_init(nn.Conv2d(3, 32, 3, padding=1)),
+            nn.MaxPool2d(2),
             nn.ReLU(),
-            self._layer_init(nn.Linear(512, 512)),
+            self._layer_init(nn.Conv2d(32, 64, 3, padding=1)),
+            nn.MaxPool2d(2),
             nn.ReLU(),
-            self._layer_init(nn.Linear(512, 512)),
-            nn.ReLU()
+            self._layer_init(nn.Conv2d(64, 128, 3, padding=1)),
+            nn.MaxPool2d(2),
+            nn.ReLU(),
+            nn.Flatten(),
+            self._layer_init(nn.Linear(144, 512)),
+            nn.ReLU(),
         )
-        self.actor = self._layer_init(nn.Linear(512, num_actions * num_agents), std=0.01)
+        self.actor = self._layer_init(nn.Linear(512, num_actions), std=0.01)
         self.critic = self._layer_init(nn.Linear(512, 1))
 
     def _layer_init(self, layer, std=np.sqrt(2), bias_const=0.0):
@@ -290,12 +278,12 @@ class PPONetwork(nn.Module):
         return layer
 
     def get_value(self, x):
-        return self.critic(self.network(x))
+        return self.critic(self.network(x / 255.0))
 
     def get_action_and_value(self, x, action=None):
-        hidden = self.network(x)
+        hidden = self.network(x / 255.0)
         logits = self.actor(hidden)
-        logits_split = torch.split(logits, split_size_or_sections=int(self.num_actions), dim=1)
+        logits_split = torch.split(logits, split_size_or_sections=1, dim=0)
 
         if action is None:
             action = []
@@ -328,7 +316,14 @@ class PPONetwork(nn.Module):
         """Converts PZ style observations to batch of torch arrays."""
         # convert to list of np arrays
 
-        obs = flatten(obs_space, obs).reshape(1, -1)
+        #np.stack is a method that concencate the tensors along the new axis
+        # obs = np.stack([obs[a] for a in obs if a.id == 0], axis=0)
+        print("obs.shape", obs.shape)
+        # obs = np.stack([flatten(obs_space, obs[a]) for a in obs], axis=0)
+
+        # transpose to (batch, channels, width, height)
+        # print("obs.shape", obs.shape)
+        obs = obs.transpose(-1, 0, 1)
 
         # convert to torch
         obs = torch.tensor(obs).to(device)
