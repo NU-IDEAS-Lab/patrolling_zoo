@@ -188,7 +188,11 @@ class parallel_env(ParallelEnv):
         self.dones = dict.fromkeys(self.agents, False)
         
         observation = {agent: self.observe(agent) for agent in self.agents}
-        info = {}
+        info = {
+            agent: {
+                "ready": True
+            } for agent in self.agents
+        }
         return observation, info
 
 
@@ -412,7 +416,11 @@ class parallel_env(ParallelEnv):
         reward_dict = {agent: 0 for agent in self.agents}
         done_dict = {}
         truncated_dict = {agent: False for agent in self.agents}
-        info_dict = {}
+        info_dict = {
+            agent: {
+                "ready": False
+            } for agent in self.agents
+        }
 
         # Perform actions.
         for agent in self.agents:
@@ -457,6 +465,8 @@ class parallel_env(ParallelEnv):
                                 #reward_dict[agent] += 100.0 * r
 
                                 agent.lastNodeVisited = nextNode
+                                if nextNode == dstNode:
+                                    info_dict[agent]["ready"] = True
                 
                         # The agent has exceeded its movement budget for this step.
                         if stepSize <= 0.0:
@@ -482,9 +492,6 @@ class parallel_env(ParallelEnv):
             
             # Check if the agent is done
             done_dict[agent] = self.dones[agent]
-
-            # Add any additional information for the agent
-            info_dict[agent] = {}
 
             # Update the observation for the agent
             obs_dict[agent] = agent_observation
