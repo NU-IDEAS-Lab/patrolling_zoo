@@ -10,6 +10,7 @@ class PatrollingEnv(object):
     '''Wrapper to make the Patrolling Zoo environment compatible'''
 
     def __init__(self, args):
+        self.args = args
         self.num_agents = args.num_agents
         
         # # make env
@@ -78,27 +79,39 @@ class PatrollingEnv(object):
 
     def step(self, action):
 
-        # Modify the action to be compatible with the PZ environment.
-        action = {self.env.possible_agents[i]: action[i] for i in range(self.num_agents)}
+        ready = False
+        done = []
 
-        # Take a step.
-        obs, reward, done, trunc, info = self.env.step(action)
+        while not ready and not any(done):
+            # Modify the action to be compatible with the PZ environment.
+            actionPz = {self.env.possible_agents[i]: action[i] for i in range(self.num_agents)}
 
-        # Convert the done dict to a list.
-        done = [done[a] for a in self.env.possible_agents]
-        # Convert the trunc dict to a list.
-        trunc = [trunc[a] for a in self.env.possible_agents]
+            # Take a step.
+            obs, reward, done, trunc, info = self.env.step(actionPz)
 
-        # Consider the episode done if any agent is done OR truncated.
-        done = [d or t for d, t in zip(done, trunc)]
+            # Convert the done dict to a list.
+            done = [done[a] for a in self.env.possible_agents]
+            # Convert the trunc dict to a list.
+            trunc = [trunc[a] for a in self.env.possible_agents]
 
-        obs = self._obs_wrapper(obs)
-        reward = [reward[a] for a in self.env.possible_agents]
-        if self.share_reward:
-            global_reward = np.sum(reward)
-            reward = [[global_reward]] * self.num_agents
+            # Consider the episode done if any agent is done OR truncated.
+            done = [d or t for d, t in zip(done, trunc)]
 
-        info = self._info_wrapper(info)
+            obs = self._obs_wrapper(obs)
+            reward = [reward[a] for a in self.env.possible_agents]
+            if self.share_reward:
+                global_reward = np.sum(reward)
+                reward = [[global_reward]] * self.num_agents
+
+            info = self._info_wrapper(info)
+
+            # Only run once if asynchronous actions is false.
+            if not self.args.async_actions:
+                break
+
+            # Check if any agents are ready
+            ready = any([info[a]["ready"] for a in self.env.agents])
+
         return obs, reward, done, info
 
     def seed(self, seed=None):
