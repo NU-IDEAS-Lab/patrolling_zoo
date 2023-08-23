@@ -145,10 +145,9 @@ class parallel_env(ParallelEnv):
         
         # Add adjacency matrix.
         if self.observe_method in ["adjacency"]:
-            maxWeight = max([self.pg.graph.edges[e]["weight"] for e in self.pg.graph.edges])
             state_space["adjacency"] = spaces.Box(
                 low=-1.0,
-                high=maxWeight,
+                high=1.0,
                 shape=(self.pg.graph.number_of_nodes(), self.pg.graph.number_of_nodes()),
                 dtype=np.float32,
             )
@@ -388,12 +387,13 @@ class parallel_env(ParallelEnv):
 
             obs["bitmap"] = bitmap
 
-        # Add adjacency matrix.
+        # Add adjacency matrix (normalized).
         if self.observe_method in ["adjacency"]:
             # Create adjacency matrix.
             adjacency = -1.0 * np.ones(self.observation_space(agent)["adjacency"].shape, dtype=np.float32)
             for edge in self.pg.graph.edges:
-                weight = self.pg.graph.edges[edge]["weight"]
+                maxWeight = max([self.pg.graph.edges[e]["weight"] for e in self.pg.graph.edges])
+                weight = self._minMaxNormalize(self.pg.graph.edges[edge]["weight"], minimum=0.0, maximum=maxWeight)
                 adjacency[edge[0], edge[1]] = weight
                 adjacency[edge[1], edge[0]] = weight
             obs["adjacency"] = adjacency
