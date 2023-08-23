@@ -126,7 +126,7 @@ class parallel_env(ParallelEnv):
             }) # type: ignore
         
         # Add vertex distances from each agent.
-        if self.observe_method in ["old", "ajg_new"]:
+        if self.observe_method in ["old", "ajg_new", "adjacency"]:
             state_space["vertex_distances"] = spaces.Dict({
                 a: spaces.Box(
                     low = np.array([0.0] * self.pg.graph.number_of_nodes(), dtype=np.float32),
