@@ -126,7 +126,7 @@ class parallel_env(ParallelEnv):
             }) # type: ignore
         
         # Add vertex distances from each agent.
-        if self.observe_method in ["old", "ajg_new", "adjacency"]:
+        if self.observe_method in ["old", "ajg_new"]:
             state_space["vertex_distances"] = spaces.Dict({
                 a: spaces.Box(
                     low = np.array([0.0] * self.pg.graph.number_of_nodes(), dtype=np.float32),
@@ -145,13 +145,21 @@ class parallel_env(ParallelEnv):
         
         # Add adjacency matrix.
         if self.observe_method in ["adjacency"]:
-            maxWeight = max([self.pg.graph.edges[e]["weight"] for e in self.pg.graph.edges])
             state_space["adjacency"] = spaces.Box(
-                low=0.0,
-                high=maxWeight,
+                low=-1.0,
+                high=1.0,
                 shape=(self.pg.graph.number_of_nodes(), self.pg.graph.number_of_nodes()),
                 dtype=np.float32,
             )
+        
+        # Add agent graph position vector.
+        if self.observe_method in ["adjacency"]:
+            state_space["agent_graph_position"] = spaces.Dict({
+                a: spaces.Box(
+                    low = np.array([0.0, 0.0, 0.0], dtype=np.float32),
+                    high = np.array([self.pg.graph.number_of_nodes(), self.pg.graph.number_of_nodes(), 1.0], dtype=np.float32),
+                ) for a in self.possible_agents
+            }) # type: ignore
         
         state_space = spaces.Dict(state_space)
         
@@ -320,7 +328,7 @@ class parallel_env(ParallelEnv):
             obs["vertex_distances"] = vertexDistances
 
         # Add vertex distances from each agent (normalized).
-        if self.observe_method in ["ajg_new", "adjacency"]:
+        if self.observe_method in ["ajg_new"]:
             # Calculate the shortest path distances from each agent to each node.
             vDists = np.zeros((len(agents), self.pg.graph.number_of_nodes()))
             for a in agents:
@@ -383,15 +391,32 @@ class parallel_env(ParallelEnv):
 
             obs["bitmap"] = bitmap
 
-        # Add adjacency matrix.
+        # Add adjacency matrix (normalized).
         if self.observe_method in ["adjacency"]:
             # Create adjacency matrix.
-            adjacency = np.zeros(self.observation_space(agent)["adjacency"].shape, dtype=np.float32)
+            adjacency = -1.0 * np.ones(self.observation_space(agent)["adjacency"].shape, dtype=np.float32)
             for edge in self.pg.graph.edges:
-                weight = self.pg.graph.edges[edge]["weight"]
+                maxWeight = max([self.pg.graph.edges[e]["weight"] for e in self.pg.graph.edges])
+                weight = self._minMaxNormalize(self.pg.graph.edges[edge]["weight"], minimum=0.0, maximum=maxWeight)
                 adjacency[edge[0], edge[1]] = weight
                 adjacency[edge[1], edge[0]] = weight
             obs["adjacency"] = adjacency
+        
+        # Add agent graph position vector.
+        if self.observe_method in ["adjacency"]:
+            graphPos = {}
+            for a in agents:
+                vec = np.zeros(self.observation_space(agent)["agent_graph_position"][a].shape, dtype=np.float32)
+                if a.edge == None:
+                    vec[0] = a.lastNode
+                    vec[1] = a.lastNode
+                    vec[2] = 1.0
+                else:
+                    vec[0] = a.edge[0]
+                    vec[1] = a.edge[1]
+                    vec[2] = self._getAgentPathLength(a, self._getPathToNode(a, a.edge[0])) / self.pg.graph.edges[a.edge]["weight"]
+                graphPos[a] = vec
+            obs["agent_graph_position"] = graphPos
         
         if obs == {}:
             raise ValueError(f"Invalid observation method {self.observe_method}")
@@ -549,7 +574,8 @@ class parallel_env(ParallelEnv):
             agent.lastNode = node
             agent.edge = None
         elif agent.lastNode != node:
-            agent.edge = (agent.lastNode, node)
+            # Ensure that ordering is always the same for the edge.
+            agent.edge = tuple(sorted((agent.lastNode, node)))
 
         return reached, max(stepSize - distCurrToNext, 0.0)
 
