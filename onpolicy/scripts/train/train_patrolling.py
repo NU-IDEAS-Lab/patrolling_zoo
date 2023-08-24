@@ -208,8 +208,7 @@ def main(args, parsed_args=None):
     if all_args.share_policy:
         from onpolicy.runner.shared.patrolling_runner import PatrollingRunner as Runner
     else:
-        raise NotImplementedError
-        from onpolicy.runner.separated.football_runner import FootballRunner as Runner
+        from onpolicy.runner.separated.patrolling_runner import PatrollingRunner as Runner
 
     try:
         runner = Runner(config)
