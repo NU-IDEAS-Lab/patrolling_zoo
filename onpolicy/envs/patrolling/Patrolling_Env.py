@@ -56,10 +56,10 @@ class PatrollingEnv(object):
             beta = 1000.0,
             # observation_radius = args.observation_radius,
             observe_method = args.observe_method,
-            max_cycles = args.episode_length
+            max_cycles = -1
+            # max_cycles = args.episode_length
         )
             
-        self.max_steps = self.env.max_cycles
         self.remove_redundancy = args.remove_redundancy
         self.zero_feature = args.zero_feature
         self.share_reward = args.share_reward
@@ -72,7 +72,9 @@ class PatrollingEnv(object):
         self.observation_space = [flatten_space(self.env.observation_spaces[a]) for a in self.env.possible_agents]
         self.share_observation_space = [flatten_space(self.env.state_space) for a in self.env.possible_agents]
 
+
     def reset(self):
+        self.ppoSteps = 0
         obs, _ = self.env.reset()
         obs = self._obs_wrapper(obs)
         return obs
@@ -85,16 +87,13 @@ class PatrollingEnv(object):
         steps = 0
 
         while not ready and not any(done):
-            # Increase the episode's max step count.
-            # This prevents the environment from being reset too early.
-            if steps > 0 and self.env.max_cycles > 0:
-                self.env.max_cycles += 1
+            lastStep = self.ppoSteps >= self.args.episode_length - 1
             
             # Modify the action to be compatible with the PZ environment.
             actionPz = {self.env.possible_agents[i]: action[i] for i in range(self.num_agents)}
 
             # Take a step.
-            obs, reward, done, trunc, info = self.env.step(actionPz)
+            obs, reward, done, trunc, info = self.env.step(actionPz, lastStep=lastStep)
 
             # Convert the done dict to a list.
             done = [done[a] for a in self.env.possible_agents]
@@ -124,6 +123,8 @@ class PatrollingEnv(object):
 
 
         info["deltaSteps"] = [[steps]] * self.num_agents
+
+        self.ppoSteps += 1
 
         return obs, reward, done, info
 

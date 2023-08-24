@@ -423,7 +423,7 @@ class parallel_env(ParallelEnv):
         
         return obs
 
-    def step(self, action_dict={}):
+    def step(self, action_dict={}, lastStep=False):
         ''''
         Perform a step in the environment based on the given action dictionary.
 
@@ -522,11 +522,11 @@ class parallel_env(ParallelEnv):
             obs_dict[agent] = agent_observation
 
         # Check truncation conditions.
-        if self.max_cycles >= 0 and self.step_count >= self.max_cycles:
+        if lastStep or (self.max_cycles >= 0 and self.step_count >= self.max_cycles):
             # Provide an end-of-episode reward.
             for agent in self.agents:
-                # reward_dict[agent] += self.beta * self.max_cycles / (self.pg.getWorstIdlenessTime(self.step_count) + 1e-8)
-                reward_dict[agent] += self.beta * self.max_cycles / (self.pg.getAverageIdlenessTime(self.step_count) + 1e-8)
+                # reward_dict[agent] += self.beta * self.step_count / (self.pg.getWorstIdlenessTime(self.step_count) + 1e-8)
+                reward_dict[agent] += self.beta * self.step_count / (self.pg.getAverageIdlenessTime(self.step_count) + 1e-8)
                 # reward_dict[agent] /= self._minMaxNormalize(self.pg.getWorstIdlenessTime(self.step_count), minimum=0.0, maximum=self.max_cycles)
             
             truncated_dict = {a: True for a in self.agents}
