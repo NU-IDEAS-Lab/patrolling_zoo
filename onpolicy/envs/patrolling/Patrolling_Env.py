@@ -117,7 +117,7 @@ class PatrollingEnv(object):
             # Check if any agents are ready
             ready = any([info[a]["ready"] for a in self.env.agents])
 
-        info["deltaSteps"] = steps
+        info["deltaSteps"] = [[steps]] * self.num_agents
 
         return obs, reward, done, info
 

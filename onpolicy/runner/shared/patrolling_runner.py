@@ -39,7 +39,7 @@ class PatrollingRunner(Runner):
 
                 # Get the delta steps from the environment info.
                 delta_steps = [info["deltaSteps"] for info in infos]
-                # delta_steps = np.array(np.split(delta_steps, self.n_rollout_threads))
+                # delta_steps = np.array(delta_steps).reshape(-1, 1)
 
                 data = obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic, delta_steps
                 
