@@ -85,6 +85,11 @@ class PatrollingEnv(object):
         steps = 0
 
         while not ready and not any(done):
+            # Increase the episode's max step count.
+            # This prevents the environment from being reset too early.
+            if steps > 0 and self.env.max_cycles > 0:
+                self.env.max_cycles += 1
+            
             # Modify the action to be compatible with the PZ environment.
             actionPz = {self.env.possible_agents[i]: action[i] for i in range(self.num_agents)}
 
@@ -116,6 +121,7 @@ class PatrollingEnv(object):
 
             # Check if any agents are ready
             ready = any([info[a]["ready"] for a in self.env.agents])
+
 
         info["deltaSteps"] = [[steps]] * self.num_agents
 
