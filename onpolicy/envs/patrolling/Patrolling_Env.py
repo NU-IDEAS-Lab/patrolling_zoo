@@ -82,6 +82,8 @@ class PatrollingEnv(object):
         ready = False
         done = []
 
+        steps = 0
+
         while not ready and not any(done):
             # Modify the action to be compatible with the PZ environment.
             actionPz = {self.env.possible_agents[i]: action[i] for i in range(self.num_agents)}
@@ -105,12 +107,17 @@ class PatrollingEnv(object):
 
             info = self._info_wrapper(info)
 
+            # Increase the step count.
+            steps += 1
+
             # Only run once if asynchronous actions is false.
             if not self.args.async_actions:
                 break
 
             # Check if any agents are ready
             ready = any([info[a]["ready"] for a in self.env.agents])
+
+        info["deltaSteps"] = steps
 
         return obs, reward, done, info
 

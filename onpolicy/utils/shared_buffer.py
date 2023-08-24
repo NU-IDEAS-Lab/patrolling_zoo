@@ -22,6 +22,7 @@ class SharedReplayBuffer(object):
     """
 
     def __init__(self, args, num_agents, obs_space, cent_obs_space, act_space):
+        self.args = args
         self.episode_length = args.episode_length
         self.n_rollout_threads = args.n_rollout_threads
         self.hidden_size = args.hidden_size
@@ -29,6 +30,7 @@ class SharedReplayBuffer(object):
         self.gamma = args.gamma
         self.gae_lambda = args.gae_lambda
         self._use_gae = args.use_gae
+        self._use_gae_amadm = args.use_gae_amadm
         self._use_popart = args.use_popart
         self._use_valuenorm = args.use_valuenorm
         self._use_proper_time_limits = args.use_proper_time_limits
@@ -69,6 +71,8 @@ class SharedReplayBuffer(object):
             (self.episode_length, self.n_rollout_threads, num_agents, act_shape), dtype=np.float32)
         self.rewards = np.zeros(
             (self.episode_length, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
+        self.deltaSteps = np.zeros(
+            (self.episode_length, self.n_rollout_threads, 1), dtype=np.float32)
 
         self.masks = np.ones((self.episode_length + 1, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
         self.bad_masks = np.ones_like(self.masks)
@@ -77,7 +81,8 @@ class SharedReplayBuffer(object):
         self.step = 0
 
     def insert(self, share_obs, obs, rnn_states, rnn_states_critic, actions, action_log_probs,
-               value_preds, rewards, masks, bad_masks=None, active_masks=None, available_actions=None):
+               value_preds, rewards, masks, bad_masks=None, active_masks=None, available_actions=None,
+               deltaSteps=None):
         """
         Insert data into the buffer.
         :param share_obs: (argparse.Namespace) arguments containing relevant model, policy, and env information.
@@ -108,6 +113,8 @@ class SharedReplayBuffer(object):
             self.active_masks[self.step + 1] = active_masks.copy()
         if available_actions is not None:
             self.available_actions[self.step + 1] = available_actions.copy()
+        if deltaSteps is not None:
+            self.deltaSteps[self.step] = deltaSteps.copy()
 
         self.step = (self.step + 1) % self.episode_length
 
@@ -171,7 +178,27 @@ class SharedReplayBuffer(object):
         :param next_value: (np.ndarray) value predictions for the step after the last episode step.
         :param value_normalizer: (PopArt) If not None, PopArt value normalizer instance.
         """
-        if self._use_proper_time_limits:
+
+        # Check whether we should use the AMADM GAE modification from https://arxiv.org/abs/2308.06036
+        # Unfortunately, I don't have time to implement for all of the other options (like use_proper_time_limits),
+        # so I just ignore them!
+        if self._use_gae_amadm and not self._use_gae:
+            self.value_preds[-1] = next_value
+            gae = 0
+            for step in reversed(range(self.rewards.shape[0])):
+                if self._use_popart or self._use_valuenorm:
+                    delta = self.rewards[step] + np.power(self.gamma, self.deltaSteps[step]) * value_normalizer.denormalize(
+                        self.value_preds[step + 1]) * self.masks[step + 1] \
+                            - value_normalizer.denormalize(self.value_preds[step])
+                    gae = delta + np.power(self.gamma * self.gae_lambda, self.deltaSteps[step]) * self.masks[step + 1] * gae
+                    self.returns[step] = gae + value_normalizer.denormalize(self.value_preds[step])
+                else:
+                    delta = self.rewards[step] + np.power(self.gamma, self.deltaSteps[step]) * self.value_preds[step + 1] * self.masks[step + 1] - \
+                            self.value_preds[step]
+                    gae = delta + np.power(self.gamma * self.gae_lambda, self.deltaSteps[step]) * self.masks[step + 1] * gae
+                    self.returns[step] = gae + self.value_preds[step]
+        
+        elif self._use_proper_time_limits:
             if self._use_gae:
                 self.value_preds[-1] = next_value
                 gae = 0
