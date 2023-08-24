@@ -51,7 +51,9 @@ class SeparatedReplayBuffer(object):
         self.actions = np.zeros((self.episode_length, self.n_rollout_threads, act_shape), dtype=np.float32)
         self.action_log_probs = np.zeros((self.episode_length, self.n_rollout_threads, act_shape), dtype=np.float32)
         self.rewards = np.zeros((self.episode_length, self.n_rollout_threads, 1), dtype=np.float32)
-        
+        self.deltaSteps = np.zeros(
+            (self.episode_length, self.n_rollout_threads, 1), dtype=np.float32)
+
         self.masks = np.ones((self.episode_length + 1, self.n_rollout_threads, 1), dtype=np.float32)
         self.bad_masks = np.ones_like(self.masks)
         self.active_masks = np.ones_like(self.masks)
@@ -59,7 +61,8 @@ class SeparatedReplayBuffer(object):
         self.step = 0
 
     def insert(self, share_obs, obs, rnn_states, rnn_states_critic, actions, action_log_probs,
-               value_preds, rewards, masks, bad_masks=None, active_masks=None, available_actions=None):
+               value_preds, rewards, masks, bad_masks=None, active_masks=None, available_actions=None,
+               deltaSteps=None):
         self.share_obs[self.step + 1] = share_obs.copy()
         self.obs[self.step + 1] = obs.copy()
         self.rnn_states[self.step + 1] = rnn_states.copy()
@@ -75,6 +78,8 @@ class SeparatedReplayBuffer(object):
             self.active_masks[self.step + 1] = active_masks.copy()
         if available_actions is not None:
             self.available_actions[self.step + 1] = available_actions.copy()
+        if deltaSteps is not None:
+            self.deltaSteps[self.step] = deltaSteps.copy()
 
         self.step = (self.step + 1) % self.episode_length
 

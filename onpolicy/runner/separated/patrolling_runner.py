@@ -20,13 +20,14 @@ class PatrollingRunner(Runner):
         super(PatrollingRunner, self).__init__(config)
         self.env_infos = defaultdict(list)
 
-        # Set up a shared critic. This is slightly hacky!
-        # We abuse the existing classses and just use the critic from the first agent.
-        self.critic = self.policy[0].critic
-        self.critic_optimizer = self.policy[0].critic_optimizer
-        for po in self.policy:
-            po.critic = self.critic
-            po.critic_optimizer = self.critic_optimizer
+        if self.use_centralized_V:
+            # Set up a shared critic. This is slightly hacky!
+            # We abuse the existing classses and just use the critic from the first agent.
+            self.critic = self.policy[0].critic
+            self.critic_optimizer = self.policy[0].critic_optimizer
+            for po in self.policy:
+                po.critic = self.critic
+                po.critic_optimizer = self.critic_optimizer
        
     def run(self):
         self.warmup()   
@@ -47,7 +48,7 @@ class PatrollingRunner(Runner):
                 obs, rewards, dones, infos = self.envs.step(actions_env)
 
                 # Get the delta steps from the environment info.
-                delta_steps = [info["deltaSteps"] for info in infos]
+                delta_steps = np.array([info["deltaSteps"] for info in infos])
                 # delta_steps = np.array(delta_steps).reshape(-1, 1)
 
                 data = obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic, delta_steps
@@ -79,8 +80,13 @@ class PatrollingRunner(Runner):
                                 self.num_env_steps,
                                 int(total_num_steps / (end - start))))
                 
-                train_infos["average_episode_rewards"] = np.mean(self.buffer.rewards) * self.episode_length
-                print("average episode rewards is {}".format(train_infos["average_episode_rewards"]))
+                avgEpRewards = np.mean([self.buffer[i].rewards for i in range(self.num_agents)]) * self.episode_length
+                if self.use_wandb:
+                    wandb.log({"average_episode_rewards": avgEpRewards}, step=total_num_steps)
+                else:
+                    self.writter.add_scalars("average_episode_rewards", {"average_episode_rewards": avgEpRewards}, total_num_steps)
+
+                print("average episode rewards is {}".format(avgEpRewards))
                 self.log_train(train_infos, total_num_steps)
                 self.log_env(self.env_infos, total_num_steps)
                 self.env_infos = defaultdict(list)
@@ -108,7 +114,6 @@ class PatrollingRunner(Runner):
     def collect(self, step):
         values = []
         actions = []
-        temp_actions_env = []
         action_log_probs = []
         rnn_states = []
         rnn_states_critic = []
@@ -124,38 +129,19 @@ class PatrollingRunner(Runner):
             # [agents, envs, dim]
             values.append(_t2n(value))
             action = _t2n(action)
-            # rearrange action
-            if self.envs.action_space[agent_id].__class__.__name__ == 'MultiDiscrete':
-                for i in range(self.envs.action_space[agent_id].shape):
-                    uc_action_env = np.eye(self.envs.action_space[agent_id].high[i]+1)[action[:, i]]
-                    if i == 0:
-                        action_env = uc_action_env
-                    else:
-                        action_env = np.concatenate((action_env, uc_action_env), axis=1)
-            elif self.envs.action_space[agent_id].__class__.__name__ == 'Discrete':
-                action_env = np.squeeze(np.eye(self.envs.action_space[agent_id].n)[action], 1)
-            else:
-                raise NotImplementedError
 
             actions.append(action)
-            temp_actions_env.append(action_env)
             action_log_probs.append(_t2n(action_log_prob))
             rnn_states.append(_t2n(rnn_state))
             rnn_states_critic.append( _t2n(rnn_state_critic))
-
-        # [envs, agents, dim]
-        actions_env = []
-        for i in range(self.n_rollout_threads):
-            one_hot_action_env = []
-            for temp_action_env in temp_actions_env:
-                one_hot_action_env.append(temp_action_env[i])
-            actions_env.append(one_hot_action_env)
 
         values = np.array(values).transpose(1, 0, 2)
         actions = np.array(actions).transpose(1, 0, 2)
         action_log_probs = np.array(action_log_probs).transpose(1, 0, 2)
         rnn_states = np.array(rnn_states).transpose(1, 0, 2, 3)
         rnn_states_critic = np.array(rnn_states_critic).transpose(1, 0, 2, 3)
+
+        actions_env = [actions[idx, :, 0] for idx in range(self.n_rollout_threads)]
 
         return values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env
 
