@@ -105,7 +105,7 @@ class parallel_env(ParallelEnv):
 
         # Add agent id.
         if self.observe_method in ["ajg_new", "adjacency", "bitmap"]:
-            state_space["agent_id"] = spaces.Discrete(num_agents)
+            state_space["agent_id"] = spaces.Discrete(num_agents + 1, start = -1)
 
         # Add vertex idleness time.
         if self.observe_method in ["normalization", "ranking", "raw", "old", "ajg_new", "adjacency"]:
@@ -262,7 +262,10 @@ class parallel_env(ParallelEnv):
         ''' Returns the global state of the environment.
             This is useful for centralized training, decentralized execution. '''
         
-        return self.observe(self.possible_agents[0], radius=np.inf)
+        state = self.observe(self.possible_agents[0], radius=np.inf)
+        if "agent_id" in state:
+            state["agent_id"] = -1
+        return state
 
     def observe(self, agent, radius=None):
         ''' Returns the observation for the given agent.'''
