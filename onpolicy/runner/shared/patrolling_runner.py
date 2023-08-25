@@ -35,13 +35,24 @@ class PatrollingRunner(Runner):
                 values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env = self.collect(step)
                     
                 # Obser reward and next obs
-                obs, rewards, dones, infos = self.envs.step(actions_env)
+                combined_obs, rewards, dones, infos = self.envs.step(actions_env)
+
+                # Split the combined observations into obs and share_obs, then combine across environments.
+                obs = []
+                share_obs = []
+                for o in combined_obs:
+                    obs.append(o["obs"])
+                    share_obs.append(o["share_obs"][0])
+                obs = np.array(obs)
+                share_obs = np.array(share_obs)
+                share_obs = np.repeat(share_obs, self.num_agents, axis=1)
+                share_obs = np.reshape(share_obs, (self.n_rollout_threads, self.num_agents, -1))
 
                 # Get the delta steps from the environment info.
                 delta_steps = [info["deltaSteps"] for info in infos]
                 # delta_steps = np.array(delta_steps).reshape(-1, 1)
 
-                data = obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic, delta_steps
+                data = obs, share_obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic, delta_steps
                 
                 # insert data into buffer
                 self.insert(data)
@@ -82,10 +93,21 @@ class PatrollingRunner(Runner):
 
     def warmup(self):
         # reset env
-        obs = self.envs.reset()
+        combined_obs = self.envs.reset()
+
+        # Split the combined observations into obs and share_obs, then combine across environments.
+        obs = []
+        share_obs = []
+        for o in combined_obs:
+            obs.append(o["obs"])
+            share_obs.append(o["share_obs"][0])
+        obs = np.array(obs)
+        share_obs = np.array(share_obs)
+        share_obs = np.repeat(share_obs, self.num_agents, axis=1)
+        share_obs = np.reshape(share_obs, (self.n_rollout_threads, self.num_agents, -1))
 
         # insert obs to buffer
-        self.buffer.share_obs[0] = obs.copy()
+        self.buffer.share_obs[0] = share_obs.copy()
         self.buffer.obs[0] = obs.copy()
 
     @torch.no_grad()
@@ -113,7 +135,7 @@ class PatrollingRunner(Runner):
         return values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env
 
     def insert(self, data):
-        obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic, delta_steps = data
+        obs, share_obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic, delta_steps = data
         
         # update env_infos if done
         dones_env = np.all(dones, axis=-1)
@@ -137,7 +159,7 @@ class PatrollingRunner(Runner):
         masks[dones_env == True] = np.zeros(((dones_env == True).sum(), self.num_agents, 1), dtype=np.float32)
 
         self.buffer.insert(
-            share_obs=obs,
+            share_obs=share_obs,
             obs=obs,
             rnn_states=rnn_states,
             rnn_states_critic=rnn_states_critic,

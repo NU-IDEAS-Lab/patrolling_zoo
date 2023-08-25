@@ -70,14 +70,20 @@ class PatrollingEnv(object):
         # Set up spaces.
         self.action_space = [self.env.action_spaces[a] for a in self.env.possible_agents]
         self.observation_space = [flatten_space(self.env.observation_spaces[a]) for a in self.env.possible_agents]
-        self.share_observation_space = [flatten_space(self.env.observation_spaces) for a in self.env.possible_agents]
+        self.share_observation_space = [flatten_space(self.env.state_space) for a in self.env.possible_agents]
 
 
     def reset(self):
         self.ppoSteps = 0
         obs, _ = self.env.reset()
         obs = self._obs_wrapper(obs)
-        return obs
+
+        combined_obs = {
+            "obs": obs,
+            "share_obs": self._share_obs_wrapper(self.env.state())
+        }
+
+        return combined_obs
 
     def step(self, action):
 
@@ -103,7 +109,11 @@ class PatrollingEnv(object):
             # Consider the episode done if any agent is done OR truncated.
             done = [d or t for d, t in zip(done, trunc)]
 
-            obs = self._obs_wrapper(obs)
+            combined_obs = {
+                "obs": self._obs_wrapper(obs),
+                "share_obs": self._share_obs_wrapper(self.env.state())
+            }
+
             reward = [reward[a] for a in self.env.possible_agents]
             if self.share_reward:
                 global_reward = np.sum(reward)
@@ -126,7 +136,7 @@ class PatrollingEnv(object):
 
         self.ppoSteps += 1
 
-        return obs, reward, done, info
+        return combined_obs, reward, done, info
 
     def seed(self, seed=None):
         if seed is None:
@@ -144,9 +154,15 @@ class PatrollingEnv(object):
         obs = np.reshape(obs, (self.num_agents, -1))
 
         if self.num_agents == 1:
-            return obs[np.newaxis, :]
-        else:
-            return obs
+            obs = obs[np.newaxis, :]
+        
+        return obs
+    
+    def _share_obs_wrapper(self, obs):
+        # Flatten the PZ observation.
+        obs = flatten(self.env.state_space, obs)
+        obs = np.repeat(obs[np.newaxis, :], self.num_agents, axis=0)
+        return obs
 
     def _info_wrapper(self, info):
         # state = self.env.state()

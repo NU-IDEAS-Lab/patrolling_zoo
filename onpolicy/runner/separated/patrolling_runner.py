@@ -28,6 +28,9 @@ class PatrollingRunner(Runner):
             for po in self.policy:
                 po.critic = self.critic
                 po.critic_optimizer = self.critic_optimizer
+            for ta in self.trainer:
+                if ta._use_popart:
+                    ta.value_normalizer = self.critic.v_out
        
     def run(self):
         self.warmup()   
@@ -45,13 +48,22 @@ class PatrollingRunner(Runner):
                 values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env = self.collect(step)
                     
                 # Obser reward and next obs
-                obs, rewards, dones, infos = self.envs.step(actions_env)
+                combined_obs, rewards, dones, infos = self.envs.step(actions_env)
+
+                # Split the combined observations into obs and share_obs, then combine across environments.
+                obs = []
+                share_obs = []
+                for o in combined_obs:
+                    obs.append(o["obs"])
+                    share_obs.append(o["share_obs"][0])
+                obs = np.array(obs)
+                share_obs = np.array(share_obs)
 
                 # Get the delta steps from the environment info.
                 delta_steps = np.array([info["deltaSteps"] for info in infos])
                 # delta_steps = np.array(delta_steps).reshape(-1, 1)
 
-                data = obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic, delta_steps
+                data = obs, share_obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic, delta_steps
                 
                 # insert data into buffer
                 self.insert(data)
@@ -97,11 +109,15 @@ class PatrollingRunner(Runner):
 
     def warmup(self):
         # reset env
-        obs = self.envs.reset()
+        combined_obs = self.envs.reset()
 
+        # Split the combined observations into obs and share_obs, then combine across environments.
+        obs = []
         share_obs = []
-        for o in obs:
-            share_obs.append(list(chain(*o)))
+        for o in combined_obs:
+            obs.append(o["obs"])
+            share_obs.append(o["share_obs"][0])
+        obs = np.array(obs)
         share_obs = np.array(share_obs)
 
         for agent_id in range(self.num_agents):
@@ -146,7 +162,7 @@ class PatrollingRunner(Runner):
         return values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env
 
     def insert(self, data):
-        obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic, delta_steps = data
+        obs, share_obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic, delta_steps = data
         
         # Add the average idleness time to env infos.
         self.env_infos["avg_idleness"] = [i["avg_idleness"] for i in infos]
@@ -156,11 +172,6 @@ class PatrollingRunner(Runner):
         rnn_states_critic[dones == True] = np.zeros(((dones == True).sum(), self.recurrent_N, self.hidden_size), dtype=np.float32)
         masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
         masks[dones == True] = np.zeros(((dones == True).sum(), 1), dtype=np.float32)
-
-        share_obs = []
-        for o in obs:
-            share_obs.append(list(chain(*o)))
-        share_obs = np.array(share_obs)
 
         for agent_id in range(self.num_agents):
             if not self.use_centralized_V:

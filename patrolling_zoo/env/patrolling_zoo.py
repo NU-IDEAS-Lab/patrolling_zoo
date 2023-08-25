@@ -262,18 +262,23 @@ class parallel_env(ParallelEnv):
         ''' Returns the global state of the environment.
             This is useful for centralized training, decentralized execution. '''
         
-        state = self.observe(self.possible_agents[0], radius=np.inf)
+        state = self.observe(self.possible_agents[0], radius=np.inf, allow_done_agents=True)
         if "agent_id" in state:
             state["agent_id"] = -1
         return state
 
-    def observe(self, agent, radius=None):
+    def observe(self, agent, radius=None, allow_done_agents=False):
         ''' Returns the observation for the given agent.'''
 
         if radius == None:
             radius = agent.observationRadius
 
-        agents = [a for a in self.agents if self._dist(a.position, agent.position) <= radius]
+        if allow_done_agents:
+            agentList = self.possible_agents
+        else:
+            agentList = self.agents
+
+        agents = [a for a in agentList if self._dist(a.position, agent.position) <= radius]
         vertices = [v for v in self.pg.graph.nodes if self._dist(self.pg.getNodePosition(v), agent.position) <= radius]
         obs = {}
 
