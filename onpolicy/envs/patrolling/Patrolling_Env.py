@@ -124,8 +124,8 @@ class PatrollingEnv(object):
             # Increase the step count.
             steps += 1
 
-            # Only run once if asynchronous actions is false.
-            if not self.args.async_actions:
+            # Only run once if skip_steps_no_actions is false.
+            if not self.args.skip_steps_no_actions:
                 break
 
             # Check if any agents are ready
@@ -133,6 +133,7 @@ class PatrollingEnv(object):
 
 
         info["deltaSteps"] = [[steps]] * self.num_agents
+        info["ready"] = [info[a]["ready"] for a in self.env.possible_agents]
 
         self.ppoSteps += 1
 

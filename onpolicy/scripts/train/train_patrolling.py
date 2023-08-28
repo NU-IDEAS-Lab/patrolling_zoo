@@ -56,8 +56,8 @@ def make_eval_env(all_args):
 
 
 def parse_args(args, parser):
-    parser.add_argument("--async_actions", type=bool, default=False,
-                        help="Whether to use asynchronous actions.")
+    parser.add_argument("--skip_steps_no_actions", type=bool, default=False,
+                        help="Whether to skip steps with no action required (by any agent).")
     parser.add_argument("--graph_name", type=str,
                         default="4nodes", 
                         help="which graph to run on.")

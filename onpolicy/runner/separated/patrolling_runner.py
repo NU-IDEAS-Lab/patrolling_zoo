@@ -43,12 +43,23 @@ class PatrollingRunner(Runner):
                 for agent_id in range(self.num_agents):
                     self.trainer[agent_id].policy.lr_decay(episode, episodes)
 
+            # Create a matrix indicating whether each agent in each environment is ready for a new action.
+            self.ready = np.zeros((self.n_rollout_threads, self.num_agents), dtype=bool)
+            for i in range(self.n_rollout_threads):
+                for a in range(self.num_agents):
+                    self.ready[i, a] = True
+
             for step in range(self.episode_length):
                 # Sample actions
                 values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env = self.collect(step)
                     
                 # Obser reward and next obs
                 combined_obs, rewards, dones, infos = self.envs.step(actions_env)
+
+                # Pull agent ready state from the info message.
+                for i in range(self.n_rollout_threads):
+                    for a in range(self.num_agents):
+                        self.ready[i, a] = infos[i]["ready"][a]
 
                 # Split the combined observations into obs and share_obs, then combine across environments.
                 obs = []
