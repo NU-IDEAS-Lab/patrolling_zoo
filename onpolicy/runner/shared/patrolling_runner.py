@@ -37,7 +37,11 @@ class PatrollingRunner(Runner):
                 # Obser reward and next obs
                 obs, rewards, dones, infos = self.envs.step(actions_env)
 
-                data = obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic 
+                # Get the delta steps from the environment info.
+                delta_steps = [info["deltaSteps"] for info in infos]
+                # delta_steps = np.array(delta_steps).reshape(-1, 1)
+
+                data = obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic, delta_steps
                 
                 # insert data into buffer
                 self.insert(data)
@@ -67,7 +71,7 @@ class PatrollingRunner(Runner):
                                 int(total_num_steps / (end - start))))
                 
                 train_infos["average_episode_rewards"] = np.mean(self.buffer.rewards) * self.episode_length
-                print("average episode rewards is {}".format(train_infos["average_episode_rewards"]))
+                print("average episode rewards is {} and idleness is {}".format(train_infos["average_episode_rewards"], np.mean(self.env_infos["avg_idleness"])))
                 self.log_train(train_infos, total_num_steps)
                 self.log_env(self.env_infos, total_num_steps)
                 self.env_infos = defaultdict(list)
@@ -109,7 +113,7 @@ class PatrollingRunner(Runner):
         return values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env
 
     def insert(self, data):
-        obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic = data
+        obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic, delta_steps = data
         
         # update env_infos if done
         dones_env = np.all(dones, axis=-1)
@@ -141,7 +145,8 @@ class PatrollingRunner(Runner):
             action_log_probs=action_log_probs,
             value_preds=values,
             rewards=rewards,
-            masks=masks
+            masks=masks,
+            deltaSteps=delta_steps
         )
 
     def log_env(self, env_infos, total_num_steps):

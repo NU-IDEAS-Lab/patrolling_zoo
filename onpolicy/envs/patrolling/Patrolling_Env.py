@@ -10,6 +10,7 @@ class PatrollingEnv(object):
     '''Wrapper to make the Patrolling Zoo environment compatible'''
 
     def __init__(self, args):
+        self.args = args
         self.num_agents = args.num_agents
         
         # # make env
@@ -55,10 +56,10 @@ class PatrollingEnv(object):
             beta = 1000.0,
             # observation_radius = args.observation_radius,
             observe_method = args.observe_method,
-            max_cycles = args.episode_length
+            max_cycles = -1
+            # max_cycles = args.episode_length
         )
             
-        self.max_steps = self.env.max_cycles
         self.remove_redundancy = args.remove_redundancy
         self.zero_feature = args.zero_feature
         self.share_reward = args.share_reward
@@ -71,34 +72,60 @@ class PatrollingEnv(object):
         self.observation_space = [flatten_space(self.env.observation_spaces[a]) for a in self.env.possible_agents]
         self.share_observation_space = [flatten_space(self.env.state_space) for a in self.env.possible_agents]
 
+
     def reset(self):
+        self.ppoSteps = 0
         obs, _ = self.env.reset()
         obs = self._obs_wrapper(obs)
         return obs
 
     def step(self, action):
 
-        # Modify the action to be compatible with the PZ environment.
-        action = {self.env.possible_agents[i]: action[i] for i in range(self.num_agents)}
+        ready = False
+        done = []
 
-        # Take a step.
-        obs, reward, done, trunc, info = self.env.step(action)
+        steps = 0
 
-        # Convert the done dict to a list.
-        done = [done[a] for a in self.env.possible_agents]
-        # Convert the trunc dict to a list.
-        trunc = [trunc[a] for a in self.env.possible_agents]
+        while not ready and not any(done):
+            lastStep = self.ppoSteps >= self.args.episode_length - 1
+            
+            # Modify the action to be compatible with the PZ environment.
+            actionPz = {self.env.possible_agents[i]: action[i] for i in range(self.num_agents)}
 
-        # Consider the episode done if any agent is done OR truncated.
-        done = [d or t for d, t in zip(done, trunc)]
+            # Take a step.
+            obs, reward, done, trunc, info = self.env.step(actionPz, lastStep=lastStep)
 
-        obs = self._obs_wrapper(obs)
-        reward = [reward[a] for a in self.env.possible_agents]
-        if self.share_reward:
-            global_reward = np.sum(reward)
-            reward = [[global_reward]] * self.num_agents
+            # Convert the done dict to a list.
+            done = [done[a] for a in self.env.possible_agents]
+            # Convert the trunc dict to a list.
+            trunc = [trunc[a] for a in self.env.possible_agents]
 
-        info = self._info_wrapper(info)
+            # Consider the episode done if any agent is done OR truncated.
+            done = [d or t for d, t in zip(done, trunc)]
+
+            obs = self._obs_wrapper(obs)
+            reward = [reward[a] for a in self.env.possible_agents]
+            if self.share_reward:
+                global_reward = np.sum(reward)
+                reward = [[global_reward]] * self.num_agents
+
+            info = self._info_wrapper(info)
+
+            # Increase the step count.
+            steps += 1
+
+            # Only run once if asynchronous actions is false.
+            if not self.args.async_actions:
+                break
+
+            # Check if any agents are ready
+            ready = any([info[a]["ready"] for a in self.env.agents])
+
+
+        info["deltaSteps"] = [[steps]] * self.num_agents
+
+        self.ppoSteps += 1
+
         return obs, reward, done, info
 
     def seed(self, seed=None):
