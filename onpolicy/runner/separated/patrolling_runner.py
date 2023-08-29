@@ -2,12 +2,14 @@ from collections import defaultdict, deque
 from itertools import chain
 import os
 import time
+import copy
 
 import imageio
 import numpy as np
 import torch
 import wandb
 
+from onpolicy.utils.separated_buffer import SeparatedReplayBuffer
 from onpolicy.utils.util import update_linear_schedule
 from onpolicy.runner.separated.base_runner import Runner
 
@@ -31,6 +33,22 @@ class PatrollingRunner(Runner):
             for ta in self.trainer:
                 if ta._use_popart:
                     ta.value_normalizer = self.critic.v_out
+        
+        # Set up additional replay buffers for asynchronous actors.
+        if self.all_args.skip_steps_async:
+            self.buffer = [[] for i in range(self.n_rollout_threads)]
+            for i in range(self.n_rollout_threads):
+                for agent_id in range(self.num_agents):
+                    share_observation_space = self.envs.share_observation_space[agent_id] if self.use_centralized_V else self.envs.observation_space[agent_id]
+
+                    # make a copy of all_args but with n_rollout_threads = 1, since we are hacking this to use a separate buffer per rollout thread per agent.
+                    args = copy.deepcopy(self.all_args)
+                    args.n_rollout_threads = 1
+                    bu = SeparatedReplayBuffer(args,
+                                            self.envs.observation_space[agent_id],
+                                            share_observation_space,
+                                            self.envs.action_space[agent_id])
+                    self.buffer[i].append(bu)
        
     def run(self):
         self.warmup()   
@@ -103,7 +121,7 @@ class PatrollingRunner(Runner):
                                 self.num_env_steps,
                                 int(total_num_steps / (end - start))))
                 
-                avgEpRewards = np.mean([self.buffer[i].rewards for i in range(self.num_agents)]) * self.episode_length
+                avgEpRewards = np.mean([self.buffer[i][a].rewards for a in range(self.num_agents) for j in range(self.n_rollout_threads)]) * self.episode_length
                 if self.use_wandb:
                     wandb.log({"average_episode_rewards": avgEpRewards}, step=total_num_steps)
                 else:
@@ -131,44 +149,50 @@ class PatrollingRunner(Runner):
         obs = np.array(obs)
         share_obs = np.array(share_obs)
 
-        for agent_id in range(self.num_agents):
-            if not self.use_centralized_V:
-                share_obs = np.array(list(obs[:, agent_id]))
-            self.buffer[agent_id].share_obs[0] = share_obs.copy()
-            self.buffer[agent_id].obs[0] = np.array(list(obs[:, agent_id])).copy()
+        for i in range(self.n_rollout_threads):
+            for agent_id in range(self.num_agents):
+                if not self.use_centralized_V:
+                    share_obs = np.array(list(obs[i, agent_id]))
+
+                self.buffer[i][agent_id].share_obs[0] = share_obs[i].copy()
+                self.buffer[i][agent_id].obs[0] = np.array(list(obs[i, agent_id])).copy()
 
     @torch.no_grad()
     def collect(self, step):
-        values = []
-        actions = []
-        action_log_probs = []
-        rnn_states = []
-        rnn_states_critic = []
+        values = [[None for a in range(self.num_agents)] for idx in range(self.n_rollout_threads)]
+        actions = [[None for a in range(self.num_agents)] for idx in range(self.n_rollout_threads)]
+        action_log_probs = [[None for a in range(self.num_agents)] for idx in range(self.n_rollout_threads)]
+        rnn_states = [[None for a in range(self.num_agents)] for idx in range(self.n_rollout_threads)]
+        rnn_states_critic = [[None for a in range(self.num_agents)] for idx in range(self.n_rollout_threads)]
+        actions_env = [[None for a in range(self.num_agents)] for idx in range(self.n_rollout_threads)]
 
-        for agent_id in range(self.num_agents):
-            self.trainer[agent_id].prep_rollout()
-            value, action, action_log_prob, rnn_state, rnn_state_critic \
-                = self.trainer[agent_id].policy.get_actions(self.buffer[agent_id].share_obs[step],
-                                                            self.buffer[agent_id].obs[step],
-                                                            self.buffer[agent_id].rnn_states[step],
-                                                            self.buffer[agent_id].rnn_states_critic[step],
-                                                            self.buffer[agent_id].masks[step])
-            # [agents, envs, dim]
-            values.append(_t2n(value))
-            action = _t2n(action)
+        for i in range(self.n_rollout_threads):
+            for agent_id in range(self.num_agents):
+                self.trainer[agent_id].prep_rollout()
+                value, action, action_log_prob, rnn_state, rnn_state_critic \
+                    = self.trainer[agent_id].policy.get_actions(self.buffer[i][agent_id].share_obs[step],
+                                                                self.buffer[i][agent_id].obs[step],
+                                                                self.buffer[i][agent_id].rnn_states[step],
+                                                                self.buffer[i][agent_id].rnn_states_critic[step],
+                                                                self.buffer[i][agent_id].masks[step])
+                # [agents, envs, dim]
+                values[i][agent_id] = _t2n(value)[0]
+                action = _t2n(action)[0]
 
-            actions.append(action)
-            action_log_probs.append(_t2n(action_log_prob))
-            rnn_states.append(_t2n(rnn_state))
-            rnn_states_critic.append( _t2n(rnn_state_critic))
+                actions[i][agent_id] = action
+                action_log_probs[i][agent_id] = _t2n(action_log_prob)[0]
+                rnn_states[i][agent_id] = _t2n(rnn_state)[0]
+                rnn_states_critic[i][agent_id] = _t2n(rnn_state_critic)[0]
 
-        values = np.array(values).transpose(1, 0, 2)
-        actions = np.array(actions).transpose(1, 0, 2)
-        action_log_probs = np.array(action_log_probs).transpose(1, 0, 2)
-        rnn_states = np.array(rnn_states).transpose(1, 0, 2, 3)
-        rnn_states_critic = np.array(rnn_states_critic).transpose(1, 0, 2, 3)
+                actions_env[i][agent_id] = action[0]
+        
+        actions_env = np.array(actions_env)
 
-        actions_env = [actions[idx, :, 0] for idx in range(self.n_rollout_threads)]
+        values = np.array(values)#.transpose(1, 0, 2)
+        actions = np.array(actions)#.transpose(1, 0, 2)
+        action_log_probs = np.array(action_log_probs)#.transpose(1, 0, 2)
+        rnn_states = np.array(rnn_states)#.transpose(1, 0, 2, 3)
+        rnn_states_critic = np.array(rnn_states_critic)#.transpose(1, 0, 2, 3)
 
         return values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env
 
@@ -184,20 +208,37 @@ class PatrollingRunner(Runner):
         masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
         masks[dones == True] = np.zeros(((dones == True).sum(), 1), dtype=np.float32)
 
-        for agent_id in range(self.num_agents):
-            if not self.use_centralized_V:
-                share_obs = np.array(list(obs[:, agent_id]))
 
-            self.buffer[agent_id].insert(share_obs,
-                                        np.array(list(obs[:, agent_id])),
-                                        rnn_states[:, agent_id],
-                                        rnn_states_critic[:, agent_id],
-                                        actions[:, agent_id],
-                                        action_log_probs[:, agent_id],
-                                        values[:, agent_id],
-                                        rewards[:, agent_id],
-                                        masks[:, agent_id],
-                                        delta_steps[:, agent_id])
+        for i in range(self.n_rollout_threads):
+            for agent_id in range(self.num_agents):
+                if self.use_centralized_V:
+                    s_obs = share_obs[i]
+                else:
+                    s_obs = np.array(list(obs[i, agent_id]))
+
+                self.buffer[i][agent_id].insert(s_obs,
+                                            np.array(list(obs[i, agent_id])),
+                                            rnn_states[i, agent_id],
+                                            rnn_states_critic[i, agent_id],
+                                            actions[i, agent_id],
+                                            action_log_probs[i, agent_id],
+                                            values[i, agent_id],
+                                            rewards[i, agent_id],
+                                            masks[i, agent_id],
+                                            delta_steps[i, agent_id])
+
+    def log_train(self, train_infos, total_num_steps): 
+        # The train_infos is a list (size self.n_rollout_threads) of lists (size self.num_agents) of dicts.
+        # We want to flatten this to a single list of dicts by averaging across rollout threads.
+        train_infos = [dict(chain.from_iterable(d.items() for d in agent_infos)) for agent_infos in zip(*train_infos)]
+
+        for agent_id in range(self.num_agents):
+            for k, v in train_infos[agent_id].items():
+                agent_k = "agent%i/" % agent_id + k
+                if self.use_wandb:
+                    wandb.log({agent_k: v}, step=total_num_steps)
+                else:
+                    self.writter.add_scalars(agent_k, {agent_k: v}, total_num_steps)
 
     def log_env(self, env_infos, total_num_steps):
         for k, v in env_infos.items():
@@ -341,3 +382,25 @@ class PatrollingRunner(Runner):
         
         if self.all_args.save_gifs:
             imageio.mimsave(str(self.gif_dir) + '/render.gif', all_frames, duration=self.all_args.ifi)
+
+    @torch.no_grad()
+    def compute(self):
+        for i in range(self.n_rollout_threads):
+            for agent_id in range(self.num_agents):
+                self.trainer[agent_id].prep_rollout()
+                next_value = self.trainer[agent_id].policy.get_values(self.buffer[i][agent_id].share_obs[-1], 
+                                                                    self.buffer[i][agent_id].rnn_states_critic[-1],
+                                                                    self.buffer[i][agent_id].masks[-1])
+                next_value = _t2n(next_value)
+                self.buffer[i][agent_id].compute_returns(next_value, self.trainer[agent_id].value_normalizer)
+
+    def train(self):
+        train_infos = [[] for i in range(self.n_rollout_threads)]
+        for i in range(self.n_rollout_threads):
+            for agent_id in range(self.num_agents):
+                self.trainer[agent_id].prep_training()
+                train_info = self.trainer[agent_id].train(self.buffer[i][agent_id])
+                train_infos[i].append(train_info)       
+                self.buffer[i][agent_id].after_update()
+
+        return train_infos

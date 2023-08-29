@@ -124,8 +124,8 @@ class PatrollingEnv(object):
             # Increase the step count.
             steps += 1
 
-            # Only run once if skip_steps_no_actions is false.
-            if not self.args.skip_steps_no_actions:
+            # Only run once if skip_steps_sync is false.
+            if not self.args.skip_steps_sync:
                 break
 
             # Check if any agents are ready
