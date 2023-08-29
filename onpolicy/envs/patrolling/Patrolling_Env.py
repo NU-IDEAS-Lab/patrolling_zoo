@@ -54,7 +54,7 @@ class PatrollingEnv(object):
             # alpha = args.alpha,
             alpha = 1.0,
             beta = 1000.0,
-            # observation_radius = args.observation_radius,
+            observation_radius = args.observation_radius,
             observe_method = args.observe_method,
             max_cycles = -1
             # max_cycles = args.episode_length
