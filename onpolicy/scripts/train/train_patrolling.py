@@ -56,6 +56,10 @@ def make_eval_env(all_args):
 
 
 def parse_args(args, parser):
+    parser.add_argument("--alpha", type=float, default=1.0,
+                        help="Weight of local reward.")
+    parser.add_argument("--beta", type=float, default=1000.0,
+                        help="Weight of global reward.")
     parser.add_argument("--async_actions", type=bool, default=False,
                         help="Whether to use asynchronous actions.")
     parser.add_argument("--graph_name", type=str,
@@ -73,6 +77,8 @@ def parse_args(args, parser):
                         help="comma separated list of rewards to be added.")
     parser.add_argument("--observe_method", type=str, default="ajg_new", 
                         help="the observation method to use")
+    parser.add_argument("--observation_radius", type=float, default=np.Inf, 
+                        help="the observable radius for each agent")
     parser.add_argument("--smm_width", type=int, default=96,
                         help="width of super minimap.")
     parser.add_argument("--smm_height", type=int, default=72,
