@@ -56,6 +56,10 @@ def make_eval_env(all_args):
 
 
 def parse_args(args, parser):
+    parser.add_argument("--alpha", type=float, default=1.0,
+                        help="Weight of local reward.")
+    parser.add_argument("--beta", type=float, default=1000.0,
+                        help="Weight of global reward.")
     parser.add_argument("--async_actions", type=bool, default=False,
                         help="Whether to use asynchronous actions.")
     parser.add_argument("--graph_name", type=str,
