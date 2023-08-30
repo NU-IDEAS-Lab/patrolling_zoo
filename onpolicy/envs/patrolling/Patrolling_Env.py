@@ -75,6 +75,7 @@ class PatrollingEnv(object):
 
     def reset(self):
         self.ppoSteps = 0
+        self.prevAction = {a: None for a in self.env.possible_agents}
         obs, _ = self.env.reset()
         obs = self._obs_wrapper(obs)
 
@@ -92,12 +93,19 @@ class PatrollingEnv(object):
 
         steps = 0
 
+        # Start with the previous action.
+        actionPz = self.prevAction
+
+        # For any agents which are ready, use the new action.
+        for i in range(self.num_agents):
+            if action[i] != None:
+                actionPz[self.env.possible_agents[i]] = action[i]
+            elif not self.args.skip_steps_async:
+                raise ValueError(f"Action cannot be None when skip_steps_async is False. Agent: {i}")
+
         while not ready and not any(done):
             lastStep = self.ppoSteps >= self.args.episode_length - 1
             
-            # Modify the action to be compatible with the PZ environment.
-            actionPz = {self.env.possible_agents[i]: action[i] for i in range(self.num_agents)}
-
             # Take a step.
             obs, reward, done, trunc, info = self.env.step(actionPz, lastStep=lastStep)
 

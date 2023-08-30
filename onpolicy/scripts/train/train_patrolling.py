@@ -118,6 +118,9 @@ def validateArgs(all_args):
         all_args.use_centralized_V = False
     else:
         raise NotImplementedError
+    
+    if all_args.skip_steps_async and all_args.skip_steps_sync:
+        raise ValueError("Cannot skip steps in both async and sync mode.")
 
 
 def main(args, parsed_args=None):

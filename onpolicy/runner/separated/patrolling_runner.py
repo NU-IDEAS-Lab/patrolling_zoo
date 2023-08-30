@@ -168,6 +168,11 @@ class PatrollingRunner(Runner):
 
         for i in range(self.n_rollout_threads):
             for agent_id in range(self.num_agents):
+
+                # Skip the agent if it is not ready for a new action.
+                if self.all_args.skip_steps_async and not self.ready[i, agent_id]:
+                    continue
+
                 self.trainer[agent_id].prep_rollout()
                 value, action, action_log_prob, rnn_state, rnn_state_critic \
                     = self.trainer[agent_id].policy.get_actions(self.buffer[i][agent_id].share_obs[step],
