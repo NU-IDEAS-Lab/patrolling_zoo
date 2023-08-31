@@ -19,6 +19,7 @@ class SeparatedReplayBuffer(object):
         self.gamma = args.gamma
         self.gae_lambda = args.gae_lambda
         self._use_gae = args.use_gae
+        self._use_gae_amadm = args.use_gae_amadm
         self._use_popart = args.use_popart
         self._use_valuenorm = args.use_valuenorm
         self._use_proper_time_limits = args.use_proper_time_limits
@@ -121,6 +122,25 @@ class SeparatedReplayBuffer(object):
         self.bad_masks[0] = self.bad_masks[-1].copy()
 
     def compute_returns(self, next_value, value_normalizer=None):
+        # Check whether we should use the AMADM GAE modification from https://arxiv.org/abs/2308.06036
+        # Unfortunately, I don't have time to implement for all of the other options (like use_proper_time_limits),
+        # so I just ignore them!
+        if self._use_gae_amadm and not self._use_gae:
+            self.value_preds[-1] = next_value
+            gae = 0
+            for step in reversed(range(self.rewards.shape[0])):
+                if self._use_popart or self._use_valuenorm:
+                    delta = self.rewards[step] + np.power(self.gamma, self.deltaSteps[step]) * value_normalizer.denormalize(
+                        self.value_preds[step + 1]) * self.masks[step + 1] \
+                            - value_normalizer.denormalize(self.value_preds[step])
+                    gae = delta + np.power(self.gamma * self.gae_lambda, self.deltaSteps[step]) * self.masks[step + 1] * gae
+                    self.returns[step] = gae + value_normalizer.denormalize(self.value_preds[step])
+                else:
+                    delta = self.rewards[step] + np.power(self.gamma, self.deltaSteps[step]) * self.value_preds[step + 1] * self.masks[step + 1] - \
+                            self.value_preds[step]
+                    gae = delta + np.power(self.gamma * self.gae_lambda, self.deltaSteps[step]) * self.masks[step + 1] * gae
+                    self.returns[step] = gae + self.value_preds[step]
+        
         if self._use_proper_time_limits:
             if self._use_gae:
                 self.value_preds[-1] = next_value
