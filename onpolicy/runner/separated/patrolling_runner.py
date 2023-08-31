@@ -68,6 +68,10 @@ class PatrollingRunner(Runner):
                     self.ready[i, a] = True
 
             for step in range(self.episode_length):
+                # Always set agents ready for the last step so that we can collect terminal reward.
+                if step == self.episode_length - 1:
+                    self.ready[:, :] = True
+
                 # Sample actions
                 values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env = self.collect(step)
                     

@@ -56,8 +56,7 @@ class PatrollingEnv(object):
             beta = 1000.0,
             # observation_radius = args.observation_radius,
             observe_method = args.observe_method,
-            max_cycles = -1
-            # max_cycles = args.episode_length
+            max_cycles = -1 if self.args.skip_steps_sync else args.episode_length
         )
             
         self.remove_redundancy = args.remove_redundancy
@@ -104,7 +103,8 @@ class PatrollingEnv(object):
                 raise ValueError(f"Action cannot be None when skip_steps_async is False. Agent: {i}")
 
         while not ready and not any(done):
-            lastStep = self.ppoSteps >= self.args.episode_length - 1
+            # We want to determine if this is the last step when using syncronized step skipping.
+            lastStep = self.args.skip_steps_sync and self.ppoSteps >= self.args.episode_length - 1
             
             # Take a step.
             obs, reward, done, trunc, info = self.env.step(actionPz, lastStep=lastStep)
