@@ -70,6 +70,12 @@ class PatrollingRunner(Runner):
             # Use this to store previous step data for each agent.
             self.prevStepData = [[None for a in range(self.num_agents)] for idx in range(self.n_rollout_threads)]
 
+            # Reset the replay buffers if using async actions.
+            if self.all_args.skip_steps_async:
+                for i in range(self.n_rollout_threads):
+                    for agent_id in range(self.num_agents):
+                        self.buffer[i][agent_id].step = 0
+
             for step in range(self.episode_length):
                 # Always set agents ready for the last step so that we can collect terminal reward.
                 if step == self.episode_length - 1:
