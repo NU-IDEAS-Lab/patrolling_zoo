@@ -75,6 +75,7 @@ class PatrollingEnv(object):
     def reset(self):
         self.ppoSteps = 0
         self.prevAction = {a: None for a in self.env.possible_agents}
+        self.deltaSteps = {a: 0 for a in self.env.possible_agents}
         obs, _ = self.env.reset()
         obs = self._obs_wrapper(obs)
 
@@ -90,8 +91,6 @@ class PatrollingEnv(object):
         ready = False
         done = []
 
-        steps = 0
-
         # Start with the previous action.
         actionPz = self.prevAction
 
@@ -99,6 +98,9 @@ class PatrollingEnv(object):
         for i in range(self.num_agents):
             if action[i] != None:
                 actionPz[self.env.possible_agents[i]] = action[i]
+
+                # Reset step count.
+                self.deltaSteps[self.env.possible_agents[i]] = 0
             elif not self.args.skip_steps_async:
                 raise ValueError(f"Action cannot be None when skip_steps_async is False. Agent: {i}")
 
@@ -130,7 +132,8 @@ class PatrollingEnv(object):
             info = self._info_wrapper(info)
 
             # Increase the step count.
-            steps += 1
+            for a in self.env.possible_agents:
+                self.deltaSteps[a] += 1
 
             # Only run once if skip_steps_sync is false.
             if not self.args.skip_steps_sync:
@@ -140,7 +143,7 @@ class PatrollingEnv(object):
             ready = any([info[a]["ready"] for a in self.env.agents])
 
 
-        info["deltaSteps"] = [[steps]] * self.num_agents
+        info["deltaSteps"] = [self.deltaSteps[a] for a in self.env.possible_agents]
         info["ready"] = [info[a]["ready"] for a in self.env.possible_agents]
 
         self.ppoSteps += 1
