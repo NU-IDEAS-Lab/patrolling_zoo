@@ -128,7 +128,7 @@ class SeparatedReplayBuffer(object):
         if self._use_gae_amadm and not self._use_gae:
             self.value_preds[-1] = next_value
             gae = 0
-            for step in reversed(range(self.rewards.shape[0])):
+            for step in reversed(range(self.step)):
                 if self._use_popart or self._use_valuenorm:
                     delta = self.rewards[step] + np.power(self.gamma, self.deltaSteps[step]) * value_normalizer.denormalize(
                         self.value_preds[step + 1]) * self.masks[step + 1] \

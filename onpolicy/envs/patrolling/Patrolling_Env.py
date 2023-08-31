@@ -148,6 +148,9 @@ class PatrollingEnv(object):
 
         self.ppoSteps += 1
 
+        # Update the previous action.
+        self.prevAction = actionPz
+
         return combined_obs, reward, done, info
 
     def seed(self, seed=None):

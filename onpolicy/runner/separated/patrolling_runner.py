@@ -67,6 +67,9 @@ class PatrollingRunner(Runner):
                 for a in range(self.num_agents):
                     self.ready[i, a] = True
 
+            # Use this to store previous step data for each agent.
+            self.prevStepData = [[None for a in range(self.num_agents)] for idx in range(self.n_rollout_threads)]
+
             for step in range(self.episode_length):
                 # Always set agents ready for the last step so that we can collect terminal reward.
                 if step == self.episode_length - 1:
@@ -74,6 +77,13 @@ class PatrollingRunner(Runner):
 
                 # Sample actions
                 values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env = self.collect(step)
+
+                # Store the last action for each agent.
+                if self.all_args.skip_steps_async:
+                    for i in range(self.n_rollout_threads):
+                        for agent_id in range(self.num_agents):
+                            if self.ready[i, agent_id]:
+                                self.prevStepData[i][agent_id] = [d[i][agent_id] for d in [values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env]]
                     
                 # Obser reward and next obs
                 combined_obs, rewards, dones, infos = self.envs.step(actions_env)
@@ -81,7 +91,10 @@ class PatrollingRunner(Runner):
                 # Pull agent ready state from the info message.
                 for i in range(self.n_rollout_threads):
                     for a in range(self.num_agents):
-                        self.ready[i, a] = infos[i]["ready"][a]
+                        if step == self.episode_length - 1:
+                            self.ready[i, a] = True
+                        else:
+                            self.ready[i, a] = infos[i]["ready"][a]
 
                 # Split the combined observations into obs and share_obs, then combine across environments.
                 obs = []
@@ -94,12 +107,32 @@ class PatrollingRunner(Runner):
 
                 # Get the delta steps from the environment info.
                 delta_steps = np.array([info["deltaSteps"] for info in infos])
-                # delta_steps = np.array(delta_steps).reshape(-1, 1)
 
-                data = obs, share_obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic, delta_steps
-                
+                # If using asynchronous step skipping, use the original action.
+                if self.all_args.skip_steps_async:
+                    for i in range(self.n_rollout_threads):
+                        for agent_id in range(self.num_agents):
+                            if self.ready[i, agent_id]:
+                                values[i][agent_id] = self.prevStepData[i][agent_id][0]
+                                actions[i][agent_id] = self.prevStepData[i][agent_id][1]
+                                action_log_probs[i][agent_id] = self.prevStepData[i][agent_id][2]
+                                rnn_states[i][agent_id] = self.prevStepData[i][agent_id][3]
+                                rnn_states_critic[i][agent_id] = self.prevStepData[i][agent_id][4]
+
                 # insert data into buffer
+                data = obs, share_obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic, delta_steps
                 self.insert(data)
+
+            # Ensure that rollout was completed correctly.
+            stepsCorrect = True
+            msg = ""
+            for i in range(self.n_rollout_threads):
+                for a in range(self.num_agents):
+                    if np.sum(self.buffer[i][a].deltaSteps) != self.episode_length:
+                        stepsCorrect = False
+                        msg += f"Agent {a} in rollout thread {i} took {np.sum(self.buffer[i][a].deltaSteps)} steps instead of {self.episode_length}. "
+            if not stepsCorrect:
+                raise ValueError(msg)
 
             # compute return and update network
             self.compute()
@@ -215,9 +248,9 @@ class PatrollingRunner(Runner):
 
         for i in range(self.n_rollout_threads):
             for agent_id in range(self.num_agents):
-                if actions[i][agent_id] == None:
+                if not self.ready[i, agent_id]:
                     if not self.all_args.skip_steps_async:
-                        raise ValueError("Action is None but skip_steps_async is False.")
+                        raise ValueError("Ready is False but skip_steps_async is False.")
                     continue
 
                 if self.use_centralized_V:
@@ -234,7 +267,7 @@ class PatrollingRunner(Runner):
                                             values[i][agent_id],
                                             rewards[i, agent_id],
                                             masks[i, agent_id],
-                                            delta_steps[i, agent_id])
+                                            deltaSteps = delta_steps[i, agent_id])
 
     def log_train(self, train_infos, total_num_steps): 
         # The train_infos is a list (size self.n_rollout_threads) of lists (size self.num_agents) of dicts.
