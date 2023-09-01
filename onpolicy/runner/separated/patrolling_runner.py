@@ -19,7 +19,13 @@ def _t2n(x):
 
 class PatrollingRunner(Runner):
     def __init__(self, config):
-        super(PatrollingRunner, self).__init__(config)
+
+        # The default restore functionality is broken. Disable it and do it ourselves.
+        # We make a copy of the config so we can modify it without affecting the original.
+        configNoRestore = copy.deepcopy(config)
+        configNoRestore['all_args'].model_dir = None
+
+        super(PatrollingRunner, self).__init__(configNoRestore)
         self.env_infos = defaultdict(list)
 
         if self.use_centralized_V:
@@ -49,6 +55,11 @@ class PatrollingRunner(Runner):
                                             share_observation_space,
                                             self.envs.action_space[agent_id])
                     self.buffer[i].append(bu)
+        
+        # Perform restoration.
+        self.model_dir = config['all_args'].model_dir
+        if self.model_dir is not None:
+            self.restore()
        
     def run(self):
         self.warmup()   
@@ -67,28 +78,9 @@ class PatrollingRunner(Runner):
                 for a in range(self.num_agents):
                     self.ready[i, a] = True
 
-
-            if self.all_args.skip_steps_async:
-                # Use this to store previous step data for each agent.
-                self.prevStepData = [[None for a in range(self.num_agents)] for idx in range(self.n_rollout_threads)]
-                self.stepsTaken = np.zeros((self.n_rollout_threads, self.num_agents), dtype=int)
-
-                # Reset the replay buffers if using async actions.
-                for i in range(self.n_rollout_threads):
-                    for agent_id in range(self.num_agents):
-                        self.buffer[i][agent_id].step = 0
-
             for step in range(self.episode_length):
                 # Sample actions
                 values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env = self.collect(step)
-
-                # Store the last action for each agent.
-                if self.all_args.skip_steps_async:
-                    for i in range(self.n_rollout_threads):
-                        for agent_id in range(self.num_agents):
-                            if self.ready[i, agent_id]:
-                                self.prevStepData[i][agent_id] = [d[i][agent_id] for d in [values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env]]
-                                self.stepsTaken[i, agent_id] += 1
                     
                 # Obser reward and next obs
                 combined_obs, rewards, dones, infos = self.envs.step(actions_env)
@@ -109,33 +101,12 @@ class PatrollingRunner(Runner):
 
                 # Get the delta steps from the environment info.
                 delta_steps = np.array([info["deltaSteps"] for info in infos])
+                # delta_steps = np.array(delta_steps).reshape(-1, 1)
 
-                # If using asynchronous step skipping, use the original action.
-                if self.all_args.skip_steps_async:
-                    for i in range(self.n_rollout_threads):
-                        for agent_id in range(self.num_agents):
-                            if self.ready[i, agent_id]:
-                                values[i][agent_id] = self.prevStepData[i][agent_id][0]
-                                actions[i][agent_id] = self.prevStepData[i][agent_id][1]
-                                action_log_probs[i][agent_id] = self.prevStepData[i][agent_id][2]
-                                rnn_states[i][agent_id] = self.prevStepData[i][agent_id][3]
-                                rnn_states_critic[i][agent_id] = self.prevStepData[i][agent_id][4]
-
-                # insert data into buffer
                 data = obs, share_obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic, delta_steps
+                
+                # insert data into buffer
                 self.insert(data)
-
-            # Ensure that rollout was completed correctly.
-            stepsCorrect = True
-            msg = ""
-            for i in range(self.n_rollout_threads):
-                for a in range(self.num_agents):
-                    stepsTaken = np.sum(self.buffer[i][a].deltaSteps[:self.stepsTaken[i, a]])
-                    if stepsTaken != self.episode_length:
-                        stepsCorrect = False
-                        msg += f"Agent {a} in rollout thread {i} took {stepsTaken} steps instead of {self.episode_length}. "
-            if not stepsCorrect:
-                raise ValueError(msg)
 
             # compute return and update network
             self.compute()
@@ -208,11 +179,6 @@ class PatrollingRunner(Runner):
 
         for i in range(self.n_rollout_threads):
             for agent_id in range(self.num_agents):
-
-                # Skip the agent if it is not ready for a new action.
-                if self.all_args.skip_steps_async and not self.ready[i, agent_id]:
-                    continue
-
                 self.trainer[agent_id].prep_rollout()
                 value, action, action_log_prob, rnn_state, rnn_state_critic \
                     = self.trainer[agent_id].policy.get_actions(self.buffer[i][agent_id].share_obs[step],
@@ -230,6 +196,14 @@ class PatrollingRunner(Runner):
                 rnn_states_critic[i][agent_id] = _t2n(rnn_state_critic)[0]
 
                 actions_env[i][agent_id] = action[0]
+        
+        actions_env = np.array(actions_env)
+
+        values = np.array(values)#.transpose(1, 0, 2)
+        actions = np.array(actions)#.transpose(1, 0, 2)
+        action_log_probs = np.array(action_log_probs)#.transpose(1, 0, 2)
+        rnn_states = np.array(rnn_states)#.transpose(1, 0, 2, 3)
+        rnn_states_critic = np.array(rnn_states_critic)#.transpose(1, 0, 2, 3)
 
         return values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env
 
@@ -240,22 +214,14 @@ class PatrollingRunner(Runner):
         self.env_infos["avg_idleness"] = [i["avg_idleness"] for i in infos]
 
         # reset rnn and mask args for done envs
-        for i in range(len(rnn_states)):
-            for j in range(len(rnn_states[i])):
-                if dones[i][j]:
-                    rnn_states[i][j] = np.zeros((self.recurrent_N, self.hidden_size), dtype=np.float32)
-                    rnn_states_critic[i][j] = np.zeros((self.recurrent_N, self.hidden_size), dtype=np.float32)
+        rnn_states[dones == True] = np.zeros(((dones == True).sum(), self.recurrent_N, self.hidden_size), dtype=np.float32)
+        rnn_states_critic[dones == True] = np.zeros(((dones == True).sum(), self.recurrent_N, self.hidden_size), dtype=np.float32)
         masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
         masks[dones == True] = np.zeros(((dones == True).sum(), 1), dtype=np.float32)
 
 
         for i in range(self.n_rollout_threads):
             for agent_id in range(self.num_agents):
-                if not self.ready[i, agent_id]:
-                    if not self.all_args.skip_steps_async:
-                        raise ValueError("Ready is False but skip_steps_async is False.")
-                    continue
-
                 if self.use_centralized_V:
                     s_obs = share_obs[i]
                 else:
@@ -263,14 +229,14 @@ class PatrollingRunner(Runner):
 
                 self.buffer[i][agent_id].insert(s_obs,
                                             np.array(list(obs[i, agent_id])),
-                                            rnn_states[i][agent_id],
-                                            rnn_states_critic[i][agent_id],
-                                            actions[i][agent_id],
-                                            action_log_probs[i][agent_id],
-                                            values[i][agent_id],
+                                            rnn_states[i, agent_id],
+                                            rnn_states_critic[i, agent_id],
+                                            actions[i, agent_id],
+                                            action_log_probs[i, agent_id],
+                                            values[i, agent_id],
                                             rewards[i, agent_id],
                                             masks[i, agent_id],
-                                            deltaSteps = delta_steps[i, agent_id])
+                                            delta_steps[i, agent_id])
 
     def log_train(self, train_infos, total_num_steps): 
         # The train_infos is a list (size self.n_rollout_threads) of lists (size self.num_agents) of dicts.
@@ -354,79 +320,100 @@ class PatrollingRunner(Runner):
         self.log_train(eval_train_infos, total_num_steps)  
 
     @torch.no_grad()
-    def render(self):        
-        all_frames = []
-        for episode in range(self.all_args.render_episodes):
-            episode_rewards = []
-            obs = self.envs.reset()
-            if self.all_args.save_gifs:
-                image = self.envs.render('rgb_array')[0][0]
-                all_frames.append(image)
+    def render(self, ipython_clear_output=True):        
 
-            rnn_states = np.zeros((self.n_rollout_threads, self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
-            masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
+        if ipython_clear_output:
+            from IPython.display import clear_output
+
+        # reset envs and init rnn and mask
+        render_env = self.envs
+
+        for i_episode in range(self.all_args.render_episodes):
+            combined_obs = render_env.reset()
+            render_actions = np.zeros((self.n_render_rollout_threads, self.num_agents), dtype=np.float32)
+            render_rnn_states = np.zeros((self.n_render_rollout_threads, self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
+            render_masks = np.ones((self.n_render_rollout_threads, self.num_agents, 1), dtype=np.float32)
+
+            # Split the combined observations into obs and share_obs, then combine across environments.
+            obs = []
+            share_obs = []
+            for o in combined_obs:
+                obs.append(o["obs"])
+                share_obs.append(o["share_obs"][0])
+            obs = np.array(obs)
+            share_obs = np.array(share_obs)
+
+            # Record the readiness of each agent for a new action. All agents ready by default.
+            ready = np.ones((self.n_render_rollout_threads, self.num_agents, 1), dtype=bool)
+
+
+            if self.all_args.save_gifs:        
+                frames = []
+                image = self.envs.envs[0].env.unwrapped.observation()[0]["frame"]
+                frames.append(image)
 
             for step in range(self.episode_length):
                 calc_start = time.time()
                 
-                temp_actions_env = []
-                for agent_id in range(self.num_agents):
-                    if not self.use_centralized_V:
-                        share_obs = np.array(list(obs[:, agent_id]))
-                    self.trainer[agent_id].prep_rollout()
-                    action, rnn_state = self.trainer[agent_id].policy.act(np.array(list(obs[:, agent_id])),
-                                                                        rnn_states[:, agent_id],
-                                                                        masks[:, agent_id],
-                                                                        deterministic=True)
+                # We only use a single rollout thread for rendering.
+                for i in range(self.n_render_rollout_threads):
+                    for agent_id in range(self.num_agents):
+                        if not ready[i, agent_id]:
+                            continue
 
-                    action = action.detach().cpu().numpy()
-                    # rearrange action
-                    if self.envs.action_space[agent_id].__class__.__name__ == 'MultiDiscrete':
-                        for i in range(self.envs.action_space[agent_id].shape):
-                            uc_action_env = np.eye(self.envs.action_space[agent_id].high[i]+1)[action[:, i]]
-                            if i == 0:
-                                action_env = uc_action_env
-                            else:
-                                action_env = np.concatenate((action_env, uc_action_env), axis=1)
-                    elif self.envs.action_space[agent_id].__class__.__name__ == 'Discrete':
-                        action_env = np.squeeze(np.eye(self.envs.action_space[agent_id].n)[action], 1)
-                    else:
-                        raise NotImplementedError
+                        if agent_id == 0:
+                            print('hello')
 
-                    temp_actions_env.append(action_env)
-                    rnn_states[:, agent_id] = _t2n(rnn_state)
-                   
-                # [envs, agents, dim]
-                actions_env = []
-                for i in range(self.n_rollout_threads):
-                    one_hot_action_env = []
-                    for temp_action_env in temp_actions_env:
-                        one_hot_action_env.append(temp_action_env[i])
-                    actions_env.append(one_hot_action_env)
+                        self.trainer[agent_id].prep_rollout()
+                        render_action, render_rnn_state = self.trainer[agent_id].policy.act(obs[:, agent_id],
+                                                                            render_rnn_states[:, agent_id],
+                                                                            render_masks[:, agent_id],
+                                                                            deterministic=True)
 
-                # Obser reward and next obs
-                obs, rewards, dones, infos = self.envs.step(actions_env)
-                episode_rewards.append(rewards)
+                        # [n_envs*n_agents, ...] -> [n_envs, n_agents, ...]
+                        render_actions[i, agent_id] = np.array(np.split(_t2n(render_action), self.n_render_rollout_threads))
+                        render_rnn_states[i, agent_id] = np.array(np.split(_t2n(render_rnn_state), self.n_render_rollout_threads))
 
-                rnn_states[dones == True] = np.zeros(((dones == True).sum(), self.recurrent_N, self.hidden_size), dtype=np.float32)
-                masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
-                masks[dones == True] = np.zeros(((dones == True).sum(), 1), dtype=np.float32)
+                render_actions_env = [render_actions[idx, :] for idx in range(self.n_render_rollout_threads)]
 
-                if self.all_args.save_gifs:
-                    image = self.envs.render('rgb_array')[0][0]
-                    all_frames.append(image)
-                    calc_end = time.time()
-                    elapsed = calc_end - calc_start
-                    if elapsed < self.all_args.ifi:
-                        time.sleep(self.all_args.ifi - elapsed)
+                print(render_actions_env[0], ready[0])
 
-            episode_rewards = np.array(episode_rewards)
-            for agent_id in range(self.num_agents):
-                average_episode_rewards = np.mean(np.sum(episode_rewards[:, :, agent_id], axis=0))
-                print("eval average episode rewards of agent%i: " % agent_id + str(average_episode_rewards))
-        
-        if self.all_args.save_gifs:
-            imageio.mimsave(str(self.gif_dir) + '/render.gif', all_frames, duration=self.all_args.ifi)
+                # step
+                combined_obs, render_rewards, render_dones, render_infos = render_env.step(render_actions_env)
+
+                # Split the combined observations into obs and share_obs, then combine across environments.
+                obs = []
+                share_obs = []
+                for o in combined_obs:
+                    obs.append(o["obs"])
+                    share_obs.append(o["share_obs"][0])
+                obs = np.array(obs)
+                share_obs = np.array(share_obs)
+
+                # Pull agent ready state from the info message.
+                for i in range(self.n_render_rollout_threads):
+                    for a in range(self.num_agents):
+                        ready[i, a] = render_infos[i]["ready"][a]
+
+                # Display with ipython
+                if not np.any(render_dones):
+                    if ipython_clear_output:
+                        clear_output(wait = True)
+                    render_env.envs[0].env.render()
+
+                # append frame
+                if self.all_args.save_gifs:        
+                    image = render_infos[0]["frame"]
+                    frames.append(image)
+
+            # save gif
+            if self.all_args.save_gifs:
+                imageio.mimsave(
+                    uri="{}/episode{}.gif".format(str(self.gif_dir), i_episode),
+                    ims=frames,
+                    format="GIF",
+                    duration=self.all_args.ifi,
+                )
 
     @torch.no_grad()
     def compute(self):
