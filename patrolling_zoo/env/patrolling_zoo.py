@@ -111,7 +111,7 @@ class parallel_env(ParallelEnv):
         if self.observe_method in ["normalization", "ranking", "raw", "old", "ajg_new", "adjacency"]:
             state_space["vertex_state"]: spaces.Dict({
                 v: spaces.Box(
-                    low = 0.0,
+                    low = -1.0,
                     high = np.inf,
                 ) for v in range(self.pg.graph.number_of_nodes())
             }) # type: ignore
@@ -156,7 +156,7 @@ class parallel_env(ParallelEnv):
         if self.observe_method in ["adjacency"]:
             state_space["agent_graph_position"] = spaces.Dict({
                 a: spaces.Box(
-                    low = np.array([0.0, 0.0, 0.0], dtype=np.float32),
+                    low = np.array([-1.0, -1.0, -1.0], dtype=np.float32),
                     high = np.array([self.pg.graph.number_of_nodes(), self.pg.graph.number_of_nodes(), 1.0], dtype=np.float32),
                 ) for a in self.possible_agents
             }) # type: ignore
@@ -317,7 +317,12 @@ class parallel_env(ParallelEnv):
                 else:
                     idlenessTimes = self._minMaxNormalize(idlenessTimes)
 
-            obs ["vertex_state"] = {v: idlenessTimes[v] for v in vertices}
+            # Create dictionary with default value of -1.0.
+            obs["vertex_state"] = {v: -1.0 for v in range(self.pg.graph.number_of_nodes())}
+
+            # Fill actual values for nodes we can see.
+            for v in vertices:
+                obs["vertex_state"][v] = idlenessTimes[v]
 
         # Add vertex idleness time (raw).
         if self.observe_method in ["raw", "old"]:
@@ -413,6 +418,11 @@ class parallel_env(ParallelEnv):
         # Add agent graph position vector.
         if self.observe_method in ["adjacency"]:
             graphPos = {}
+            # Set default value of -1.0
+            for a in self.possible_agents:
+                graphPos[a] = -1.0 * np.ones(self.observation_space(agent)["agent_graph_position"][a].shape, dtype=np.float32)
+            
+            # Fill in actual values for agents we can see.
             for a in agents:
                 vec = np.zeros(self.observation_space(agent)["agent_graph_position"][a].shape, dtype=np.float32)
                 if a.edge == None:
@@ -495,7 +505,7 @@ class parallel_env(ParallelEnv):
                                 # The agent has reached its destination, visiting the node.
                                 # The agent receives a reward for visiting the node.
                                 r = self.onNodeVisit(nextNode, self.step_count)
-                                #reward_dict[agent] += 100.0 * r
+                                reward_dict[agent] += self.alpha * r
 
                                 agent.lastNodeVisited = nextNode
                                 if nextNode == dstNode:

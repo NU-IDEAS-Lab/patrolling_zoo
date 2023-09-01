@@ -51,10 +51,9 @@ class PatrollingEnv(object):
             # comms_model = args.comms_model,
             # require_explicit_visit = args.require_explicit_visit,
             speed = args.agent_speed,
-            # alpha = args.alpha,
-            alpha = 1.0,
-            beta = 1000.0,
-            # observation_radius = args.observation_radius,
+            alpha = args.alpha,
+            beta = args.beta,
+            observation_radius = args.observation_radius,
             observe_method = args.observe_method,
             max_cycles = -1 if self.args.skip_steps_sync else args.episode_length
         )
