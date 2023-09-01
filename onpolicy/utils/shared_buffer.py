@@ -164,7 +164,6 @@ class SharedReplayBuffer(object):
         self.active_masks[0] = self.active_masks[-1].copy()
         if self.available_actions is not None:
             self.available_actions[0] = self.available_actions[-1].copy()
-        self.deltaSteps[0] = self.deltaSteps[-1].copy()
 
     def chooseafter_update(self):
         """Copy last timestep data to first index. This method is used for Hanabi."""

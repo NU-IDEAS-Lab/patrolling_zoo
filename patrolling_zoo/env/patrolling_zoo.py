@@ -536,6 +536,8 @@ class parallel_env(ParallelEnv):
                 # reward_dict[agent] += self.beta * self.step_count / (self.pg.getWorstIdlenessTime(self.step_count) + 1e-8)
                 reward_dict[agent] += self.beta * self.step_count / (self.pg.getAverageIdlenessTime(self.step_count) + 1e-8)
                 # reward_dict[agent] /= self._minMaxNormalize(self.pg.getWorstIdlenessTime(self.step_count), minimum=0.0, maximum=self.max_cycles)
+
+                info_dict[agent]["ready"] = True
             
             truncated_dict = {a: True for a in self.agents}
             self.agents = []
