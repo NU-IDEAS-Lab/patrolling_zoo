@@ -21,11 +21,10 @@ class PatrollingRunner(Runner):
     def __init__(self, config):
 
         # The default restore functionality is broken. Disable it and do it ourselves.
-        # We make a copy of the config so we can modify it without affecting the original.
-        configNoRestore = copy.deepcopy(config)
-        configNoRestore['all_args'].model_dir = None
+        model_dir = config['all_args'].model_dir
+        config['all_args'].model_dir = None
 
-        super(PatrollingRunner, self).__init__(configNoRestore)
+        super(PatrollingRunner, self).__init__(config)
         self.env_infos = defaultdict(list)
 
         if self.use_centralized_V:
@@ -57,6 +56,7 @@ class PatrollingRunner(Runner):
                     self.buffer[i].append(bu)
         
         # Perform restoration.
+        config['all_args'].model_dir = model_dir
         self.model_dir = config['all_args'].model_dir
         if self.model_dir is not None:
             self.restore()
