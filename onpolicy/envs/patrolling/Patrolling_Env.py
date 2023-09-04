@@ -142,7 +142,7 @@ class PatrollingEnv(object):
             ready = any([info[a]["ready"] for a in self.env.agents])
 
 
-        info["deltaSteps"] = [self.deltaSteps[a] for a in self.env.possible_agents]
+        info["deltaSteps"] = [[self.deltaSteps[a]] for a in self.env.possible_agents]
         info["ready"] = [info[a]["ready"] for a in self.env.possible_agents]
 
         self.ppoSteps += 1
