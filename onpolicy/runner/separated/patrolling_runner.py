@@ -236,7 +236,7 @@ class PatrollingRunner(Runner):
                                             values[i, agent_id],
                                             rewards[i, agent_id],
                                             masks[i, agent_id],
-                                            delta_steps[i, agent_id])
+                                            deltaSteps = delta_steps[i, agent_id])
 
     def log_train(self, train_infos, total_num_steps): 
         # The train_infos is a list (size self.n_rollout_threads) of lists (size self.num_agents) of dicts.
