@@ -73,10 +73,13 @@ class PatrollingRunner(Runner):
                     self.trainer[agent_id].policy.lr_decay(episode, episodes)
 
             # Create a matrix indicating whether each agent in each environment is ready for a new action.
-            self.ready = np.zeros((self.n_rollout_threads, self.num_agents), dtype=bool)
-            for i in range(self.n_rollout_threads):
-                for a in range(self.num_agents):
-                    self.ready[i, a] = True
+            self.ready = np.ones((self.n_rollout_threads, self.num_agents), dtype=bool)
+
+            # In async mode, reset the buffer for each rollout thread for each agent.
+            if self.all_args.skip_steps_async:
+                for i in range(self.n_rollout_threads):
+                    for agent_id in range(self.num_agents):
+                        self.buffer[i][agent_id].step = 0
 
             for step in range(self.episode_length):
                 # Sample actions
@@ -107,6 +110,13 @@ class PatrollingRunner(Runner):
                 
                 # insert data into buffer
                 self.insert(data)
+
+                # Ensure that all buffers are at step 0.
+                if step == 0 and self.all_args.skip_steps_async:
+                    for i in range(self.n_rollout_threads):
+                        for agent_id in range(self.num_agents):
+                            if self.buffer[i][agent_id].step != 1:
+                                raise RuntimeError(f"Buffer {i}, agent {agent_id} has step {self.buffer[i][agent_id].step} at the start of an episode. Must be 1.")
 
             # compute return and update network
             self.compute()
