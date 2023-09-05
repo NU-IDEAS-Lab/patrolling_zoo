@@ -269,42 +269,64 @@ class PatrollingRunner(Runner):
         # init goal
         render_goals = np.zeros(self.all_args.render_episodes)
         for i_episode in range(self.all_args.render_episodes):
-            render_obs = render_env.reset()
-            render_rnn_states = np.zeros((self.n_rollout_threads, self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
-            render_masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
+            combined_obs = render_env.reset()
+            rnn_states = np.zeros((self.n_render_rollout_threads, self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
+            masks = np.ones((self.n_render_rollout_threads, self.num_agents, 1), dtype=np.float32)
+
+            # Split the combined observations into obs and share_obs, then combine across environments.
+            obs = []
+            share_obs = []
+            for o in combined_obs:
+                obs.append(o["obs"])
+                share_obs.append(o["share_obs"][0])
+            obs = np.array(obs)
+            share_obs = np.array(share_obs)
+            share_obs = np.repeat(share_obs, self.num_agents, axis=1)
+            share_obs = np.reshape(share_obs, (self.n_render_rollout_threads, self.num_agents, -1))
 
             if self.all_args.save_gifs:        
                 frames = []
                 image = self.envs.envs[0].env.unwrapped.observation()[0]["frame"]
                 frames.append(image)
 
-            render_dones = False
-            while not np.any(render_dones):
+            dones = False
+            while not np.any(dones):
                 self.trainer.prep_rollout()
-                render_actions, render_rnn_states = self.trainer.policy.act(
-                    np.concatenate(render_obs),
-                    np.concatenate(render_rnn_states),
-                    np.concatenate(render_masks),
+                actions, rnn_states = self.trainer.policy.act(
+                    np.concatenate(obs),
+                    np.concatenate(rnn_states),
+                    np.concatenate(masks),
                     deterministic=True
                 )
 
                 # [n_envs*n_agents, ...] -> [n_envs, n_agents, ...]
-                render_actions = np.array(np.split(_t2n(render_actions), self.n_rollout_threads))
-                render_rnn_states = np.array(np.split(_t2n(render_rnn_states), self.n_rollout_threads))
+                actions = np.array(np.split(_t2n(actions), self.n_render_rollout_threads))
+                rnn_states = np.array(np.split(_t2n(rnn_states), self.n_render_rollout_threads))
 
-                render_actions_env = [render_actions[idx, :, 0] for idx in range(self.n_rollout_threads)]
+                actions_env = [actions[idx, :, 0] for idx in range(self.n_render_rollout_threads)]
 
                 # step
-                render_obs, render_rewards, render_dones, render_infos = render_env.step(render_actions_env)
+                combined_obs, render_rewards, dones, infos = render_env.step(actions_env)
 
-                if not np.any(render_dones):
+                # Split the combined observations into obs and share_obs, then combine across environments.
+                obs = []
+                share_obs = []
+                for o in combined_obs:
+                    obs.append(o["obs"])
+                    share_obs.append(o["share_obs"][0])
+                obs = np.array(obs)
+                share_obs = np.array(share_obs)
+                share_obs = np.repeat(share_obs, self.num_agents, axis=1)
+                share_obs = np.reshape(share_obs, (self.n_render_rollout_threads, self.num_agents, -1))
+
+                if not np.any(dones):
                     if ipython_clear_output:
                         clear_output(wait = True)
                     render_env.envs[0].env.render()
 
                 # append frame
                 if self.all_args.save_gifs:        
-                    image = render_infos[0]["frame"]
+                    image = infos[0]["frame"]
                     frames.append(image)
 
             # save gif

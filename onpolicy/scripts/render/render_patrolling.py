@@ -29,11 +29,11 @@ def make_train_env(all_args):
             env.seed(all_args.seed + rank * 1000)
             return env
         return init_env
-    if all_args.n_rollout_threads == 1:
+    if all_args.n_render_rollout_threads == 1:
         return DummyVecEnv([get_env_fn(0)])
     else:
         return SubprocVecEnv([get_env_fn(i) for i in range(
-            all_args.n_rollout_threads)])
+            all_args.n_render_rollout_threads)])
 
 
 
@@ -48,7 +48,7 @@ def main(args, parsed_args=None):
 
     assert all_args.use_render, ("u need to set use_render be True")
     assert not (all_args.model_dir == None or all_args.model_dir == ""), ("set model_dir first")
-    assert all_args.n_rollout_threads==1, ("only support to use 1 env to render.")
+    assert all_args.n_render_rollout_threads==1, ("only support to use 1 env to render.")
 
     # cuda
     if all_args.cuda and torch.cuda.is_available():
