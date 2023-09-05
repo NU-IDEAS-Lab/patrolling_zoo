@@ -179,6 +179,10 @@ class PatrollingRunner(Runner):
 
         for i in range(self.n_rollout_threads):
             for agent_id in range(self.num_agents):
+                # If the agent is not ready, skip it.
+                if not self.ready[i, agent_id]:
+                    continue
+
                 self.trainer[agent_id].prep_rollout()
                 value, action, action_log_prob, rnn_state, rnn_state_critic \
                     = self.trainer[agent_id].policy.get_actions(self.buffer[i][agent_id].share_obs[step],
@@ -199,11 +203,11 @@ class PatrollingRunner(Runner):
         
         actions_env = np.array(actions_env)
 
-        values = np.array(values)#.transpose(1, 0, 2)
-        actions = np.array(actions)#.transpose(1, 0, 2)
-        action_log_probs = np.array(action_log_probs)#.transpose(1, 0, 2)
-        rnn_states = np.array(rnn_states)#.transpose(1, 0, 2, 3)
-        rnn_states_critic = np.array(rnn_states_critic)#.transpose(1, 0, 2, 3)
+        # values = np.array(values)#.transpose(1, 0, 2)
+        # actions = np.array(actions)#.transpose(1, 0, 2)
+        # action_log_probs = np.array(action_log_probs)#.transpose(1, 0, 2)
+        # rnn_states = np.array(rnn_states)#.transpose(1, 0, 2, 3)
+        # rnn_states_critic = np.array(rnn_states_critic)#.transpose(1, 0, 2, 3)
 
         return values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env
 
@@ -214,14 +218,28 @@ class PatrollingRunner(Runner):
         self.env_infos["avg_idleness"] = [i["avg_idleness"] for i in infos]
 
         # reset rnn and mask args for done envs
-        rnn_states[dones == True] = np.zeros(((dones == True).sum(), self.recurrent_N, self.hidden_size), dtype=np.float32)
-        rnn_states_critic[dones == True] = np.zeros(((dones == True).sum(), self.recurrent_N, self.hidden_size), dtype=np.float32)
+        # rnn_states[dones == True] = np.zeros(((dones == True).sum(), self.recurrent_N, self.hidden_size), dtype=np.float32)
+        # rnn_states_critic[dones == True] = np.zeros(((dones == True).sum(), self.recurrent_N, self.hidden_size), dtype=np.float32)
+        # masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
+        # masks[dones == True] = np.zeros(((dones == True).sum(), 1), dtype=np.float32)
+
+        # Reset RNN and mask arguments for done agents/envs.
         masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
-        masks[dones == True] = np.zeros(((dones == True).sum(), 1), dtype=np.float32)
+        for i in range(self.n_rollout_threads):
+            for agent_id in range(self.num_agents):
+                if dones[i, agent_id]:
+                    rnn_states[i][agent_id] = np.zeros((1, self.recurrent_N, self.hidden_size), dtype=np.float32)
+                    rnn_states_critic[i][agent_id] = np.zeros((1, self.recurrent_N, self.hidden_size), dtype=np.float32)
+                    masks[i, agent_id] = np.zeros((1, 1), dtype=np.float32)
 
 
         for i in range(self.n_rollout_threads):
             for agent_id in range(self.num_agents):
+                # If the agent was not ready for a new action, skip it.
+                # (we determine this by an action == None)
+                if actions[i][agent_id] == None:
+                    continue
+
                 if self.use_centralized_V:
                     s_obs = share_obs[i]
                 else:
@@ -229,11 +247,11 @@ class PatrollingRunner(Runner):
 
                 self.buffer[i][agent_id].insert(s_obs,
                                             np.array(list(obs[i, agent_id])),
-                                            rnn_states[i, agent_id],
-                                            rnn_states_critic[i, agent_id],
-                                            actions[i, agent_id],
-                                            action_log_probs[i, agent_id],
-                                            values[i, agent_id],
+                                            rnn_states[i][agent_id],
+                                            rnn_states_critic[i][agent_id],
+                                            actions[i][agent_id],
+                                            action_log_probs[i][agent_id],
+                                            values[i][agent_id],
                                             rewards[i, agent_id],
                                             masks[i, agent_id],
                                             deltaSteps = delta_steps[i, agent_id])
