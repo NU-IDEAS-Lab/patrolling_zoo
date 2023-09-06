@@ -267,7 +267,7 @@ class parallel_env(ParallelEnv):
             This is useful for centralized training, decentralized execution. '''
         
         state = self.observe(self.possible_agents[0], radius=np.inf, allow_done_agents=True)
-        if "agent_id" in state:
+        if type(state) == dict and "agent_id" in state:
             state["agent_id"] = -1
         return state
 
@@ -448,7 +448,7 @@ class parallel_env(ParallelEnv):
                 graphPos[a] = vec
             obs["agent_graph_position"] = graphPos
         
-        if obs == {}:
+        if (type(obs) == dict and obs == {}) or (type(obs) != dict and len(obs) < 1):
             raise ValueError(f"Invalid observation method {self.observe_method}")
         
         return obs
