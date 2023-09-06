@@ -3,7 +3,6 @@ import random
 from patrolling_zoo.env.patrolling_zoo import parallel_env
 from patrolling_zoo.env.patrol_graph import PatrolGraph
 from gymnasium.spaces.utils import flatten, flatten_space
-from gymnasium.spaces import Dict
 import numpy as np
 
 
@@ -11,6 +10,7 @@ class PatrollingEnv(object):
     '''Wrapper to make the Patrolling Zoo environment compatible'''
 
     def __init__(self, args):
+        self.args = args
         self.num_agents = args.num_agents
         
         # # make env
@@ -51,16 +51,13 @@ class PatrollingEnv(object):
             # comms_model = args.comms_model,
             # require_explicit_visit = args.require_explicit_visit,
             speed = args.agent_speed,
-            # alpha = args.alpha,
-            alpha = 1.0,
-            beta = 1000.0,
-            # observation_radius = args.observation_radius,
+            alpha = args.alpha,
+            beta = args.beta,
+            observation_radius = args.observation_radius,
             observe_method = args.observe_method,
-            max_cycles = args.max_cycles,
-            reward_interval = args.episode_length
+            max_cycles = -1 if self.args.skip_steps_sync else args.episode_length
         )
             
-        self.max_steps = self.env.max_cycles
         self.remove_redundancy = args.remove_redundancy
         self.zero_feature = args.zero_feature
         self.share_reward = args.share_reward
@@ -68,50 +65,92 @@ class PatrollingEnv(object):
         self.observation_space = []
         self.share_observation_space = []
 
-        # Set up action space.
+        # Set up spaces.
         self.action_space = [self.env.action_spaces[a] for a in self.env.possible_agents]
+        self.observation_space = [flatten_space(self.env.observation_spaces[a]) for a in self.env.possible_agents]
+        self.share_observation_space = [flatten_space(self.env.state_space) for a in self.env.possible_agents]
 
-        # Set up observation space.
-        self.flatten_observations = False
-        if type(self.env.state_space) == Dict:
-            self.flatten_observations = True
-        
-        if self.flatten_observations:
-            self.observation_space = [flatten_space(self.env.observation_spaces[a]) for a in self.env.possible_agents]
-            self.share_observation_space = [flatten_space(self.env.state_space) for a in self.env.possible_agents]
-        else:
-            self.observation_space = [self.env.observation_spaces[a] for a in self.env.possible_agents]
-            self.share_observation_space = [self.env.state_space for a in self.env.possible_agents]
 
     def reset(self):
+        self.ppoSteps = 0
+        self.prevAction = {a: None for a in self.env.possible_agents}
+        self.deltaSteps = {a: 0 for a in self.env.possible_agents}
         obs, _ = self.env.reset()
         obs = self._obs_wrapper(obs)
-        return obs
+
+        combined_obs = {
+            "obs": obs,
+            "share_obs": self._share_obs_wrapper(self.env.state())
+        }
+
+        return combined_obs
 
     def step(self, action):
 
-        # Modify the action to be compatible with the PZ environment.
-        action = {self.env.possible_agents[i]: action[i] for i in range(self.num_agents)}
+        ready = False
+        done = []
 
-        # Take a step.
-        obs, reward, done, trunc, info = self.env.step(action)
+        # Start with the previous action.
+        actionPz = self.prevAction
 
-        # Convert the done dict to a list.
-        done = [done[a] for a in self.env.possible_agents]
-        # Convert the trunc dict to a list.
-        trunc = [trunc[a] for a in self.env.possible_agents]
+        # For any agents which are ready, use the new action.
+        for i in range(self.num_agents):
+            if action[i] != None:
+                actionPz[self.env.possible_agents[i]] = action[i]
 
-        # Consider the episode done if any agent is done OR truncated.
-        done = [d or t for d, t in zip(done, trunc)]
+                # Reset step count.
+                self.deltaSteps[self.env.possible_agents[i]] = 0
+            elif not self.args.skip_steps_async:
+                raise ValueError(f"Action cannot be None when skip_steps_async is False. Agent: {i}")
 
-        obs = self._obs_wrapper(obs)
-        reward = [reward[a] for a in self.env.possible_agents]
-        if self.share_reward:
-            global_reward = np.sum(reward)
-            reward = [[global_reward]] * self.num_agents
+        while not ready and not any(done):
+            # We want to determine if this is the last step when using syncronized step skipping.
+            lastStep = self.args.skip_steps_sync and self.ppoSteps >= self.args.episode_length - 1
+            
+            # Take a step.
+            obs, reward, done, trunc, info = self.env.step(actionPz, lastStep=lastStep)
 
-        info = self._info_wrapper(info)
-        return obs, reward, done, info
+            # Convert the done dict to a list.
+            done = [done[a] for a in self.env.possible_agents]
+            # Convert the trunc dict to a list.
+            trunc = [trunc[a] for a in self.env.possible_agents]
+
+            # Consider the episode done if any agent is done OR truncated.
+            done = [d or t for d, t in zip(done, trunc)]
+
+            combined_obs = {
+                "obs": self._obs_wrapper(obs),
+                "share_obs": self._share_obs_wrapper(self.env.state())
+            }
+
+            reward = [reward[a] for a in self.env.possible_agents]
+            if self.share_reward:
+                global_reward = np.sum(reward)
+                reward = [[global_reward]] * self.num_agents
+
+            info = self._info_wrapper(info)
+
+            # Increase the step count.
+            for a in self.env.possible_agents:
+                self.deltaSteps[a] += 1
+
+            # Only run once if skip_steps_sync is false.
+            if not self.args.skip_steps_sync:
+                break
+
+            # Check if any agents are ready
+            ready = any([info[a]["ready"] for a in self.env.agents])
+
+
+        info["deltaSteps"] = [[self.deltaSteps[a]] for a in self.env.possible_agents]
+        info["ready"] = [info[a]["ready"] for a in self.env.possible_agents]
+
+        self.ppoSteps += 1
+
+        # Update the previous action.
+        self.prevAction = actionPz
+
+        return combined_obs, reward, done, info
 
     def seed(self, seed=None):
         if seed is None:
@@ -125,16 +164,19 @@ class PatrollingEnv(object):
     def _obs_wrapper(self, obs):
 
         # Flatten the PZ observation.
-        if self.flatten_observations:
-            obs = flatten(self.env.observation_spaces, obs)
-            obs = np.reshape(obs, (self.num_agents, -1))
-        else:
-            obs = [obs[a] for a in self.env.possible_agents]
+        obs = flatten(self.env.observation_spaces, obs)
+        obs = np.reshape(obs, (self.num_agents, -1))
 
         if self.num_agents == 1:
-            return obs[np.newaxis, :]
-        else:
-            return obs
+            obs = obs[np.newaxis, :]
+        
+        return obs
+    
+    def _share_obs_wrapper(self, obs):
+        # Flatten the PZ observation.
+        obs = flatten(self.env.state_space, obs)
+        obs = np.repeat(obs[np.newaxis, :], self.num_agents, axis=0)
+        return obs
 
     def _info_wrapper(self, info):
         # state = self.env.state()
