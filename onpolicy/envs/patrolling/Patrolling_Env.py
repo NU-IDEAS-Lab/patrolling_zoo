@@ -187,9 +187,14 @@ class PatrollingEnv(object):
         return obs
     
     def _share_obs_wrapper(self, obs):
+
         # Flatten the PZ observation.
-        obs = flatten(self.env.state_space, obs)
-        obs = np.repeat(obs[np.newaxis, :], self.num_agents, axis=0)
+        if self.flatten_observations:
+            obs = flatten(self.env.state_space, obs)
+            obs = np.repeat(obs[np.newaxis, :], self.num_agents, axis=0)
+        else:
+            obs = [obs for a in self.env.possible_agents]
+        
         return obs
 
     def _info_wrapper(self, info):

@@ -45,8 +45,8 @@ class PatrollingRunner(Runner):
                     share_obs.append(o["share_obs"][0])
                 obs = np.array(obs)
                 share_obs = np.array(share_obs)
-                share_obs = np.repeat(share_obs, self.num_agents, axis=1)
-                share_obs = np.reshape(share_obs, (self.n_rollout_threads, self.num_agents, -1))
+                share_obs = np.repeat(share_obs[:, np.newaxis], self.num_agents, axis=1)
+                # share_obs = np.reshape(share_obs, (self.n_rollout_threads, self.num_agents, -1))
 
                 # Get the delta steps from the environment info.
                 delta_steps = [info["deltaSteps"] for info in infos]
@@ -103,8 +103,8 @@ class PatrollingRunner(Runner):
             share_obs.append(o["share_obs"][0])
         obs = np.array(obs)
         share_obs = np.array(share_obs)
-        share_obs = np.repeat(share_obs, self.num_agents, axis=1)
-        share_obs = np.reshape(share_obs, (self.n_rollout_threads, self.num_agents, -1))
+        share_obs = np.repeat(share_obs[:, np.newaxis], self.num_agents, axis=1)
+        # share_obs = np.reshape(share_obs, (self.n_rollout_threads, self.num_agents, -1))
 
         # insert obs to buffer
         self.buffer.share_obs[0] = share_obs.copy()
