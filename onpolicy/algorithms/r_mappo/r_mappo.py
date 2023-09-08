@@ -88,11 +88,12 @@ class R_MAPPO():
 
         return value_loss
 
-    def ppo_update(self, sample, update_actor=True):
+    def ppo_update(self, sample, update_actor=True, update_critic=True):
         """
         Update actor and critic networks.
         :param sample: (Tuple) contains data batch with which to update networks.
         :update_actor: (bool) whether to update actor network.
+        :update_critic: (bool) whether to update critic network.
 
         :return value_loss: (torch.Tensor) value function loss.
         :return critic_grad_norm: (torch.Tensor) gradient norm from critic up9date.
@@ -152,22 +153,25 @@ class R_MAPPO():
 
         self.policy.critic_optimizer.zero_grad()
 
-        (value_loss * self.value_loss_coef).backward()
+        if update_critic:
+            (value_loss * self.value_loss_coef).backward()
 
         if self._use_max_grad_norm:
             critic_grad_norm = nn.utils.clip_grad_norm_(self.policy.critic.parameters(), self.max_grad_norm)
         else:
             critic_grad_norm = get_gard_norm(self.policy.critic.parameters())
 
-        self.policy.critic_optimizer.step()
+        if update_critic:
+            self.policy.critic_optimizer.step()
 
         return value_loss, critic_grad_norm, policy_loss, dist_entropy, actor_grad_norm, imp_weights
 
-    def train(self, buffer, update_actor=True):
+    def train(self, buffer, update_actor=True, update_critic=True):
         """
         Perform a training update using minibatch GD.
         :param buffer: (SharedReplayBuffer) buffer containing training data.
         :param update_actor: (bool) whether to update actor network.
+        :param update_critic: (bool) whether to update critic network.
 
         :return train_info: (dict) contains information regarding training update (e.g. loss, grad norms, etc).
         """
@@ -202,7 +206,7 @@ class R_MAPPO():
             for sample in data_generator:
 
                 value_loss, critic_grad_norm, policy_loss, dist_entropy, actor_grad_norm, imp_weights \
-                    = self.ppo_update(sample, update_actor)
+                    = self.ppo_update(sample, update_actor, update_critic)
 
                 train_info['value_loss'] += value_loss.item()
                 train_info['policy_loss'] += policy_loss.item()
