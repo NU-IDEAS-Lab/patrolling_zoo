@@ -38,6 +38,19 @@ class PatrollingRunner(Runner):
             for ta in self.trainer:
                 if ta._use_popart:
                     ta.value_normalizer = self.critic.v_out
+            
+            # Modify arguments since all critic entries will be in series.
+            args = copy.deepcopy(self.all_args)
+            args.n_rollout_threads = 1
+            args.episode_length = self.all_args.episode_length * self.n_rollout_threads * self.num_agents
+
+            # Set up a replay buffer for the critic.
+            self.critic_buffer = SeparatedReplayBuffer(args,
+                self.envs.observation_space[0],
+                self.envs.share_observation_space[0],
+                self.envs.action_space[0]
+            )
+            
         
         # Set up additional replay buffers for asynchronous actors.
         if self.all_args.skip_steps_async:
@@ -80,6 +93,8 @@ class PatrollingRunner(Runner):
                 for i in range(self.n_rollout_threads):
                     for agent_id in range(self.num_agents):
                         self.buffer[i][agent_id].step = 0
+                if self.use_centralized_V:
+                    self.critic_buffer.step = 0
 
             for step in range(self.episode_length):
                 # Sample actions
@@ -117,6 +132,8 @@ class PatrollingRunner(Runner):
                         for agent_id in range(self.num_agents):
                             if self.buffer[i][agent_id].step != 1:
                                 raise RuntimeError(f"Buffer {i}, agent {agent_id} has step {self.buffer[i][agent_id].step} at the start of an episode. Must be 1.")
+                    if self.use_centralized_V and self.critic_buffer.step != self.num_agents * self.n_rollout_threads:
+                        raise RuntimeError(f"Critic buffer has step {self.critic_buffer.step} at the start of an episode. Must be {self.num_agents * self.n_rollout_threads}.")
 
             # compute return and update network
             self.compute()
@@ -177,6 +194,10 @@ class PatrollingRunner(Runner):
 
                 self.buffer[i][agent_id].share_obs[0] = share_obs[i].copy()
                 self.buffer[i][agent_id].obs[0] = np.array(list(obs[i, agent_id])).copy()
+
+                if self.use_centralized_V:
+                    self.critic_buffer.share_obs[0] = share_obs[i].copy()
+                    self.critic_buffer.obs[0] = np.array(list(obs[i, agent_id])).copy()
 
     @torch.no_grad()
     def collect(self, step):
@@ -256,6 +277,19 @@ class PatrollingRunner(Runner):
                     s_obs = np.array(list(obs[i, agent_id]))
 
                 self.buffer[i][agent_id].insert(s_obs,
+                                            np.array(list(obs[i, agent_id])),
+                                            rnn_states[i][agent_id],
+                                            rnn_states_critic[i][agent_id],
+                                            actions[i][agent_id],
+                                            action_log_probs[i][agent_id],
+                                            values[i][agent_id],
+                                            rewards[i, agent_id],
+                                            masks[i, agent_id],
+                                            deltaSteps = delta_steps[i, agent_id])
+                
+                # If we are using a shared critic, also insert into the critic buffer.
+                if self.use_centralized_V:
+                    self.critic_buffer.insert(s_obs,
                                             np.array(list(obs[i, agent_id])),
                                             rnn_states[i][agent_id],
                                             rnn_states_critic[i][agent_id],
@@ -445,21 +479,49 @@ class PatrollingRunner(Runner):
 
     @torch.no_grad()
     def compute(self):
-        for i in range(self.n_rollout_threads):
-            for agent_id in range(self.num_agents):
-                self.trainer[agent_id].prep_rollout()
-                next_value = self.trainer[agent_id].policy.get_values(self.buffer[i][agent_id].share_obs[-1], 
-                                                                    self.buffer[i][agent_id].rnn_states_critic[-1],
-                                                                    self.buffer[i][agent_id].masks[-1])
-                next_value = _t2n(next_value)
-                self.buffer[i][agent_id].compute_returns(next_value, self.trainer[agent_id].value_normalizer)
+
+        if self.use_centralized_V:
+            # Compute returns for the centralized critic.
+            self.trainer[0].prep_rollout()
+            next_value = self.trainer[0].policy.get_values(self.critic_buffer.share_obs[-1], 
+                                                            self.critic_buffer.rnn_states_critic[-1],
+                                                            self.critic_buffer.masks[-1])
+            next_value = _t2n(next_value)
+            self.critic_buffer.compute_returns(next_value, self.trainer[0].value_normalizer)
+
+        else:
+            for i in range(self.n_rollout_threads):
+                for agent_id in range(self.num_agents):
+                    self.trainer[agent_id].prep_rollout()
+                    next_value = self.trainer[agent_id].policy.get_values(self.buffer[i][agent_id].share_obs[-1], 
+                                                                        self.buffer[i][agent_id].rnn_states_critic[-1],
+                                                                        self.buffer[i][agent_id].masks[-1])
+                    next_value = _t2n(next_value)
+                    self.buffer[i][agent_id].compute_returns(next_value, self.trainer[agent_id].value_normalizer)
 
     def train(self):
         train_infos = [[] for i in range(self.n_rollout_threads)]
+
+        # Update the centralized critic.
+        if self.use_centralized_V:
+            self.trainer[0].prep_training()
+            train_info = self.trainer[0].train(
+                self.critic_buffer,
+                update_actor=False,
+                update_critic=True
+            )
+            train_infos[0].append(train_info)
+            self.critic_buffer.after_update()
+
+        # Update the actors (and critics in case of per-agent critics).
         for i in range(self.n_rollout_threads):
             for agent_id in range(self.num_agents):
                 self.trainer[agent_id].prep_training()
-                train_info = self.trainer[agent_id].train(self.buffer[i][agent_id])
+                train_info = self.trainer[agent_id].train(
+                    self.buffer[i][agent_id],
+                    update_actor=True,
+                    update_critic=(not self.use_centralized_V)
+                )
                 train_infos[i].append(train_info)       
                 self.buffer[i][agent_id].after_update()
 
