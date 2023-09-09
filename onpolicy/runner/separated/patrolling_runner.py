@@ -354,15 +354,26 @@ class PatrollingRunner(Runner):
     def log_train(self, train_infos, total_num_steps): 
         # The train_infos is a list (size self.n_rollout_threads) of lists (size self.num_agents) of dicts.
         # We want to flatten this to a single list of dicts by averaging across rollout threads.
-        train_infos = [dict(chain.from_iterable(d.items() for d in agent_infos)) for agent_infos in zip(*train_infos)]
+        train_infos_actors = [dict(chain.from_iterable(d.items() for d in agent_infos)) for agent_infos in zip(*train_infos["actors"])]
 
+        # Log actors.
         for agent_id in range(self.num_agents):
-            for k, v in train_infos[agent_id].items():
+            for k, v in train_infos_actors[agent_id].items():
                 agent_k = "agent%i/" % agent_id + k
                 if self.use_wandb:
                     wandb.log({agent_k: v}, step=total_num_steps)
                 else:
                     self.writter.add_scalars(agent_k, {agent_k: v}, total_num_steps)
+        
+        # Log critic.
+        if self.use_centralized_V:
+            train_infos_critic = dict(chain.from_iterable(d.items() for d in train_infos["critic"]))
+            for k, v in train_infos_critic.items():
+                if self.use_wandb:
+                    wandb.log({k: v}, step=total_num_steps)
+                else:
+                    self.writter.add_scalars(k, {k: v}, total_num_steps)
+
 
     def log_env(self, env_infos, total_num_steps):
         for k, v in env_infos.items():
@@ -552,7 +563,10 @@ class PatrollingRunner(Runner):
                     self.buffer[i][agent_id].compute_returns(next_value, self.trainer[agent_id].value_normalizer)
 
     def train(self):
-        train_infos = [[] for i in range(self.n_rollout_threads)]
+        train_infos = {
+            "actors": [[] for i in range(self.n_rollout_threads)],
+            "critic": []
+        }
 
         # Update the centralized critic.
         if self.use_centralized_V:
@@ -562,7 +576,7 @@ class PatrollingRunner(Runner):
                 update_actor=False,
                 update_critic=True
             )
-            train_infos[0].append(train_info)
+            train_infos["critic"].append(train_info)
             self.critic_buffer.after_update()
 
         # Update the actors (and critics in case of per-agent critics).
@@ -574,7 +588,7 @@ class PatrollingRunner(Runner):
                     update_actor=True,
                     update_critic=(not self.use_centralized_V)
                 )
-                train_infos[i].append(train_info)       
+                train_infos["actors"][i].append(train_info)       
                 self.buffer[i][agent_id].after_update()
 
         return train_infos
