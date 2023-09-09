@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
-from onpolicy.utils.util import get_gard_norm, huber_loss, mse_loss
+from onpolicy.utils.util import get_grad_norm, huber_loss, mse_loss
 from onpolicy.utils.valuenorm import ValueNorm
 from onpolicy.algorithms.utils.util import check
 
@@ -136,30 +136,31 @@ class R_MAPPO():
 
         policy_loss = policy_action_loss
 
-        self.policy.actor_optimizer.zero_grad()
 
         if update_actor:
+            self.policy.actor_optimizer.zero_grad()
             (policy_loss - dist_entropy * self.entropy_coef).backward()
 
         if self._use_max_grad_norm:
             actor_grad_norm = nn.utils.clip_grad_norm_(self.policy.actor.parameters(), self.max_grad_norm)
         else:
-            actor_grad_norm = get_gard_norm(self.policy.actor.parameters())
+            actor_grad_norm = get_grad_norm(self.policy.actor.parameters())
 
-        self.policy.actor_optimizer.step()
+        if update_actor:
+            self.policy.actor_optimizer.step()
 
         # critic update
         value_loss = self.cal_value_loss(values, value_preds_batch, return_batch, active_masks_batch)
 
-        self.policy.critic_optimizer.zero_grad()
 
         if update_critic:
+            self.policy.critic_optimizer.zero_grad()
             (value_loss * self.value_loss_coef).backward()
 
         if self._use_max_grad_norm:
             critic_grad_norm = nn.utils.clip_grad_norm_(self.policy.critic.parameters(), self.max_grad_norm)
         else:
-            critic_grad_norm = get_gard_norm(self.policy.critic.parameters())
+            critic_grad_norm = get_grad_norm(self.policy.critic.parameters())
 
         if update_critic:
             self.policy.critic_optimizer.step()

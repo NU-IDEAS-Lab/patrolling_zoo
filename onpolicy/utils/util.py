@@ -6,7 +6,7 @@ def check(input):
     if type(input) == np.ndarray:
         return torch.from_numpy(input)
         
-def get_gard_norm(it):
+def get_grad_norm(it):
     sum_grad = 0
     for x in it:
         if x.grad is None:
