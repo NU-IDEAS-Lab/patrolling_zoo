@@ -316,11 +316,6 @@ class PatrollingRunner(Runner):
                     c_rewards[i, agent_id] = rewards[i, agent_id]
                     # c_delta_steps[i, agent_id] = delta_steps[i, agent_id]
                     c_delta_steps[i, agent_id] = 1 #critic only takes single steps!
-
-        if self.critic_buffer.step == 198:
-            print("second-to-last step!")
-        if self.critic_buffer.step == 199:
-            print("last step!")
         
         # Reset RNN and mask arguments for done agents/envs.
         c_masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
