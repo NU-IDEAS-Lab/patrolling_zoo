@@ -166,9 +166,6 @@ class PatrollingEnv(object):
         # Flatten the PZ observation.
         obs = flatten(self.env.observation_spaces, obs)
         obs = np.reshape(obs, (self.num_agents, -1))
-
-        if self.num_agents == 1:
-            obs = obs[np.newaxis, :]
         
         return obs
     
