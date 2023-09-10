@@ -19,6 +19,7 @@ class SeparatedReplayBuffer(object):
         self.gamma = args.gamma
         self.gae_lambda = args.gae_lambda
         self._use_gae = args.use_gae
+        self._use_gae_amadm = args.use_gae_amadm
         self._use_popart = args.use_popart
         self._use_valuenorm = args.use_valuenorm
         self._use_proper_time_limits = args.use_proper_time_limits
@@ -51,7 +52,9 @@ class SeparatedReplayBuffer(object):
         self.actions = np.zeros((self.episode_length, self.n_rollout_threads, act_shape), dtype=np.float32)
         self.action_log_probs = np.zeros((self.episode_length, self.n_rollout_threads, act_shape), dtype=np.float32)
         self.rewards = np.zeros((self.episode_length, self.n_rollout_threads, 1), dtype=np.float32)
-        
+        self.deltaSteps = np.zeros(
+            (self.episode_length, self.n_rollout_threads, 1), dtype=np.float32)
+
         self.masks = np.ones((self.episode_length + 1, self.n_rollout_threads, 1), dtype=np.float32)
         self.bad_masks = np.ones_like(self.masks)
         self.active_masks = np.ones_like(self.masks)
@@ -59,7 +62,12 @@ class SeparatedReplayBuffer(object):
         self.step = 0
 
     def insert(self, share_obs, obs, rnn_states, rnn_states_critic, actions, action_log_probs,
-               value_preds, rewards, masks, bad_masks=None, active_masks=None, available_actions=None):
+               value_preds, rewards, masks, bad_masks=None, active_masks=None, available_actions=None,
+               deltaSteps=None):
+        
+        # Reset the step count if we are at the end of an episode.
+        self.step = (self.step) % self.episode_length
+
         self.share_obs[self.step + 1] = share_obs.copy()
         self.obs[self.step + 1] = obs.copy()
         self.rnn_states[self.step + 1] = rnn_states.copy()
@@ -75,11 +83,18 @@ class SeparatedReplayBuffer(object):
             self.active_masks[self.step + 1] = active_masks.copy()
         if available_actions is not None:
             self.available_actions[self.step + 1] = available_actions.copy()
+        if deltaSteps is not None:
+            self.deltaSteps[self.step] = deltaSteps.copy()
 
-        self.step = (self.step + 1) % self.episode_length
+        # Increment step count.
+        self.step += 1
 
     def chooseinsert(self, share_obs, obs, rnn_states, rnn_states_critic, actions, action_log_probs,
                      value_preds, rewards, masks, bad_masks=None, active_masks=None, available_actions=None):
+
+        # Reset the step count if we are at the end of an episode.
+        self.step = (self.step) % self.episode_length
+
         self.share_obs[self.step] = share_obs.copy()
         self.obs[self.step] = obs.copy()
         self.rnn_states[self.step + 1] = rnn_states.copy()
@@ -95,8 +110,9 @@ class SeparatedReplayBuffer(object):
             self.active_masks[self.step] = active_masks.copy()
         if available_actions is not None:
             self.available_actions[self.step] = available_actions.copy()
-
-        self.step = (self.step + 1) % self.episode_length
+        
+        # Increment step count.
+        self.step += 1
     
     def after_update(self):
         self.share_obs[0] = self.share_obs[-1].copy()
@@ -116,7 +132,26 @@ class SeparatedReplayBuffer(object):
         self.bad_masks[0] = self.bad_masks[-1].copy()
 
     def compute_returns(self, next_value, value_normalizer=None):
-        if self._use_proper_time_limits:
+        # Check whether we should use the AMADM GAE modification from https://arxiv.org/abs/2308.06036
+        # Unfortunately, I don't have time to implement for all of the other options (like use_proper_time_limits),
+        # so I just ignore them!
+        if self._use_gae_amadm and not self._use_gae:
+            self.value_preds[-1] = next_value
+            gae = 0
+            for step in reversed(range(self.step)):
+                if self._use_popart or self._use_valuenorm:
+                    delta = self.rewards[step] + np.power(self.gamma, self.deltaSteps[step]) * value_normalizer.denormalize(
+                        self.value_preds[step + 1]) * self.masks[step + 1] \
+                            - value_normalizer.denormalize(self.value_preds[step])
+                    gae = delta + np.power(self.gamma * self.gae_lambda, self.deltaSteps[step]) * self.masks[step + 1] * gae
+                    self.returns[step] = gae + value_normalizer.denormalize(self.value_preds[step])
+                else:
+                    delta = self.rewards[step] + np.power(self.gamma, self.deltaSteps[step]) * self.value_preds[step + 1] * self.masks[step + 1] - \
+                            self.value_preds[step]
+                    gae = delta + np.power(self.gamma * self.gae_lambda, self.deltaSteps[step]) * self.masks[step + 1] * gae
+                    self.returns[step] = gae + self.value_preds[step]
+        
+        elif self._use_proper_time_limits:
             if self._use_gae:
                 self.value_preds[-1] = next_value
                 gae = 0
