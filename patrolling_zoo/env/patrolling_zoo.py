@@ -104,11 +104,11 @@ class parallel_env(ParallelEnv):
         # Add to the dictionary depending on the observation method.
 
         # Add agent id.
-        if self.observe_method in ["ajg_new", "adjacency", "bitmap"]:
+        if self.observe_method in ["ajg_new", "ajg_newer", "adjacency", "bitmap"]:
             state_space["agent_id"] = spaces.Discrete(num_agents + 1, start = -1)
 
         # Add vertex idleness time.
-        if self.observe_method in ["normalization", "ranking", "raw", "old", "ajg_new", "adjacency"]:
+        if self.observe_method in ["normalization", "ranking", "raw", "old", "ajg_new", "ajg_newer", "adjacency"]:
             state_space["vertex_state"]: spaces.Dict({
                 v: spaces.Box(
                     low = -1.0,
@@ -126,7 +126,7 @@ class parallel_env(ParallelEnv):
             }) # type: ignore
         
         # Add vertex distances from each agent.
-        if self.observe_method in ["old", "ajg_new"]:
+        if self.observe_method in ["old", "ajg_new", "ajg_newer"]:
             state_space["vertex_distances"] = spaces.Dict({
                 a: spaces.Box(
                     low = np.array([0.0] * self.pg.graph.number_of_nodes(), dtype=np.float32),
@@ -144,7 +144,7 @@ class parallel_env(ParallelEnv):
             )
         
         # Add adjacency matrix.
-        if self.observe_method in ["adjacency"]:
+        if self.observe_method in ["adjacency", "ajg_newer"]:
             state_space["adjacency"] = spaces.Box(
                 low=-1.0,
                 high=1.0,
@@ -153,7 +153,7 @@ class parallel_env(ParallelEnv):
             )
         
         # Add agent graph position vector.
-        if self.observe_method in ["adjacency"]:
+        if self.observe_method in ["adjacency", "ajg_newer"]:
             state_space["agent_graph_position"] = spaces.Dict({
                 a: spaces.Box(
                     low = np.array([-1.0, -1.0, -1.0], dtype=np.float32),
@@ -283,7 +283,7 @@ class parallel_env(ParallelEnv):
         obs = {}
 
         # Add agent ID.
-        if self.observe_method in ["ajg_new", "adjacency", "bitmap"]:
+        if self.observe_method in ["ajg_new", "ajg_newer", "adjacency", "bitmap"]:
             obs["agent_id"] = agent.id
 
         # Add agent position.
@@ -304,7 +304,7 @@ class parallel_env(ParallelEnv):
             obs["vertex_state"] = {v: (nodes_idless[v]-min_)/(max_ - min_) for v in vertices}
         
         # Add vertex idleness time (minMax normalized).
-        if self.observe_method in ["ajg_new", "adjacency"]:
+        if self.observe_method in ["ajg_new", "ajg_newer", "adjacency"]:
             # Create numpy array of idleness times.
             idlenessTimes = np.zeros(self.pg.graph.number_of_nodes())
             for v in vertices:
@@ -341,7 +341,7 @@ class parallel_env(ParallelEnv):
             obs["vertex_distances"] = vertexDistances
 
         # Add vertex distances from each agent (normalized).
-        if self.observe_method in ["ajg_new"]:
+        if self.observe_method in ["ajg_new", "ajg_newer"]:
             # Calculate the shortest path distances from each agent to each node.
             vDists = np.zeros((len(agents), self.pg.graph.number_of_nodes()))
             for a in agents:
@@ -404,7 +404,16 @@ class parallel_env(ParallelEnv):
 
             obs["bitmap"] = bitmap
 
-        # Add adjacency matrix (normalized).
+        # Add adjacency matrix.
+        if self.observe_method in ["ajg_newer"]:
+            # Create adjacency matrix.
+            adjacency = -1.0 * np.ones(self.observation_space(agent)["adjacency"].shape, dtype=np.float32)
+            for edge in self.pg.graph.edges:
+                adjacency[edge[0], edge[1]] = 1.0
+                adjacency[edge[1], edge[0]] = 1.0
+            obs["adjacency"] = adjacency
+
+        # Add weighted adjacency matrix (normalized).
         if self.observe_method in ["adjacency"]:
             # Create adjacency matrix.
             adjacency = -1.0 * np.ones(self.observation_space(agent)["adjacency"].shape, dtype=np.float32)
@@ -416,7 +425,7 @@ class parallel_env(ParallelEnv):
             obs["adjacency"] = adjacency
         
         # Add agent graph position vector.
-        if self.observe_method in ["adjacency"]:
+        if self.observe_method in ["adjacency", "ajg_newer"]:
             graphPos = {}
             # Set default value of -1.0
             for a in self.possible_agents:
