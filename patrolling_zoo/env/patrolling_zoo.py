@@ -109,7 +109,7 @@ class parallel_env(ParallelEnv):
 
         # Add vertex idleness time.
         if self.observe_method in ["normalization", "ranking", "raw", "old", "ajg_new", "ajg_newer", "adjacency"]:
-            state_space["vertex_state"]: spaces.Dict({
+            state_space["vertex_state"] = spaces.Dict({
                 v: spaces.Box(
                     low = -1.0,
                     high = np.inf,
