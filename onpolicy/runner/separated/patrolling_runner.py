@@ -102,6 +102,10 @@ class PatrollingRunner(Runner):
             data_critic_prev = None
 
             for step in range(self.episode_length):
+                # If this is the last step, set all agents to ready.
+                if step == self.episode_length - 1:
+                    self.ready = np.ones((self.n_rollout_threads, self.num_agents), dtype=bool)
+
                 # Sample actions
                 values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env = self.collect(step)
                     
