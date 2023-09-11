@@ -201,7 +201,7 @@ class PatrollingRunner(Runner):
 
         if self.use_centralized_V:
             c_share_obs = np.repeat(share_obs, self.num_agents, axis=1)
-            c_share_obs = np.reshape(share_obs, (self.n_rollout_threads, self.num_agents, -1))
+            c_share_obs = np.reshape(c_share_obs, (self.n_rollout_threads, self.num_agents, -1))
             self.critic_buffer.share_obs[0] = c_share_obs.copy()
             self.critic_buffer.obs[0] = obs.copy()
 
