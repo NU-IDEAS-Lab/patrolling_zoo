@@ -55,6 +55,7 @@ class PatrollingEnv(object):
             beta = args.beta,
             observation_radius = args.observation_radius,
             observe_method = args.observe_method,
+            observe_method_global = args.observe_method_global,
             max_cycles = -1 if self.args.skip_steps_sync else args.episode_length
         )
             
