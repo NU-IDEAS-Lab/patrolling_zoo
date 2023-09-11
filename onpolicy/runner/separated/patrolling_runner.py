@@ -164,7 +164,10 @@ class PatrollingRunner(Runner):
                                 self.num_env_steps,
                                 int(total_num_steps / (end - start))))
                 
-                avgEpRewards = np.mean([self.buffer[i][a].rewards for a in range(self.num_agents) for j in range(self.n_rollout_threads)]) * self.episode_length
+                if self.all_args.skip_steps_async:
+                    avgEpRewards = np.mean([self.buffer[i][a].rewards for a in range(self.num_agents) for j in range(self.n_rollout_threads)]) * self.episode_length
+                else:
+                    avgEpRewards = np.mean([self.buffer[a].rewards for a in range(self.num_agents)]) * self.episode_length
                 if self.use_wandb:
                     wandb.log({"average_episode_rewards": avgEpRewards}, step=total_num_steps)
                 else:
@@ -216,32 +219,59 @@ class PatrollingRunner(Runner):
         rnn_states_critic = [[None for a in range(self.num_agents)] for idx in range(self.n_rollout_threads)]
         actions_env = [[None for a in range(self.num_agents)] for idx in range(self.n_rollout_threads)]
 
-        for i in range(self.n_rollout_threads):
-            envIdx = i if self.all_args.skip_steps_async else slice(None)
+        # Get actions from the policy.
+        if self.all_args.skip_steps_async:
+            # In asynchronous skipping mode, we use individual buffers for each rollout thread and agent.
+            for i in range(self.n_rollout_threads):
+                for agent_id in range(self.num_agents):
+                    # If the agent is not ready, skip it.
+                    if not self.ready[i, agent_id]:
+                        continue
+
+                    self.trainer[agent_id].prep_rollout()
+
+                    value, action, action_log_prob, rnn_state, rnn_state_critic = self.trainer[agent_id].policy.get_actions(
+                        self.buffer[i][agent_id].share_obs[step],
+                        self.buffer[i][agent_id].obs[step],
+                        self.buffer[i][agent_id].rnn_states[step],
+                        self.buffer[i][agent_id].rnn_states_critic[step],
+                        self.buffer[i][agent_id].masks[step]
+                    )
+                    values[i][agent_id] = _t2n(value)[0]
+                    action = _t2n(action)[0]
+
+                    actions[i][agent_id] = action
+                    action_log_probs[i][agent_id] = _t2n(action_log_prob)[0]
+                    rnn_states[i][agent_id] = _t2n(rnn_state)[0]
+                    rnn_states_critic[i][agent_id] = _t2n(rnn_state_critic)[0]
+
+                    actions_env[i][agent_id] = action[0]
+        
+        else:
+            # Otherwise, we use a single buffer for each agent across all threads.
             for agent_id in range(self.num_agents):
-                # If the agent is not ready, skip it.
-                if not self.ready[i, agent_id]:
-                    continue
-
                 self.trainer[agent_id].prep_rollout()
-                value, action, action_log_prob, rnn_state, rnn_state_critic \
-                    = self.trainer[agent_id].policy.get_actions(self.buffer[envIdx][agent_id].share_obs[step],
-                                                                self.buffer[envIdx][agent_id].obs[step],
-                                                                self.buffer[envIdx][agent_id].rnn_states[step],
-                                                                self.buffer[envIdx][agent_id].rnn_states_critic[step],
-                                                                self.buffer[envIdx][agent_id].masks[step])
-                values[envIdx][agent_id] = _t2n(value)[0]
-                action = _t2n(action)[0]
 
-                actions[envIdx][agent_id] = action
-                action_log_probs[envIdx][agent_id] = _t2n(action_log_prob)[0]
-                rnn_states[envIdx][agent_id] = _t2n(rnn_state)[0]
-                rnn_states_critic[envIdx][agent_id] = _t2n(rnn_state_critic)[0]
+                value, action, action_log_prob, rnn_state, rnn_state_critic = self.trainer[agent_id].policy.get_actions(
+                    self.buffer[agent_id].share_obs[step],
+                    self.buffer[agent_id].obs[step],
+                    self.buffer[agent_id].rnn_states[step],
+                    self.buffer[agent_id].rnn_states_critic[step],
+                    self.buffer[agent_id].masks[step]
+                )
+                for i in range(self.n_rollout_threads):
+                    values[i][agent_id] = _t2n(value)[i]
+                    action = _t2n(action)[i]
 
-                actions_env[envIdx][agent_id] = action[0]
+                    actions[i][agent_id] = action
+                    action_log_probs[i][agent_id] = _t2n(action_log_prob)[i]
+                    rnn_states[i][agent_id] = _t2n(rnn_state)[i]
+                    rnn_states_critic[i][agent_id] = _t2n(rnn_state_critic)[i]
+
+                    actions_env[i][agent_id] = action[0]
+
         
         actions_env = np.array(actions_env)
-
         # values = np.array(values)#.transpose(1, 0, 2)
         # actions = np.array(actions)#.transpose(1, 0, 2)
         # action_log_probs = np.array(action_log_probs)#.transpose(1, 0, 2)
@@ -282,40 +312,91 @@ class PatrollingRunner(Runner):
                     rnn_states_critic[i][agent_id] = np.zeros((1, self.recurrent_N, self.hidden_size), dtype=np.float32)
                     masks[i, agent_id] = np.zeros((1, 1), dtype=np.float32)
         
-        for i in range(self.n_rollout_threads):
+        # If using asynchronous skipping, insert the data into a buffer for each agent for each rollout thread.
+        if self.all_args.skip_steps_async:
+            for i in range(self.n_rollout_threads):
+                for agent_id in range(self.num_agents):
+                    # If the agent was not ready for a new action, skip it.
+                    # (we determine this by an action == None)
+                    if actions[i][agent_id] == None:
+                        continue
+
+                    if self.use_centralized_V:
+                        s_obs = share_obs[i]
+                    else:
+                        s_obs = np.array(list(obs[i, agent_id]))
+
+                    self.buffer[i][agent_id].insert(s_obs,
+                                                np.array(list(obs[i, agent_id])),
+                                                rnn_states[i][agent_id],
+                                                rnn_states_critic[i][agent_id],
+                                                actions[i][agent_id],
+                                                action_log_probs[i][agent_id],
+                                                values[i][agent_id],
+                                                rewards[i, agent_id],
+                                                masks[i, agent_id],
+                                                deltaSteps = delta_steps[i, agent_id])
+                    
+                    # If we are using a shared critic, update the critic data.
+                    if self.use_centralized_V:
+                        c_obs[i, agent_id] = obs[i, agent_id]
+                        c_rnn_states[i][agent_id] = rnn_states[i][agent_id]
+                        c_rnn_states_critic[i][agent_id] = rnn_states_critic[i][agent_id]
+                        c_actions[i][agent_id] = actions[i][agent_id]
+                        c_action_log_probs[i][agent_id] = action_log_probs[i][agent_id]
+                        c_values[i][agent_id] = values[i][agent_id]
+                        c_rewards[i, agent_id] = rewards[i, agent_id]
+                        # c_delta_steps[i, agent_id] = delta_steps[i, agent_id]
+                        c_delta_steps[i, agent_id] = 1 #critic only takes single steps!
+        
+        # Otherwise, insert the data into a buffer for each agent.
+        else:
             for agent_id in range(self.num_agents):
-                # If the agent was not ready for a new action, skip it.
-                # (we determine this by an action == None)
-                if actions[i][agent_id] == None:
-                    continue
-
                 if self.use_centralized_V:
-                    s_obs = share_obs[i]
+                    s_obs = share_obs
                 else:
-                    s_obs = np.array(list(obs[i, agent_id]))
+                    s_obs = np.array(list(obs[:, agent_id]))
+                
+                rnn_states = np.array(rnn_states)
+                rnn_states_critic = np.array(rnn_states_critic)
+                actions = np.array(actions)
+                action_log_probs = np.array(action_log_probs)
+                values = np.array(values)
+                rewards = np.array(rewards)
+                masks = np.array(masks)
+                delta_steps = np.array(delta_steps)
 
-                self.buffer[i][agent_id].insert(s_obs,
-                                            np.array(list(obs[i, agent_id])),
-                                            rnn_states[i][agent_id],
-                                            rnn_states_critic[i][agent_id],
-                                            actions[i][agent_id],
-                                            action_log_probs[i][agent_id],
-                                            values[i][agent_id],
-                                            rewards[i, agent_id],
-                                            masks[i, agent_id],
-                                            deltaSteps = delta_steps[i, agent_id])
+                self.buffer[agent_id].insert(s_obs,
+                                            np.array(list(obs[:, agent_id])),
+                                            rnn_states[:, agent_id],
+                                            rnn_states_critic[:, agent_id],
+                                            actions[:, agent_id],
+                                            action_log_probs[:, agent_id],
+                                            values[:, agent_id],
+                                            rewards[:, agent_id],
+                                            masks[:, agent_id],
+                                            deltaSteps = delta_steps[:, agent_id])
                 
                 # If we are using a shared critic, update the critic data.
                 if self.use_centralized_V:
-                    c_obs[i, agent_id] = obs[i, agent_id]
-                    c_rnn_states[i][agent_id] = rnn_states[i][agent_id]
-                    c_rnn_states_critic[i][agent_id] = rnn_states_critic[i][agent_id]
-                    c_actions[i][agent_id] = actions[i][agent_id]
-                    c_action_log_probs[i][agent_id] = action_log_probs[i][agent_id]
-                    c_values[i][agent_id] = values[i][agent_id]
-                    c_rewards[i, agent_id] = rewards[i, agent_id]
-                    # c_delta_steps[i, agent_id] = delta_steps[i, agent_id]
-                    c_delta_steps[i, agent_id] = 1 #critic only takes single steps!
+                    c_obs = np.array(c_obs)
+                    c_rnn_states = np.array(c_rnn_states)
+                    c_rnn_states_critic = np.array(c_rnn_states_critic)
+                    c_actions = np.array(c_actions)
+                    c_action_log_probs = np.array(c_action_log_probs)
+                    c_values = np.array(c_values)
+                    c_rewards = np.array(c_rewards)
+                    c_delta_steps = np.array(c_delta_steps)
+
+                    c_obs[:, agent_id] = obs[:, agent_id]
+                    c_rnn_states[:, agent_id] = rnn_states[:, agent_id]
+                    c_rnn_states_critic[:, agent_id] = rnn_states_critic[:, agent_id]
+                    c_actions[:, agent_id] = actions[:, agent_id]
+                    c_action_log_probs[:, agent_id] = action_log_probs[:, agent_id]
+                    c_values[:, agent_id] = values[:, agent_id]
+                    c_rewards[:, agent_id] = rewards[:, agent_id]
+                    # c_delta_steps[:, agent_id] = delta_steps[:, agent_id]
+                    c_delta_steps[:, agent_id] = 1
         
         # Reset RNN and mask arguments for done agents/envs.
         c_masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
@@ -575,15 +656,30 @@ class PatrollingRunner(Runner):
             self.critic_buffer.after_update()
 
         # Update the actors (and critics in case of per-agent critics).
-        for i in range(self.n_rollout_threads):
+        if self.all_args.skip_steps_async:
+            # In case of asynchronous skipping, we update each agent's policy using buffers from each rollout thread.
+            for i in range(self.n_rollout_threads):
+                for agent_id in range(self.num_agents):
+                    self.trainer[agent_id].prep_training()
+                    train_info = self.trainer[agent_id].train(
+                        self.buffer[i][agent_id],
+                        update_actor=True,
+                        update_critic=(not self.use_centralized_V)
+                    )
+                    train_infos["actors"][i].append(train_info)       
+                    self.buffer[i][agent_id].after_update()
+        
+        else:
+            # Otherwise, we update each agent's policy using a single buffer.
             for agent_id in range(self.num_agents):
                 self.trainer[agent_id].prep_training()
                 train_info = self.trainer[agent_id].train(
-                    self.buffer[i][agent_id],
+                    self.buffer[agent_id],
                     update_actor=True,
                     update_critic=(not self.use_centralized_V)
                 )
-                train_infos["actors"][i].append(train_info)       
-                self.buffer[i][agent_id].after_update()
+                for i in range(self.n_rollout_threads):
+                    train_infos["actors"][i].append(train_info)       
+                self.buffer[agent_id].after_update()
 
         return train_infos
