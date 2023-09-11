@@ -195,20 +195,24 @@ class PatrollingRunner(Runner):
         obs = np.array(obs)
         share_obs = np.array(share_obs)
 
-        for i in range(self.n_rollout_threads):
-            envIdx = i if self.all_args.skip_steps_async else slice(None)
-            for agent_id in range(self.num_agents):
-                if not self.use_centralized_V:
-                    share_obs = np.array(list(obs[i, agent_id]))
-
-                self.buffer[envIdx][agent_id].share_obs[0] = share_obs[envIdx].copy()
-                self.buffer[envIdx][agent_id].obs[0] = np.array(list(obs[envIdx, agent_id])).copy()
-
         if self.use_centralized_V:
-            share_obs = np.repeat(share_obs, self.num_agents, axis=1)
-            share_obs = np.reshape(share_obs, (self.n_rollout_threads, self.num_agents, -1))
-            self.critic_buffer.share_obs[0] = share_obs.copy()
+            c_share_obs = np.repeat(share_obs, self.num_agents, axis=1)
+            c_share_obs = np.reshape(share_obs, (self.n_rollout_threads, self.num_agents, -1))
+            self.critic_buffer.share_obs[0] = c_share_obs.copy()
             self.critic_buffer.obs[0] = obs.copy()
+
+        # If using asynchronous skipping, warm-start the buffer for each rollout thread for each agent.
+        if self.all_args.skip_steps_async:
+            for i in range(self.n_rollout_threads):
+                for agent_id in range(self.num_agents):
+                    self.buffer[i][agent_id].share_obs[0] = share_obs[i].copy()
+                    self.buffer[i][agent_id].obs[0] = np.array(list(obs[i, agent_id])).copy()
+        
+        # Otherwise, warm-start the buffer for each agent.
+        else:
+            for agent_id in range(self.num_agents):
+                self.buffer[agent_id].share_obs[0] = share_obs.copy()
+                self.buffer[agent_id].obs[0] = np.array(list(obs[:, agent_id])).copy()
 
     @torch.no_grad()
     def collect(self, step):
@@ -261,14 +265,14 @@ class PatrollingRunner(Runner):
                 )
                 for i in range(self.n_rollout_threads):
                     values[i][agent_id] = _t2n(value)[i]
-                    action = _t2n(action)[i]
+                    a = _t2n(action)[i]
 
-                    actions[i][agent_id] = action
+                    actions[i][agent_id] = a
                     action_log_probs[i][agent_id] = _t2n(action_log_prob)[i]
                     rnn_states[i][agent_id] = _t2n(rnn_state)[i]
                     rnn_states_critic[i][agent_id] = _t2n(rnn_state_critic)[i]
 
-                    actions_env[i][agent_id] = action[0]
+                    actions_env[i][agent_id] = a[0]
 
         
         actions_env = np.array(actions_env)
@@ -280,7 +284,7 @@ class PatrollingRunner(Runner):
 
         return values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env
 
-    def insert(self, data, data_critic_prev):
+    def insert(self, data, data_critic):
 
         # Split data.
         obs, share_obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic, delta_steps = data
@@ -289,10 +293,8 @@ class PatrollingRunner(Runner):
         # By default, the critic will use the previous data for each agent,
         # unless the agent is ready, in which case it will use the current data.
         if self.use_centralized_V:
-            if data_critic_prev == None:
+            if data_critic == None:
                 data_critic = data
-            else:
-                data_critic = data_critic_prev
             
             # Split data.
             c_obs, c_share_obs, c_rewards, c_dones, c_infos, c_values, c_actions, c_action_log_probs, c_rnn_states, c_rnn_states_critic, c_delta_steps = data_critic
@@ -308,9 +310,9 @@ class PatrollingRunner(Runner):
         for i in range(self.n_rollout_threads):
             for agent_id in range(self.num_agents):
                 if dones[i, agent_id]:
-                    rnn_states[i][agent_id] = np.zeros((1, self.recurrent_N, self.hidden_size), dtype=np.float32)
-                    rnn_states_critic[i][agent_id] = np.zeros((1, self.recurrent_N, self.hidden_size), dtype=np.float32)
-                    masks[i, agent_id] = np.zeros((1, 1), dtype=np.float32)
+                    rnn_states[i][agent_id] = np.zeros((self.recurrent_N, self.hidden_size), dtype=np.float32)
+                    rnn_states_critic[i][agent_id] = np.zeros((self.recurrent_N, self.hidden_size), dtype=np.float32)
+                    masks[i, agent_id] = np.zeros(1, dtype=np.float32)
         
         # If using asynchronous skipping, insert the data into a buffer for each agent for each rollout thread.
         if self.all_args.skip_steps_async:
@@ -366,6 +368,8 @@ class PatrollingRunner(Runner):
                 masks = np.array(masks)
                 delta_steps = np.array(delta_steps)
 
+                # print(rnn_states.shape, rnn_states_critic.shape, actions.shape, action_log_probs.shape, values.shape, rewards.shape, masks.shape, delta_steps.shape)
+
                 self.buffer[agent_id].insert(s_obs,
                                             np.array(list(obs[:, agent_id])),
                                             rnn_states[:, agent_id],
@@ -397,18 +401,18 @@ class PatrollingRunner(Runner):
                     c_rewards[:, agent_id] = rewards[:, agent_id]
                     # c_delta_steps[:, agent_id] = delta_steps[:, agent_id]
                     c_delta_steps[:, agent_id] = 1
-        
-        # Reset RNN and mask arguments for done agents/envs.
-        c_masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
-        for i in range(self.n_rollout_threads):
-            for agent_id in range(self.num_agents):
-                if dones[i, agent_id]:
-                    c_rnn_states[i][agent_id] = np.zeros((self.recurrent_N, self.hidden_size), dtype=np.float32)
-                    c_rnn_states_critic[i][agent_id] = np.zeros((self.recurrent_N, self.hidden_size), dtype=np.float32)
-                    c_masks[i, agent_id] = np.zeros((1, 1), dtype=np.float32)
 
         # If we are using a shared critic, insert the critic data.
         if self.use_centralized_V:
+            # Reset RNN and mask arguments for done agents/envs.
+            c_masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
+            for i in range(self.n_rollout_threads):
+                for agent_id in range(self.num_agents):
+                    if dones[i, agent_id]:
+                        c_rnn_states[i][agent_id] = np.zeros((self.recurrent_N, self.hidden_size), dtype=np.float32)
+                        c_rnn_states_critic[i][agent_id] = np.zeros((self.recurrent_N, self.hidden_size), dtype=np.float32)
+                        c_masks[i, agent_id] = np.zeros((1, 1), dtype=np.float32)
+
             self.critic_buffer.insert(
                 share_obs=np.array(c_share_obs),
                 obs=np.array(c_obs),
@@ -618,8 +622,8 @@ class PatrollingRunner(Runner):
     @torch.no_grad()
     def compute(self):
 
+        # Compute returns for the centralized critic.
         if self.use_centralized_V:
-            # Compute returns for the centralized critic.
             self.trainer[0].prep_rollout()
 
             next_value = self.trainer[0].policy.get_values(np.concatenate(self.critic_buffer.share_obs[-1]), 
@@ -628,15 +632,28 @@ class PatrollingRunner(Runner):
             next_value = np.array(np.split(_t2n(next_value), self.n_rollout_threads))
             self.critic_buffer.compute_returns(next_value, self.trainer[0].value_normalizer)
 
+        # Compute returns for the decentralized critics.
         else:
-            for i in range(self.n_rollout_threads):
+            # If using asynchronous skipping, we compute returns for each agent's policy using buffers from each rollout thread.
+            if self.all_args.skip_steps_async:
+                for i in range(self.n_rollout_threads):
+                    for agent_id in range(self.num_agents):
+                        self.trainer[agent_id].prep_rollout()
+                        next_value = self.trainer[agent_id].policy.get_values(self.buffer[i][agent_id].share_obs[-1], 
+                                                                            self.buffer[i][agent_id].rnn_states_critic[-1],
+                                                                            self.buffer[i][agent_id].masks[-1])
+                        next_value = _t2n(next_value)
+                        self.buffer[i][agent_id].compute_returns(next_value, self.trainer[agent_id].value_normalizer)
+            
+            # Otherwise, we compute returns for each agent's policy using a single buffer.
+            else:
                 for agent_id in range(self.num_agents):
                     self.trainer[agent_id].prep_rollout()
-                    next_value = self.trainer[agent_id].policy.get_values(self.buffer[i][agent_id].share_obs[-1], 
-                                                                        self.buffer[i][agent_id].rnn_states_critic[-1],
-                                                                        self.buffer[i][agent_id].masks[-1])
+                    next_value = self.trainer[agent_id].policy.get_values(self.buffer[agent_id].share_obs[-1], 
+                                                                        self.buffer[agent_id].rnn_states_critic[-1],
+                                                                        self.buffer[agent_id].masks[-1])
                     next_value = _t2n(next_value)
-                    self.buffer[i][agent_id].compute_returns(next_value, self.trainer[agent_id].value_normalizer)
+                    self.buffer[agent_id].compute_returns(next_value, self.trainer[agent_id].value_normalizer)
 
     def train(self):
         train_infos = {
