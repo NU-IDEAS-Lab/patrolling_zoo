@@ -49,7 +49,7 @@ class R_MAPPO():
         else:
             self.value_normalizer = None
 
-    def cal_value_loss(self, values, value_preds_batch, return_batch, active_masks_batch):
+    def cal_value_loss(self, values, value_preds_batch, return_batch, active_masks_batch, update_value_normalizer=True):
         """
         Calculate value function loss.
         :param values: (torch.Tensor) value function predictions.
@@ -62,7 +62,8 @@ class R_MAPPO():
         value_pred_clipped = value_preds_batch + (values - value_preds_batch).clamp(-self.clip_param,
                                                                                         self.clip_param)
         if self._use_popart or self._use_valuenorm:
-            self.value_normalizer.update(return_batch)
+            if update_value_normalizer:
+                self.value_normalizer.update(return_batch)
             error_clipped = self.value_normalizer.normalize(return_batch) - value_pred_clipped
             error_original = self.value_normalizer.normalize(return_batch) - values
         else:
@@ -150,7 +151,7 @@ class R_MAPPO():
             self.policy.actor_optimizer.step()
 
         # critic update
-        value_loss = self.cal_value_loss(values, value_preds_batch, return_batch, active_masks_batch)
+        value_loss = self.cal_value_loss(values, value_preds_batch, return_batch, active_masks_batch, update_value_normalizer=update_critic)
 
 
         if update_critic:
