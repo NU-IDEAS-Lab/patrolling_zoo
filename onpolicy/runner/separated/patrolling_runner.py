@@ -359,23 +359,32 @@ class PatrollingRunner(Runner):
         
         # Otherwise, insert the data into a buffer for each agent.
         else:
+            # Convert to numpy arrays.
+            rnn_states = np.array(rnn_states)
+            rnn_states_critic = np.array(rnn_states_critic)
+            actions = np.array(actions)
+            action_log_probs = np.array(action_log_probs)
+            values = np.array(values)
+            rewards = np.array(rewards)
+            masks = np.array(masks)
+            delta_steps = np.array(delta_steps)
+            if self.use_centralized_V:
+                c_obs = np.array(c_obs)
+                c_rnn_states = np.array(c_rnn_states)
+                c_rnn_states_critic = np.array(c_rnn_states_critic)
+                c_actions = np.array(c_actions)
+                c_action_log_probs = np.array(c_action_log_probs)
+                c_values = np.array(c_values)
+                c_rewards = np.array(c_rewards)
+                c_delta_steps = np.array(c_delta_steps)
+
+            # Insert for every agent.
             for agent_id in range(self.num_agents):
                 if self.use_centralized_V:
                     s_obs = share_obs
                 else:
                     s_obs = np.array(list(obs[:, agent_id]))
                 
-                rnn_states = np.array(rnn_states)
-                rnn_states_critic = np.array(rnn_states_critic)
-                actions = np.array(actions)
-                action_log_probs = np.array(action_log_probs)
-                values = np.array(values)
-                rewards = np.array(rewards)
-                masks = np.array(masks)
-                delta_steps = np.array(delta_steps)
-
-                # print(rnn_states.shape, rnn_states_critic.shape, actions.shape, action_log_probs.shape, values.shape, rewards.shape, masks.shape, delta_steps.shape)
-
                 self.buffer[agent_id].insert(s_obs,
                                             np.array(list(obs[:, agent_id])),
                                             rnn_states[:, agent_id],
@@ -389,15 +398,6 @@ class PatrollingRunner(Runner):
                 
                 # If we are using a shared critic, update the critic data.
                 if self.use_centralized_V:
-                    c_obs = np.array(c_obs)
-                    c_rnn_states = np.array(c_rnn_states)
-                    c_rnn_states_critic = np.array(c_rnn_states_critic)
-                    c_actions = np.array(c_actions)
-                    c_action_log_probs = np.array(c_action_log_probs)
-                    c_values = np.array(c_values)
-                    c_rewards = np.array(c_rewards)
-                    c_delta_steps = np.array(c_delta_steps)
-
                     c_obs[:, agent_id] = obs[:, agent_id]
                     c_rnn_states[:, agent_id] = rnn_states[:, agent_id]
                     c_rnn_states_critic[:, agent_id] = rnn_states_critic[:, agent_id]
