@@ -176,8 +176,10 @@ class PatrollingRunner(Runner):
                     wandb.log({"average_episode_rewards": avgEpRewards}, step=total_num_steps)
                 else:
                     self.writter.add_scalars("average_episode_rewards", {"average_episode_rewards": avgEpRewards}, total_num_steps)
+                
+                avgIdleness = np.mean([self.env_infos["avg_idleness"]])
 
-                print("average episode rewards is {}".format(avgEpRewards))
+                print("average episode rewards is {} and idleness is {}".format(avgEpRewards, avgIdleness))
                 self.log_train(train_infos, total_num_steps)
                 self.log_env(self.env_infos, total_num_steps)
                 self.env_infos = defaultdict(list)
