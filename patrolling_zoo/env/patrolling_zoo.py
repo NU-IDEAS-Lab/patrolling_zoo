@@ -204,6 +204,7 @@ class parallel_env(ParallelEnv):
         self.step_count = 0
         self.dones = dict.fromkeys(self.agents, False)
         
+        # Return the initial observation.
         observation = {agent: self.observe(agent) for agent in self.agents}
         info = {
             agent: {

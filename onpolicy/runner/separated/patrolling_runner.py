@@ -141,8 +141,8 @@ class PatrollingRunner(Runner):
                         for agent_id in range(self.num_agents):
                             if self.buffer[i][agent_id].step != 1:
                                 raise RuntimeError(f"Buffer {i}, agent {agent_id} has step {self.buffer[i][agent_id].step} at the start of an episode. Must be 1.")
-                    if self.use_centralized_V and self.critic_buffer.step != 1:
-                        raise RuntimeError(f"Critic buffer has step {self.critic_buffer.step} at the start of an episode. Must be 1.")
+                if step == 0 and self.use_centralized_V and self.critic_buffer.step != 1:
+                    raise RuntimeError(f"Critic buffer has step {self.critic_buffer.step} at the start of an episode. Must be 1.")
 
             # compute return and update network
             self.compute()
@@ -645,19 +645,25 @@ class PatrollingRunner(Runner):
                 for i in range(self.n_rollout_threads):
                     for agent_id in range(self.num_agents):
                         self.trainer[agent_id].prep_rollout()
-                        next_value = self.trainer[agent_id].policy.get_values(self.buffer[i][agent_id].share_obs[-1], 
-                                                                            self.buffer[i][agent_id].rnn_states_critic[-1],
-                                                                            self.buffer[i][agent_id].masks[-1])
+                        buf = self.buffer[i][agent_id]
+                        next_value = self.trainer[agent_id].policy.get_values(
+                            buf.share_obs[buf.step - 1], 
+                            buf.rnn_states_critic[buf.step - 1],
+                            buf.masks[buf.step - 1]
+                        )
                         next_value = _t2n(next_value)
-                        self.buffer[i][agent_id].compute_returns(next_value, self.trainer[agent_id].value_normalizer)
+                        buf.compute_returns(next_value, self.trainer[agent_id].value_normalizer)
             
             # Otherwise, we compute returns for each agent's policy using a single buffer.
             else:
                 for agent_id in range(self.num_agents):
                     self.trainer[agent_id].prep_rollout()
-                    next_value = self.trainer[agent_id].policy.get_values(self.buffer[agent_id].share_obs[-1], 
-                                                                        self.buffer[agent_id].rnn_states_critic[-1],
-                                                                        self.buffer[agent_id].masks[-1])
+                    buf = self.buffer[agent_id]
+                    next_value = self.trainer[agent_id].policy.get_values(
+                        buf.share_obs[buf.step - 1],
+                        buf.rnn_states_critic[buf.step - 1],
+                        buf.masks[buf.step - 1]
+                    )
                     next_value = _t2n(next_value)
                     self.buffer[agent_id].compute_returns(next_value, self.trainer[agent_id].value_normalizer)
 
