@@ -98,6 +98,10 @@ class SharedReplayBuffer(object):
         :param active_masks: (np.ndarray) denotes whether an agent is active or dead in the env.
         :param available_actions: (np.ndarray) actions available to each agent. If None, all actions are available.
         """
+
+        # Reset the step count if we are at the end of an episode.
+        self.step = (self.step) % self.episode_length
+
         self.share_obs[self.step + 1] = share_obs.copy()
         self.obs[self.step + 1] = obs.copy()
         self.rnn_states[self.step + 1] = rnn_states.copy()
@@ -116,7 +120,8 @@ class SharedReplayBuffer(object):
         if deltaSteps is not None:
             self.deltaSteps[self.step] = deltaSteps.copy()
 
-        self.step = (self.step + 1) % self.episode_length
+        # Increment step count.
+        self.step += 1
 
     def chooseinsert(self, share_obs, obs, rnn_states, rnn_states_critic, actions, action_log_probs,
                      value_preds, rewards, masks, bad_masks=None, active_masks=None, available_actions=None):
@@ -135,6 +140,10 @@ class SharedReplayBuffer(object):
         :param active_masks: (np.ndarray) denotes whether an agent is active or dead in the env.
         :param available_actions: (np.ndarray) actions available to each agent. If None, all actions are available.
         """
+
+        # Reset the step count if we are at the end of an episode.
+        self.step = (self.step) % self.episode_length
+
         self.share_obs[self.step] = share_obs.copy()
         self.obs[self.step] = obs.copy()
         self.rnn_states[self.step + 1] = rnn_states.copy()
@@ -151,7 +160,8 @@ class SharedReplayBuffer(object):
         if available_actions is not None:
             self.available_actions[self.step] = available_actions.copy()
 
-        self.step = (self.step + 1) % self.episode_length
+        # Increment step count.
+        self.step += 1
 
     def after_update(self):
         """Copy last timestep data to first index. Called after update to model."""
