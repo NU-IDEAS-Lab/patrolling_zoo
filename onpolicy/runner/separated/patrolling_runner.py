@@ -40,13 +40,9 @@ class PatrollingRunner(Runner):
                 if ta._use_popart:
                     ta.value_normalizer = self.critic.v_out
             
-            # Modify arguments since all critic entries will be in series.
-            args = copy.deepcopy(self.all_args)
-            args.n_rollout_threads = 1
-            args.episode_length = self.all_args.episode_length * self.n_rollout_threads * self.num_agents
-
             # Set up a shared replay buffer for the critic.
-            self.critic_buffer = SharedReplayBuffer(self.all_args,
+            self.critic_buffer = SharedReplayBuffer(
+                self.all_args,
                 self.num_agents,
                 self.envs.observation_space[0],
                 self.envs.share_observation_space[0],
@@ -64,10 +60,12 @@ class PatrollingRunner(Runner):
                     # make a copy of all_args but with n_rollout_threads = 1, since we are hacking this to use a separate buffer per rollout thread per agent.
                     args = copy.deepcopy(self.all_args)
                     args.n_rollout_threads = 1
-                    bu = SeparatedReplayBuffer(args,
-                                            self.envs.observation_space[agent_id],
-                                            share_observation_space,
-                                            self.envs.action_space[agent_id])
+                    bu = SeparatedReplayBuffer(
+                        args,
+                        self.envs.observation_space[agent_id],
+                        share_observation_space,
+                        self.envs.action_space[agent_id]
+                    )
                     self.buffer[i].append(bu)
         
         # Perform restoration.
@@ -431,6 +429,11 @@ class PatrollingRunner(Runner):
 
             # Update the previous data.
             data_critic = c_obs, c_share_obs, c_rewards, c_dones, c_infos, c_values, c_actions, c_action_log_probs, c_rnn_states, c_rnn_states_critic, c_delta_steps
+
+            # Check whether any invalid data (None) is in the critic data.
+            for d in data_critic:
+                if None in d:
+                    raise RuntimeError("None in critic data!")
 
         return data_critic
 
