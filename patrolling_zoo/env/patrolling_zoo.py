@@ -122,7 +122,7 @@ class parallel_env(ParallelEnv):
             )
 
         # Add vertex idleness time.
-        if observe_method in ["normalization", "ranking", "raw", "old", "ajg_new", "ajg_newer", "adjacency", "idlenessOnly"]:
+        if observe_method in ["ranking", "raw", "old", "ajg_new", "ajg_newer", "adjacency", "idlenessOnly"]:
             state_space["vertex_state"] = spaces.Dict({
                 v: spaces.Box(
                     low = -1.0,
@@ -131,7 +131,7 @@ class parallel_env(ParallelEnv):
             }) # type: ignore
 
         # Add agent Euclidean position.
-        if observe_method in ["normalization", "ranking", "raw", "old"]:
+        if observe_method in ["ranking", "raw", "old"]:
             # Get graph bounds in Euclidean space.
             pos = nx.get_node_attributes(self.pg.graph, 'pos')
             minPosX = min(pos[p][0] for p in pos)
@@ -313,7 +313,7 @@ class parallel_env(ParallelEnv):
             obs["agent_id"] = agent.id
 
         # Add agent position.
-        if observe_method in ["normalization", "ranking", "raw", "old"]:
+        if observe_method in ["ranking", "raw", "old"]:
             obs["agent_state"] = {a: a.position for a in agents}
 
         # Add vertex idleness time (ranked).
@@ -321,13 +321,6 @@ class parallel_env(ParallelEnv):
             nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in vertices}
             unique_sorted_idleness_times = sorted(list(set(nodes_idless.values())))
             obs["vertex_state"] = {v: unique_sorted_idleness_times.index(nodes_idless[v]) for v in vertices}
-
-        # Add vertex idleness time (normalized).
-        if observe_method in ["normalization"]:
-            nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in vertices}
-            min_ = min(nodes_idless.values())
-            max_ = max(nodes_idless.values())
-            obs["vertex_state"] = {v: (nodes_idless[v]-min_)/(max_ - min_) for v in vertices}
         
         # Add vertex idleness time (minMax normalized).
         if observe_method in ["ajg_new", "ajg_newer", "adjacency"]:
