@@ -323,7 +323,7 @@ class parallel_env(ParallelEnv):
             obs["vertex_state"] = {v: unique_sorted_idleness_times.index(nodes_idless[v]) for v in vertices}
         
         # Add vertex idleness time (minMax normalized).
-        if observe_method in ["ajg_new", "ajg_newer", "adjacency"]:
+        if observe_method in ["ajg_new", "ajg_newer"]:
             # Create numpy array of idleness times.
             idlenessTimes = np.zeros(self.pg.graph.number_of_nodes())
             for v in vertices:
@@ -344,7 +344,7 @@ class parallel_env(ParallelEnv):
                 obs["vertex_state"][v] = idlenessTimes[v]
 
         # Add vertex idleness time (raw).
-        if observe_method in ["raw", "old", "idlenessOnly"]:
+        if observe_method in ["raw", "old", "idlenessOnly", "adjacency"]:
             nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in vertices}
             obs["vertex_state"] = {v: nodes_idless[v] for v in vertices}
 
