@@ -81,7 +81,7 @@ class PatrollingEnv(object):
 
         combined_obs = {
             "obs": obs,
-            "share_obs": self._share_obs_wrapper(self.env.state())
+            "share_obs": self._share_obs_wrapper(self.env.state_all())
         }
 
         return combined_obs
@@ -121,7 +121,7 @@ class PatrollingEnv(object):
 
             combined_obs = {
                 "obs": self._obs_wrapper(obs),
-                "share_obs": self._share_obs_wrapper(self.env.state())
+                "share_obs": self._share_obs_wrapper(self.env.state_all())
             }
 
             reward = [reward[a] for a in self.env.possible_agents]
@@ -171,16 +171,18 @@ class PatrollingEnv(object):
         return obs
     
     def _share_obs_wrapper(self, obs):
+        res = []
+        for a in self.env.possible_agents:
+            res.append(flatten(self.env.state_space, obs[a]))
+        res = np.reshape(res, (self.num_agents, -1))
+        return res
+
+        #This older code below is for use with the state() method. Above code is for the state_all() method.
         # Flatten the PZ observation.
-        obs = flatten(self.env.state_space, obs)
-        obs = np.repeat(obs[np.newaxis, :], self.num_agents, axis=0)
-        return obs
+        # obs = flatten(self.env.state_space, obs)
+        # obs = np.repeat(obs[np.newaxis, :], self.num_agents, axis=0)
+        # return obs
 
     def _info_wrapper(self, info):
-        # state = self.env.state()
-        # info.update(state[0])
         info["avg_idleness"] = self.env.pg.getAverageIdlenessTime(self.env.step_count)
-        # info["active"] = np.array([state[i]["active"] for i in range(self.num_agents)])
-        # info["designated"] = np.array([state[i]["designated"] for i in range(self.num_agents)])
-        # info["sticky_actions"] = np.stack([state[i]["sticky_actions"] for i in range(self.num_agents)])
         return info

@@ -251,12 +251,11 @@ class PatrollingRunner(Runner):
                     action = _t2n(action)[0]
 
                     actions[i][agent_id] = action
+                    actions_env[i][agent_id] = action[0]
                     action_log_probs[i][agent_id] = _t2n(action_log_prob)[0]
                     rnn_states[i][agent_id] = _t2n(rnn_state)[0]
                     rnn_states_critic[i][agent_id] = _t2n(rnn_state_critic)[0]
 
-                    actions_env[i][agent_id] = action[0]
-        
         else:
             # Otherwise, we use a single buffer for each agent across all threads.
             for agent_id in range(self.num_agents):
@@ -274,12 +273,10 @@ class PatrollingRunner(Runner):
                     a = _t2n(action)[i]
 
                     actions[i][agent_id] = a
+                    actions_env[i][agent_id] = a[0]
                     action_log_probs[i][agent_id] = _t2n(action_log_prob)[i]
                     rnn_states[i][agent_id] = _t2n(rnn_state)[i]
                     rnn_states_critic[i][agent_id] = _t2n(rnn_state_critic)[i]
-
-                    actions_env[i][agent_id] = a[0]
-
         
         actions_env = np.array(actions_env)
         # values = np.array(values)#.transpose(1, 0, 2)
@@ -632,9 +629,10 @@ class PatrollingRunner(Runner):
         if self.use_centralized_V:
             self.trainer[0].prep_rollout()
 
-            next_value = self.trainer[0].policy.get_values(np.concatenate(self.critic_buffer.share_obs[-1]), 
-                                                            np.concatenate(self.critic_buffer.rnn_states_critic[-1]),
-                                                            np.concatenate(self.critic_buffer.masks[-1]))
+            buf = self.critic_buffer
+            next_value = self.trainer[0].policy.get_values(np.concatenate(buf.share_obs[buf.step]), 
+                                                            np.concatenate(buf.rnn_states_critic[buf.step]),
+                                                            np.concatenate(buf.masks[buf.step]))
             next_value = np.array(np.split(_t2n(next_value), self.n_rollout_threads))
             self.critic_buffer.compute_returns(next_value, self.trainer[0].value_normalizer)
 

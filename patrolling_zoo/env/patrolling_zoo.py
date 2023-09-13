@@ -115,7 +115,11 @@ class parallel_env(ParallelEnv):
 
         # Add agent id.
         if observe_method in ["ajg_new", "ajg_newer", "adjacency", "bitmap"]:
-            state_space["agent_id"] = spaces.Discrete(len(self.possible_agents) + 1, start = -1)
+            state_space["agent_id"] = spaces.Box(
+                low = -1,
+                high = len(self.possible_agents),
+                dtype=np.int32
+            )
 
         # Add vertex idleness time.
         if observe_method in ["normalization", "ranking", "raw", "old", "ajg_new", "ajg_newer", "adjacency", "idlenessOnly"]:
@@ -203,7 +207,7 @@ class parallel_env(ParallelEnv):
         # Reset other state.
         self.step_count = 0
         self.dones = dict.fromkeys(self.agents, False)
-        
+
         # Return the initial observation.
         observation = {agent: self.observe(agent) for agent in self.agents}
         info = {
@@ -274,6 +278,14 @@ class parallel_env(ParallelEnv):
         
         return self._populateStateSpace(self.observe_method_global, self.possible_agents[0], radius=np.inf, allow_done_agents=True)
 
+    def state_all(self):
+        ''' Similar to the state() method, but this returns a customized copy of the state space for each agent.
+            This is useful for centralized training, decentralized execution. '''
+        
+        state = {}
+        for agent in self.possible_agents:
+            state[agent] = self._populateStateSpace(self.observe_method_global, agent, radius=np.inf, allow_done_agents=True)
+        return state
 
     def observe(self, agent, radius=None, allow_done_agents=False):
         ''' Returns the observation for the given agent.'''
