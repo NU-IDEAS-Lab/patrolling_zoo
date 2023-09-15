@@ -50,6 +50,7 @@ class parallel_env(ParallelEnv):
                  beta = 100.0,
                  observation_radius = np.inf,
                  observe_method = "ajg_new",
+                 observe_method_global = None,
                  max_cycles: int = -1,
                  *args,
                  **kwargs):
@@ -73,6 +74,7 @@ class parallel_env(ParallelEnv):
         self.max_cycles = max_cycles
         self.comms_model = comms_model
         self.observe_method = observe_method
+        self.observe_method_global = observe_method_global if observe_method_global != None else observe_method
 
         self.alpha = alpha
         self.beta = beta
@@ -91,25 +93,37 @@ class parallel_env(ParallelEnv):
         # Create the action space.
         self.action_spaces = {agent: spaces.Discrete(len(self.pg.graph)) for agent in self.possible_agents}
 
-        # Get graph bounds in Euclidean space.
-        pos = nx.get_node_attributes(self.pg.graph, 'pos')
-        minPosX = min(pos[p][0] for p in pos)
-        maxPosX = max(pos[p][0] for p in pos)
-        minPosY = min(pos[p][1] for p in pos)
-        maxPosY = max(pos[p][1] for p in pos)
+        # The state space is a complete observation of the environment.
+        # This is not part of the standard PettingZoo API, but is useful for centralized training.
+        self.state_space = self._buildStateSpace(self.observe_method_global)
+        
+        # Create the observation space.
+        obs_space = self._buildStateSpace(self.observe_method)
+        self.observation_spaces = spaces.Dict({agent: obs_space for agent in self.possible_agents}) # type: ignore
 
+        self.reset()
+
+
+    def _buildStateSpace(self, observe_method):
+        ''' Creates a state space given the observation method.
+            Returns a gym.spaces.* object. '''
+        
         # Create the state space dictionary.
         state_space = {}
 
         # Add to the dictionary depending on the observation method.
 
         # Add agent id.
-        if self.observe_method in ["ajg_new", "adjacency", "bitmap"]:
-            state_space["agent_id"] = spaces.Discrete(num_agents + 1, start = -1)
+        if observe_method in ["ajg_new", "ajg_newer", "adjacency", "bitmap"]:
+            state_space["agent_id"] = spaces.Box(
+                low = -1,
+                high = len(self.possible_agents),
+                dtype=np.int32
+            )
 
         # Add vertex idleness time.
-        if self.observe_method in ["normalization", "ranking", "raw", "old", "ajg_new", "adjacency"]:
-            state_space["vertex_state"]: spaces.Dict({
+        if observe_method in ["ranking", "raw", "old", "ajg_new", "ajg_newer", "adjacency", "idlenessOnly"]:
+            state_space["vertex_state"] = spaces.Dict({
                 v: spaces.Box(
                     low = -1.0,
                     high = np.inf,
@@ -117,7 +131,14 @@ class parallel_env(ParallelEnv):
             }) # type: ignore
 
         # Add agent Euclidean position.
-        if self.observe_method in ["normalization", "ranking", "raw", "old"]:
+        if observe_method in ["ranking", "raw", "old"]:
+            # Get graph bounds in Euclidean space.
+            pos = nx.get_node_attributes(self.pg.graph, 'pos')
+            minPosX = min(pos[p][0] for p in pos)
+            maxPosX = max(pos[p][0] for p in pos)
+            minPosY = min(pos[p][1] for p in pos)
+            maxPosY = max(pos[p][1] for p in pos)
+
             state_space["agent_state"] = spaces.Dict({
                 a: spaces.Box(
                     low = np.array([minPosX, minPosY], dtype=np.float32),
@@ -126,7 +147,7 @@ class parallel_env(ParallelEnv):
             }) # type: ignore
         
         # Add vertex distances from each agent.
-        if self.observe_method in ["old", "ajg_new"]:
+        if observe_method in ["old", "ajg_new", "ajg_newer"]:
             state_space["vertex_distances"] = spaces.Dict({
                 a: spaces.Box(
                     low = np.array([0.0] * self.pg.graph.number_of_nodes(), dtype=np.float32),
@@ -135,7 +156,7 @@ class parallel_env(ParallelEnv):
             }) # type: ignore
         
         # Add bitmap observation.
-        if self.observe_method in ["bitmap"]:
+        if observe_method in ["bitmap"]:
             state_space["bitmap"] = spaces.Box(
                 low=-1.0,
                 high=np.inf,
@@ -144,7 +165,7 @@ class parallel_env(ParallelEnv):
             )
         
         # Add adjacency matrix.
-        if self.observe_method in ["adjacency"]:
+        if observe_method in ["adjacency", "ajg_newer"]:
             state_space["adjacency"] = spaces.Box(
                 low=-1.0,
                 high=1.0,
@@ -153,7 +174,7 @@ class parallel_env(ParallelEnv):
             )
         
         # Add agent graph position vector.
-        if self.observe_method in ["adjacency"]:
+        if observe_method in ["adjacency", "ajg_newer"]:
             state_space["agent_graph_position"] = spaces.Dict({
                 a: spaces.Box(
                     low = np.array([-1.0, -1.0, -1.0], dtype=np.float32),
@@ -162,15 +183,7 @@ class parallel_env(ParallelEnv):
             }) # type: ignore
         
         state_space = spaces.Dict(state_space)
-        
-        # The state space is a complete observation of the environment.
-        # This is not part of the standard PettingZoo API, but is useful for centralized training.
-        self.state_space = state_space
-        
-        # Create the observation space.
-        self.observation_spaces = spaces.Dict({agent: self.state_space for agent in self.possible_agents}) # type: ignore
-
-        self.reset()
+        return state_space
 
 
     def reset(self, seed=None, options=None):
@@ -194,7 +207,8 @@ class parallel_env(ParallelEnv):
         # Reset other state.
         self.step_count = 0
         self.dones = dict.fromkeys(self.agents, False)
-        
+
+        # Return the initial observation.
         observation = {agent: self.observe(agent) for agent in self.agents}
         info = {
             agent: {
@@ -262,13 +276,25 @@ class parallel_env(ParallelEnv):
         ''' Returns the global state of the environment.
             This is useful for centralized training, decentralized execution. '''
         
-        state = self.observe(self.possible_agents[0], radius=np.inf, allow_done_agents=True)
-        if "agent_id" in state:
-            state["agent_id"] = -1
+        return self._populateStateSpace(self.observe_method_global, self.possible_agents[0], radius=np.inf, allow_done_agents=True)
+
+    def state_all(self):
+        ''' Similar to the state() method, but this returns a customized copy of the state space for each agent.
+            This is useful for centralized training, decentralized execution. '''
+        
+        state = {}
+        for agent in self.possible_agents:
+            state[agent] = self._populateStateSpace(self.observe_method_global, agent, radius=np.inf, allow_done_agents=True)
         return state
 
     def observe(self, agent, radius=None, allow_done_agents=False):
         ''' Returns the observation for the given agent.'''
+
+        return self._populateStateSpace(self.observe_method, agent, radius, allow_done_agents)
+
+
+    def _populateStateSpace(self, observe_method, agent, radius, allow_done_agents):
+        ''' Returns a populated state/observation space.'''
 
         if radius == None:
             radius = agent.observationRadius
@@ -283,28 +309,21 @@ class parallel_env(ParallelEnv):
         obs = {}
 
         # Add agent ID.
-        if self.observe_method in ["ajg_new", "adjacency", "bitmap"]:
+        if observe_method in ["ajg_new", "ajg_newer", "adjacency", "bitmap"]:
             obs["agent_id"] = agent.id
 
         # Add agent position.
-        if self.observe_method in ["normalization", "ranking", "raw", "old"]:
+        if observe_method in ["ranking", "raw", "old"]:
             obs["agent_state"] = {a: a.position for a in agents}
 
         # Add vertex idleness time (ranked).
-        if self.observe_method in ["ranking"]:
+        if observe_method in ["ranking"]:
             nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in vertices}
             unique_sorted_idleness_times = sorted(list(set(nodes_idless.values())))
             obs["vertex_state"] = {v: unique_sorted_idleness_times.index(nodes_idless[v]) for v in vertices}
-
-        # Add vertex idleness time (normalized).
-        if self.observe_method in ["normalization"]:
-            nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in vertices}
-            min_ = min(nodes_idless.values())
-            max_ = max(nodes_idless.values())
-            obs["vertex_state"] = {v: (nodes_idless[v]-min_)/(max_ - min_) for v in vertices}
         
         # Add vertex idleness time (minMax normalized).
-        if self.observe_method in ["ajg_new", "adjacency"]:
+        if observe_method in ["ajg_new", "ajg_newer"]:
             # Create numpy array of idleness times.
             idlenessTimes = np.zeros(self.pg.graph.number_of_nodes())
             for v in vertices:
@@ -325,12 +344,12 @@ class parallel_env(ParallelEnv):
                 obs["vertex_state"][v] = idlenessTimes[v]
 
         # Add vertex idleness time (raw).
-        if self.observe_method in ["raw", "old"]:
+        if observe_method in ["raw", "old", "idlenessOnly", "adjacency"]:
             nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in vertices}
             obs["vertex_state"] = {v: nodes_idless[v] for v in vertices}
 
         # Add vertex distances from each agent (raw).
-        if self.observe_method in ["old"]:
+        if observe_method in ["old"]:
             vertexDistances = {}
             for a in agents:
                 vDists = np.zeros(self.pg.graph.number_of_nodes())
@@ -341,7 +360,7 @@ class parallel_env(ParallelEnv):
             obs["vertex_distances"] = vertexDistances
 
         # Add vertex distances from each agent (normalized).
-        if self.observe_method in ["ajg_new"]:
+        if observe_method in ["ajg_new", "ajg_newer"]:
             # Calculate the shortest path distances from each agent to each node.
             vDists = np.zeros((len(agents), self.pg.graph.number_of_nodes()))
             for a in agents:
@@ -361,7 +380,7 @@ class parallel_env(ParallelEnv):
             obs["vertex_distances"] = vertexDistances
 
         # Add bitmap observation.
-        if self.observe_method in ["bitmap"]:
+        if observe_method in ["bitmap"]:
             # Calculate the shortest path distances from each agent to each node.
             bitmap = -1.0 * np.ones(self.observation_space(agent)["bitmap"].shape, dtype=np.float32)
 
@@ -404,8 +423,17 @@ class parallel_env(ParallelEnv):
 
             obs["bitmap"] = bitmap
 
-        # Add adjacency matrix (normalized).
-        if self.observe_method in ["adjacency"]:
+        # Add adjacency matrix.
+        if observe_method in ["ajg_newer"]:
+            # Create adjacency matrix.
+            adjacency = -1.0 * np.ones(self.observation_space(agent)["adjacency"].shape, dtype=np.float32)
+            for edge in self.pg.graph.edges:
+                adjacency[edge[0], edge[1]] = 1.0
+                adjacency[edge[1], edge[0]] = 1.0
+            obs["adjacency"] = adjacency
+
+        # Add weighted adjacency matrix (normalized).
+        if observe_method in ["adjacency"]:
             # Create adjacency matrix.
             adjacency = -1.0 * np.ones(self.observation_space(agent)["adjacency"].shape, dtype=np.float32)
             for edge in self.pg.graph.edges:
@@ -416,7 +444,7 @@ class parallel_env(ParallelEnv):
             obs["adjacency"] = adjacency
         
         # Add agent graph position vector.
-        if self.observe_method in ["adjacency"]:
+        if observe_method in ["adjacency", "ajg_newer"]:
             graphPos = {}
             # Set default value of -1.0
             for a in self.possible_agents:
