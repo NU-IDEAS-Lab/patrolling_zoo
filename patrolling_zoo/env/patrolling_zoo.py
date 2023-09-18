@@ -514,7 +514,9 @@ class parallel_env(ParallelEnv):
                 # This is rather primitive as we don't account for the agent being on an edge, etc.
                 elif self.action_method == "neighbors":
                     if action >= self.pg.graph.degree(agent.lastNode):
-                        raise ValueError(f"Invalid action {action} for agent {agent.name}")
+                        # Provide a penalty for invalid actions.
+                        reward_dict[agent] -= 0.5 * self.alpha
+                        continue
                     dstNode = list(self.pg.graph.neighbors(agent.lastNode))[action]
                 
                 else:
