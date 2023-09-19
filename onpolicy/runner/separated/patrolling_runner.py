@@ -637,7 +637,11 @@ class PatrollingRunner(Runner):
                                                             np.concatenate(buf.rnn_states_critic[buf.step]),
                                                             np.concatenate(buf.masks[buf.step]))
             next_value = np.array(np.split(_t2n(next_value), self.n_rollout_threads))
-            self.critic_buffer.compute_returns(next_value, self.trainer[0].value_normalizer)
+            self.critic_buffer.compute_returns(
+                next_value,
+                self.trainer[0].value_normalizer,
+                last_step=buf.step
+            )
 
         # Compute returns for the decentralized critics.
         else:
@@ -653,7 +657,11 @@ class PatrollingRunner(Runner):
                             buf.masks[buf.step - 1]
                         )
                         next_value = _t2n(next_value)
-                        buf.compute_returns(next_value, self.trainer[agent_id].value_normalizer)
+                        buf.compute_returns(
+                            next_value,
+                            self.trainer[agent_id].value_normalizer,
+                            last_step=buf.step
+                        )
             
             # Otherwise, we compute returns for each agent's policy using a single buffer.
             else:
@@ -666,7 +674,11 @@ class PatrollingRunner(Runner):
                         buf.masks[buf.step - 1]
                     )
                     next_value = _t2n(next_value)
-                    self.buffer[agent_id].compute_returns(next_value, self.trainer[agent_id].value_normalizer)
+                    self.buffer[agent_id].compute_returns(
+                        next_value,
+                        self.trainer[agent_id].value_normalizer,
+                        last_step=buf.step
+                    )
 
     def train(self):
         train_infos = {

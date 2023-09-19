@@ -131,14 +131,14 @@ class SeparatedReplayBuffer(object):
         self.masks[0] = self.masks[-1].copy()
         self.bad_masks[0] = self.bad_masks[-1].copy()
 
-    def compute_returns(self, next_value, value_normalizer=None):
+    def compute_returns(self, next_value, value_normalizer=None, last_step=-1):
         # Check whether we should use the AMADM GAE modification from https://arxiv.org/abs/2308.06036
         # Unfortunately, I don't have time to implement for all of the other options (like use_proper_time_limits),
         # so I just ignore them!
         if self._use_gae_amadm and not self._use_gae:
-            self.value_preds[-1] = next_value
+            self.value_preds[last_step] = next_value
             gae = 0
-            for step in reversed(range(self.step)):
+            for step in reversed(range(last_step)):
                 if self._use_popart or self._use_valuenorm:
                     delta = self.rewards[step] + np.power(self.gamma, self.deltaSteps[step]) * value_normalizer.denormalize(
                         self.value_preds[step + 1]) * self.masks[step + 1] \
@@ -153,7 +153,7 @@ class SeparatedReplayBuffer(object):
         
         elif self._use_proper_time_limits:
             if self._use_gae:
-                self.value_preds[-1] = next_value
+                self.value_preds[last_step] = next_value
                 gae = 0
                 for step in reversed(range(self.rewards.shape[0])):
                     if self._use_popart or self._use_valuenorm:
@@ -168,7 +168,7 @@ class SeparatedReplayBuffer(object):
                         gae = gae * self.bad_masks[step + 1]
                         self.returns[step] = gae + self.value_preds[step]
             else:
-                self.returns[-1] = next_value
+                self.returns[last_step] = next_value
                 for step in reversed(range(self.rewards.shape[0])):
                     if self._use_popart:
                         self.returns[step] = (self.returns[step + 1] * self.gamma * self.masks[step + 1] + self.rewards[step]) * self.bad_masks[step + 1] \
@@ -178,7 +178,7 @@ class SeparatedReplayBuffer(object):
                             + (1 - self.bad_masks[step + 1]) * self.value_preds[step]
         else:
             if self._use_gae:
-                self.value_preds[-1] = next_value
+                self.value_preds[last_step] = next_value
                 gae = 0
                 for step in reversed(range(self.rewards.shape[0])):
                     if self._use_popart or self._use_valuenorm:
@@ -190,7 +190,7 @@ class SeparatedReplayBuffer(object):
                         gae = delta + self.gamma * self.gae_lambda * self.masks[step + 1] * gae
                         self.returns[step] = gae + self.value_preds[step]
             else:
-                self.returns[-1] = next_value
+                self.returns[last_step] = next_value
                 for step in reversed(range(self.rewards.shape[0])):
                     self.returns[step] = self.returns[step + 1] * self.gamma * self.masks[step + 1] + self.rewards[step]
 
