@@ -194,8 +194,10 @@ class SeparatedReplayBuffer(object):
                 for step in reversed(range(self.rewards.shape[0])):
                     self.returns[step] = self.returns[step + 1] * self.gamma * self.masks[step + 1] + self.rewards[step]
 
-    def feed_forward_generator(self, advantages, num_mini_batch=None, mini_batch_size=None):
+    def feed_forward_generator(self, advantages, num_mini_batch=None, mini_batch_size=None, last_step=-1):
         episode_length, n_rollout_threads = self.rewards.shape[0:2]
+        if last_step != -1:
+            episode_length = last_step
         batch_size = n_rollout_threads * episode_length
 
         if mini_batch_size is None:
@@ -210,17 +212,17 @@ class SeparatedReplayBuffer(object):
         rand = torch.randperm(batch_size).numpy()
         sampler = [rand[i*mini_batch_size:(i+1)*mini_batch_size] for i in range(num_mini_batch)]
 
-        share_obs = self.share_obs[:-1].reshape(-1, *self.share_obs.shape[2:])
-        obs = self.obs[:-1].reshape(-1, *self.obs.shape[2:])
-        rnn_states = self.rnn_states[:-1].reshape(-1, *self.rnn_states.shape[2:])
-        rnn_states_critic = self.rnn_states_critic[:-1].reshape(-1, *self.rnn_states_critic.shape[2:])
+        share_obs = self.share_obs[:last_step].reshape(-1, *self.share_obs.shape[2:])
+        obs = self.obs[:last_step].reshape(-1, *self.obs.shape[2:])
+        rnn_states = self.rnn_states[:last_step].reshape(-1, *self.rnn_states.shape[2:])
+        rnn_states_critic = self.rnn_states_critic[:last_step].reshape(-1, *self.rnn_states_critic.shape[2:])
         actions = self.actions.reshape(-1, self.actions.shape[-1])
         if self.available_actions is not None:
-            available_actions = self.available_actions[:-1].reshape(-1, self.available_actions.shape[-1])
-        value_preds = self.value_preds[:-1].reshape(-1, 1)
-        returns = self.returns[:-1].reshape(-1, 1)
-        masks = self.masks[:-1].reshape(-1, 1)
-        active_masks = self.active_masks[:-1].reshape(-1, 1)
+            available_actions = self.available_actions[:last_step].reshape(-1, self.available_actions.shape[-1])
+        value_preds = self.value_preds[:last_step].reshape(-1, 1)
+        returns = self.returns[:last_step].reshape(-1, 1)
+        masks = self.masks[:last_step].reshape(-1, 1)
+        active_masks = self.active_masks[:last_step].reshape(-1, 1)
         action_log_probs = self.action_log_probs.reshape(-1, self.action_log_probs.shape[-1])
         advantages = advantages.reshape(-1, 1)
 
@@ -247,7 +249,7 @@ class SeparatedReplayBuffer(object):
 
             yield share_obs_batch, obs_batch, rnn_states_batch, rnn_states_critic_batch, actions_batch, value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch, adv_targ, available_actions_batch
 
-    def naive_recurrent_generator(self, advantages, num_mini_batch):
+    def naive_recurrent_generator(self, advantages, num_mini_batch, last_step=-1):
         n_rollout_threads = self.rewards.shape[1]
         assert n_rollout_threads >= num_mini_batch, (
             "PPO requires the number of processes ({}) "
@@ -271,22 +273,24 @@ class SeparatedReplayBuffer(object):
 
             for offset in range(num_envs_per_batch):
                 ind = perm[start_ind + offset]
-                share_obs_batch.append(self.share_obs[:-1, ind])
-                obs_batch.append(self.obs[:-1, ind])
+                share_obs_batch.append(self.share_obs[:last_step, ind])
+                obs_batch.append(self.obs[:last_step, ind])
                 rnn_states_batch.append(self.rnn_states[0:1, ind])
                 rnn_states_critic_batch.append(self.rnn_states_critic[0:1, ind])
                 actions_batch.append(self.actions[:, ind])
                 if self.available_actions is not None:
-                    available_actions_batch.append(self.available_actions[:-1, ind])
-                value_preds_batch.append(self.value_preds[:-1, ind])
-                return_batch.append(self.returns[:-1, ind])
-                masks_batch.append(self.masks[:-1, ind])
-                active_masks_batch.append(self.active_masks[:-1, ind])
+                    available_actions_batch.append(self.available_actions[:last_step, ind])
+                value_preds_batch.append(self.value_preds[:last_step, ind])
+                return_batch.append(self.returns[:last_step, ind])
+                masks_batch.append(self.masks[:last_step, ind])
+                active_masks_batch.append(self.active_masks[:last_step, ind])
                 old_action_log_probs_batch.append(self.action_log_probs[:, ind])
                 adv_targ.append(advantages[:, ind])
 
             # [N[T, dim]]
             T, N = self.episode_length, num_envs_per_batch
+            if last_step != -1:
+                T = last_step
             # These are all from_numpys of size (T, N, -1)
             share_obs_batch = np.stack(share_obs_batch, 1)
             obs_batch = np.stack(obs_batch, 1)
@@ -321,8 +325,10 @@ class SeparatedReplayBuffer(object):
 
             yield share_obs_batch, obs_batch, rnn_states_batch, rnn_states_critic_batch, actions_batch, value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch, adv_targ, available_actions_batch
 
-    def recurrent_generator(self, advantages, num_mini_batch, data_chunk_length):
+    def recurrent_generator(self, advantages, num_mini_batch, data_chunk_length, last_step=-1):
         episode_length, n_rollout_threads = self.rewards.shape[0:2]
+        if last_step != -1:
+            episode_length = last_step
         batch_size = n_rollout_threads * episode_length
         data_chunks = batch_size // data_chunk_length  # [C=r*T/L]
         mini_batch_size = data_chunks // num_mini_batch
@@ -337,26 +343,26 @@ class SeparatedReplayBuffer(object):
         sampler = [rand[i*mini_batch_size:(i+1)*mini_batch_size] for i in range(num_mini_batch)]
 
         if len(self.share_obs.shape) > 3:
-            share_obs = self.share_obs[:-1].transpose(1, 0, 2, 3, 4).reshape(-1, *self.share_obs.shape[2:])
-            obs = self.obs[:-1].transpose(1, 0, 2, 3, 4).reshape(-1, *self.obs.shape[2:])
+            share_obs = self.share_obs[:last_step].transpose(1, 0, 2, 3, 4).reshape(-1, *self.share_obs.shape[2:])
+            obs = self.obs[:last_step].transpose(1, 0, 2, 3, 4).reshape(-1, *self.obs.shape[2:])
         else:
-            share_obs = _cast(self.share_obs[:-1])
-            obs = _cast(self.obs[:-1])
+            share_obs = _cast(self.share_obs[:last_step])
+            obs = _cast(self.obs[:last_step])
 
         actions = _cast(self.actions)
         action_log_probs = _cast(self.action_log_probs)
         advantages = _cast(advantages)
-        value_preds = _cast(self.value_preds[:-1])
-        returns = _cast(self.returns[:-1])
-        masks = _cast(self.masks[:-1])
-        active_masks = _cast(self.active_masks[:-1])
-        # rnn_states = _cast(self.rnn_states[:-1])
-        # rnn_states_critic = _cast(self.rnn_states_critic[:-1])
-        rnn_states = self.rnn_states[:-1].transpose(1, 0, 2, 3).reshape(-1, *self.rnn_states.shape[2:])
-        rnn_states_critic = self.rnn_states_critic[:-1].transpose(1, 0, 2, 3).reshape(-1, *self.rnn_states_critic.shape[2:])
+        value_preds = _cast(self.value_preds[:last_step])
+        returns = _cast(self.returns[:last_step])
+        masks = _cast(self.masks[:last_step])
+        active_masks = _cast(self.active_masks[:last_step])
+        # rnn_states = _cast(self.rnn_states[:last_step])
+        # rnn_states_critic = _cast(self.rnn_states_critic[:last_step])
+        rnn_states = self.rnn_states[:last_step].transpose(1, 0, 2, 3).reshape(-1, *self.rnn_states.shape[2:])
+        rnn_states_critic = self.rnn_states_critic[:last_step].transpose(1, 0, 2, 3).reshape(-1, *self.rnn_states_critic.shape[2:])
 
         if self.available_actions is not None:
-            available_actions = _cast(self.available_actions[:-1])
+            available_actions = _cast(self.available_actions[:last_step])
 
         for indices in sampler:
             share_obs_batch = []

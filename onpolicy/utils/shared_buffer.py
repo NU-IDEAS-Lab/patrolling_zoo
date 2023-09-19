@@ -260,13 +260,16 @@ class SharedReplayBuffer(object):
                 for step in reversed(range(self.rewards.shape[0])):
                     self.returns[step] = self.returns[step + 1] * self.gamma * self.masks[step + 1] + self.rewards[step]
 
-    def feed_forward_generator(self, advantages, num_mini_batch=None, mini_batch_size=None):
+    def feed_forward_generator(self, advantages, num_mini_batch=None, mini_batch_size=None, last_step=-1):
         """
         Yield training data for MLP policies.
         :param advantages: (np.ndarray) advantage estimates.
         :param num_mini_batch: (int) number of minibatches to split the batch into.
         :param mini_batch_size: (int) number of samples in each minibatch.
         """
+        if last_step != -1:
+            raise NotImplementedError("The last_step argument is not yet implemented for the SharedReplayBuffer. It is only available for SeparatedReplayBuffer.")
+
         episode_length, n_rollout_threads, num_agents = self.rewards.shape[0:3]
         batch_size = n_rollout_threads * episode_length * num_agents
 
@@ -322,12 +325,15 @@ class SharedReplayBuffer(object):
                   value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch,\
                   adv_targ, available_actions_batch
 
-    def naive_recurrent_generator(self, advantages, num_mini_batch):
+    def naive_recurrent_generator(self, advantages, num_mini_batch, last_step=-1):
         """
         Yield training data for non-chunked RNN training.
         :param advantages: (np.ndarray) advantage estimates.
         :param num_mini_batch: (int) number of minibatches to split the batch into.
         """
+        if last_step != -1:
+            raise NotImplementedError("The last_step argument is not yet implemented for the SharedReplayBuffer. It is only available for SeparatedReplayBuffer.")
+
         episode_length, n_rollout_threads, num_agents = self.rewards.shape[0:3]
         batch_size = n_rollout_threads * num_agents
         assert n_rollout_threads * num_agents >= num_mini_batch, (
@@ -419,13 +425,16 @@ class SharedReplayBuffer(object):
                   value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch,\
                   adv_targ, available_actions_batch
 
-    def recurrent_generator(self, advantages, num_mini_batch, data_chunk_length):
+    def recurrent_generator(self, advantages, num_mini_batch, data_chunk_length, last_step=-1):
         """
         Yield training data for chunked RNN training.
         :param advantages: (np.ndarray) advantage estimates.
         :param num_mini_batch: (int) number of minibatches to split the batch into.
         :param data_chunk_length: (int) length of sequence chunks with which to train RNN.
         """
+        if last_step != -1:
+            raise NotImplementedError("The last_step argument is not yet implemented for the SharedReplayBuffer. It is only available for SeparatedReplayBuffer.")
+
         episode_length, n_rollout_threads, num_agents = self.rewards.shape[0:3]
         batch_size = n_rollout_threads * episode_length * num_agents
         data_chunks = batch_size // data_chunk_length  # [C=r*T*M/L]

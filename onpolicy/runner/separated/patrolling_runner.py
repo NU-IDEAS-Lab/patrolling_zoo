@@ -694,7 +694,8 @@ class PatrollingRunner(Runner):
                     train_info = self.trainer[agent_id].train(
                         self.buffer[i][agent_id],
                         update_actor=True,
-                        update_critic=(not self.use_centralized_V)
+                        update_critic=(not self.use_centralized_V),
+                        last_step=self.buffer[i][agent_id].step
                     )
                     train_infos["actors"][i].append(train_info)       
                     self.buffer[i][agent_id].after_update()
