@@ -163,17 +163,17 @@ class SharedReplayBuffer(object):
         # Increment step count.
         self.step += 1
 
-    def after_update(self):
+    def after_update(self, last_step=-1):
         """Copy last timestep data to first index. Called after update to model."""
-        self.share_obs[0] = self.share_obs[-1].copy()
-        self.obs[0] = self.obs[-1].copy()
-        self.rnn_states[0] = self.rnn_states[-1].copy()
-        self.rnn_states_critic[0] = self.rnn_states_critic[-1].copy()
-        self.masks[0] = self.masks[-1].copy()
-        self.bad_masks[0] = self.bad_masks[-1].copy()
-        self.active_masks[0] = self.active_masks[-1].copy()
+        self.share_obs[0] = self.share_obs[last_step].copy()
+        self.obs[0] = self.obs[last_step].copy()
+        self.rnn_states[0] = self.rnn_states[last_step].copy()
+        self.rnn_states_critic[0] = self.rnn_states_critic[last_step].copy()
+        self.masks[0] = self.masks[last_step].copy()
+        self.bad_masks[0] = self.bad_masks[last_step].copy()
+        self.active_masks[0] = self.active_masks[last_step].copy()
         if self.available_actions is not None:
-            self.available_actions[0] = self.available_actions[-1].copy()
+            self.available_actions[0] = self.available_actions[last_step].copy()
 
     def chooseafter_update(self):
         """Copy last timestep data to first index. This method is used for Hanabi."""

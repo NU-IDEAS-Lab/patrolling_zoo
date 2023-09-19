@@ -698,7 +698,9 @@ class PatrollingRunner(Runner):
                         last_step=self.buffer[i][agent_id].step
                     )
                     train_infos["actors"][i].append(train_info)       
-                    self.buffer[i][agent_id].after_update()
+                    self.buffer[i][agent_id].after_update(
+                        last_step = self.buffer[i][agent_id].step
+                    )
         
         else:
             # Otherwise, we update each agent's policy using a single buffer.
