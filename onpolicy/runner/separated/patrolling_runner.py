@@ -89,7 +89,7 @@ class PatrollingRunner(Runner):
             self.ready = np.ones((self.n_rollout_threads, self.num_agents), dtype=bool)
 
             # Set the delta steps to 1.
-            delta_steps = np.ones((self.n_rollout_threads, self.num_agents), dtype=np.int32)
+            delta_steps = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.int32)
 
             # In async mode, reset the buffer for each rollout thread for each agent.
             if self.all_args.skip_steps_async:
