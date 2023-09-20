@@ -88,6 +88,9 @@ class PatrollingRunner(Runner):
             # Create a matrix indicating whether each agent in each environment is ready for a new action.
             self.ready = np.ones((self.n_rollout_threads, self.num_agents), dtype=bool)
 
+            # Set the delta steps to 1.
+            delta_steps = np.ones((self.n_rollout_threads, self.num_agents), dtype=np.int32)
+
             # In async mode, reset the buffer for each rollout thread for each agent.
             if self.all_args.skip_steps_async:
                 for i in range(self.n_rollout_threads):
@@ -124,14 +127,16 @@ class PatrollingRunner(Runner):
                 obs = np.array(obs)
                 share_obs = np.array(share_obs)
 
-                # Get the delta steps from the environment info.
-                delta_steps = np.array([info["deltaSteps"] for info in infos])
-
                 # Combine into single data structure.
                 data = obs, share_obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic, delta_steps
                 
                 # Insert data into buffer
                 data_critic_prev = self.insert(data, data_critic_prev)
+
+                # Get the delta steps from the environment info.
+                # Do not set this number until after the data has been inserted into the buffer.
+                # This is because the action at this step might have been 0, resulting in no insertion.
+                delta_steps = np.array([info["deltaSteps"] for info in infos])
 
                 # Ensure that all buffers are at step 0.
                 if step == 0 and self.all_args.skip_steps_async:
@@ -633,6 +638,12 @@ class PatrollingRunner(Runner):
             self.trainer[0].prep_rollout()
 
             buf = self.critic_buffer
+
+            # Check that the total step count is correct.
+            stepSum = sum(buf.deltaSteps[:buf.step])
+            if stepSum != self.all_args.episode_length:
+                raise RuntimeError(f"Total step count is incorrect for critic buffer! Expected {self.all_args.episode_length}, got {stepSum}")
+
             next_value = self.trainer[0].policy.get_values(np.concatenate(buf.share_obs[buf.step]), 
                                                             np.concatenate(buf.rnn_states_critic[buf.step]),
                                                             np.concatenate(buf.masks[buf.step]))
@@ -651,6 +662,11 @@ class PatrollingRunner(Runner):
                     for agent_id in range(self.num_agents):
                         self.trainer[agent_id].prep_rollout()
                         buf = self.buffer[i][agent_id]
+
+                        stepSum = sum(buf.deltaSteps[:buf.step])
+                        if stepSum != self.all_args.episode_length:
+                            raise RuntimeError(f"Total step count is incorrect for buffer {i}-{agent_id}! Expected {self.all_args.episode_length}, got {stepSum}")
+
                         next_value = self.trainer[agent_id].policy.get_values(
                             buf.share_obs[buf.step - 1], 
                             buf.rnn_states_critic[buf.step - 1],
