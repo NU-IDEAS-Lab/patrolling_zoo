@@ -640,8 +640,8 @@ class PatrollingRunner(Runner):
             buf = self.critic_buffer
 
             # Check that the total step count is correct.
-            stepSum = sum(buf.deltaSteps[:buf.step])
-            if stepSum != self.all_args.episode_length:
+            stepSum = np.sum(buf.deltaSteps[:buf.step], axis=0)
+            if np.any(stepSum != self.all_args.episode_length):
                 raise RuntimeError(f"Total step count is incorrect for critic buffer! Expected {self.all_args.episode_length}, got {stepSum}")
 
             next_value = self.trainer[0].policy.get_values(np.concatenate(buf.share_obs[buf.step]), 
