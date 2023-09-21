@@ -67,6 +67,9 @@ def parse_args(args, parser):
     parser.add_argument("--graph_name", type=str,
                         default="4nodes", 
                         help="which graph to run on.")
+    parser.add_argument("--reward_method_terminal", type=str,
+                        default="average", 
+                        help="the method to use for terminal reward.")
     parser.add_argument("--num_agents", type=int, default=3,
                         help="number of controlled players.")
     parser.add_argument("--agent_speed", type=float, default=10.0,

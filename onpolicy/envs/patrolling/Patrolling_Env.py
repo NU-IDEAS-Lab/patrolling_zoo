@@ -57,6 +57,7 @@ class PatrollingEnv(object):
             action_method = args.action_method,
             observe_method = args.observe_method,
             observe_method_global = args.observe_method_global,
+            reward_method_terminal = args.reward_method_terminal,
             max_cycles = -1 if self.args.skip_steps_sync else args.episode_length
         )
             
@@ -185,5 +186,4 @@ class PatrollingEnv(object):
         # return obs
 
     def _info_wrapper(self, info):
-        info["avg_idleness"] = self.env.pg.getAverageIdlenessTime(self.env.step_count)
         return info

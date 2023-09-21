@@ -88,6 +88,9 @@ class PatrollingRunner(Runner):
             # Create a matrix indicating whether each agent in each environment is ready for a new action.
             self.ready = np.ones((self.n_rollout_threads, self.num_agents), dtype=bool)
 
+            # Set the delta steps to 1.
+            delta_steps = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.int32)
+
             # In async mode, reset the buffer for each rollout thread for each agent.
             if self.all_args.skip_steps_async:
                 for i in range(self.n_rollout_threads):
@@ -124,14 +127,16 @@ class PatrollingRunner(Runner):
                 obs = np.array(obs)
                 share_obs = np.array(share_obs)
 
-                # Get the delta steps from the environment info.
-                delta_steps = np.array([info["deltaSteps"] for info in infos])
-
                 # Combine into single data structure.
                 data = obs, share_obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic, delta_steps
                 
                 # Insert data into buffer
                 data_critic_prev = self.insert(data, data_critic_prev)
+
+                # Get the delta steps from the environment info.
+                # Do not set this number until after the data has been inserted into the buffer.
+                # This is because the action at this step might have been 0, resulting in no insertion.
+                delta_steps = np.array([info["deltaSteps"] for info in infos])
 
                 # Ensure that all buffers are at step 0.
                 if step == 0 and self.all_args.skip_steps_async:
@@ -305,6 +310,12 @@ class PatrollingRunner(Runner):
         
         # Add the average idleness time to env infos.
         self.env_infos["avg_idleness"] = [i["avg_idleness"] for i in infos]
+        self.env_infos["stddev_idleness"] = [i["stddev_idleness"] for i in infos]
+        self.env_infos["worst_idleness"] = [i["worst_idleness"] for i in infos]
+
+        # Add the number of nodes visited to env infos.
+        for n in range(len(infos[0]["node_visits"])):
+            self.env_infos[f"node_visits/node_{n}"] = [i["node_visits"][n] for i in infos]
 
         # Reset RNN and mask arguments for done agents/envs.
         masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
@@ -463,7 +474,9 @@ class PatrollingRunner(Runner):
 
     def log_env(self, env_infos, total_num_steps):
         for k, v in env_infos.items():
-            if len(v) > 0:
+            if type(v) == wandb.viz.CustomChart and self.use_wandb:
+                wandb.log({k: v}, step=total_num_steps)
+            elif len(v) > 0:
                 if self.use_wandb:
                     wandb.log({k: np.mean(v)}, step=total_num_steps)
                 else:
@@ -633,11 +646,21 @@ class PatrollingRunner(Runner):
             self.trainer[0].prep_rollout()
 
             buf = self.critic_buffer
+
+            # Check that the total step count is correct.
+            stepSum = np.sum(buf.deltaSteps[:buf.step], axis=0)
+            if np.any(stepSum != self.all_args.episode_length):
+                raise RuntimeError(f"Total step count is incorrect for critic buffer! Expected {self.all_args.episode_length}, got {stepSum}")
+
             next_value = self.trainer[0].policy.get_values(np.concatenate(buf.share_obs[buf.step]), 
                                                             np.concatenate(buf.rnn_states_critic[buf.step]),
                                                             np.concatenate(buf.masks[buf.step]))
             next_value = np.array(np.split(_t2n(next_value), self.n_rollout_threads))
-            self.critic_buffer.compute_returns(next_value, self.trainer[0].value_normalizer)
+            self.critic_buffer.compute_returns(
+                next_value,
+                self.trainer[0].value_normalizer,
+                last_step=buf.step
+            )
 
         # Compute returns for the decentralized critics.
         else:
@@ -647,13 +670,22 @@ class PatrollingRunner(Runner):
                     for agent_id in range(self.num_agents):
                         self.trainer[agent_id].prep_rollout()
                         buf = self.buffer[i][agent_id]
+
+                        stepSum = sum(buf.deltaSteps[:buf.step])
+                        if stepSum != self.all_args.episode_length:
+                            raise RuntimeError(f"Total step count is incorrect for buffer {i}-{agent_id}! Expected {self.all_args.episode_length}, got {stepSum}")
+
                         next_value = self.trainer[agent_id].policy.get_values(
                             buf.share_obs[buf.step - 1], 
                             buf.rnn_states_critic[buf.step - 1],
                             buf.masks[buf.step - 1]
                         )
                         next_value = _t2n(next_value)
-                        buf.compute_returns(next_value, self.trainer[agent_id].value_normalizer)
+                        buf.compute_returns(
+                            next_value,
+                            self.trainer[agent_id].value_normalizer,
+                            last_step=buf.step
+                        )
             
             # Otherwise, we compute returns for each agent's policy using a single buffer.
             else:
@@ -666,7 +698,11 @@ class PatrollingRunner(Runner):
                         buf.masks[buf.step - 1]
                     )
                     next_value = _t2n(next_value)
-                    self.buffer[agent_id].compute_returns(next_value, self.trainer[agent_id].value_normalizer)
+                    self.buffer[agent_id].compute_returns(
+                        next_value,
+                        self.trainer[agent_id].value_normalizer,
+                        last_step=buf.step
+                    )
 
     def train(self):
         train_infos = {
@@ -694,10 +730,13 @@ class PatrollingRunner(Runner):
                     train_info = self.trainer[agent_id].train(
                         self.buffer[i][agent_id],
                         update_actor=True,
-                        update_critic=(not self.use_centralized_V)
+                        update_critic=(not self.use_centralized_V),
+                        last_step=self.buffer[i][agent_id].step
                     )
                     train_infos["actors"][i].append(train_info)       
-                    self.buffer[i][agent_id].after_update()
+                    self.buffer[i][agent_id].after_update(
+                        last_step = self.buffer[i][agent_id].step
+                    )
         
         else:
             # Otherwise, we update each agent's policy using a single buffer.

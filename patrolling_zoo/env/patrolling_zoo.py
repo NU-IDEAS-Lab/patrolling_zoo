@@ -49,6 +49,7 @@ class parallel_env(ParallelEnv):
                  alpha = 10.0,
                  beta = 100.0,
                  action_method = "full",
+                 reward_method_terminal = "average",
                  observation_radius = np.inf,
                  observe_method = "ajg_new",
                  observe_method_global = None,
@@ -75,6 +76,7 @@ class parallel_env(ParallelEnv):
         self.max_cycles = max_cycles
         self.comms_model = comms_model
         self.action_method = action_method
+        self.reward_method_terminal = reward_method_terminal
         self.observe_method = observe_method
         self.observe_method_global = observe_method_global if observe_method_global != None else observe_method
 
@@ -200,6 +202,12 @@ class parallel_env(ParallelEnv):
 
         # Reset the graph.
         self.pg.reset()
+
+        # Reset the information about idleness over time.
+        self.avgIdlenessTimes = []
+
+        # Reset the node visit counts.
+        self.nodeVisits = np.zeros(self.pg.graph.number_of_nodes())
 
         # Reset the agents.
         self.agentOrigins = random.sample(list(self.pg.graph.nodes), len(self.possible_agents))
@@ -561,6 +569,9 @@ class parallel_env(ParallelEnv):
                     if stepSize <= 0.0:
                         break
 
+        # Record the average idleness time at this step.
+        self.avgIdlenessTimes.append(self.pg.getAverageIdlenessTime(self.step_count))
+
         # Assign the idleness penalty.
         # for agent in self.agents:
         #     # reward_dict[agent] -= np.log(self.pg.getStdDevIdlenessTime(self.step_count))
@@ -582,14 +593,30 @@ class parallel_env(ParallelEnv):
 
             # Update the observation for the agent
             obs_dict[agent] = agent_observation
+        
+        # Record miscellaneous information.
+        info_dict["node_visits"] = self.nodeVisits
+        info_dict["avg_idleness"] = self.pg.getAverageIdlenessTime(self.step_count)
+        info_dict["stddev_idleness"] = self.pg.getStdDevIdlenessTime(self.step_count)
+        info_dict["worst_idleness"] = self.pg.getWorstIdlenessTime(self.step_count)
 
         # Check truncation conditions.
         if lastStep or (self.max_cycles >= 0 and self.step_count >= self.max_cycles):
-            # Provide an end-of-episode reward.
             for agent in self.agents:
-                # reward_dict[agent] += self.beta * self.step_count / (self.pg.getWorstIdlenessTime(self.step_count) + 1e-8)
-                reward_dict[agent] += self.beta * self.step_count / (self.pg.getAverageIdlenessTime(self.step_count) + 1e-8)
-                # reward_dict[agent] /= self._minMaxNormalize(self.pg.getWorstIdlenessTime(self.step_count), minimum=0.0, maximum=self.max_cycles)
+                # Provide an end-of-episode reward.
+                if self.reward_method_terminal == "average":
+                    reward_dict[agent] += self.beta * self.step_count / (self.pg.getAverageIdlenessTime(self.step_count) + 1e-8)
+                elif self.reward_method_terminal == "worst":
+                    reward_dict[agent] += self.beta * self.step_count / (self.pg.getWorstIdlenessTime(self.step_count) + 1e-8)
+                elif self.reward_method_terminal == "stddev":
+                    reward_dict[agent] += self.beta * self.step_count / (self.pg.getStdDevIdlenessTime(self.step_count) + 1e-8)
+                elif self.reward_method_terminal == "averageAverage":
+                    avg = np.average(self.avgIdlenessTimes)
+                    reward_dict[agent] += self.beta * self.step_count / (avg + 1e-8)
+                elif self.reward_method_terminal == "divNormalizedWorst":
+                    reward_dict[agent] /= self._minMaxNormalize(self.pg.getWorstIdlenessTime(self.step_count), minimum=0.0, maximum=self.max_cycles)
+                else:
+                    raise ValueError(f"Invalid terminal reward method {self.reward_method_terminal}")
 
                 info_dict[agent]["ready"] = True
             
@@ -604,6 +631,9 @@ class parallel_env(ParallelEnv):
             Returns the reward for visiting the node, which is proportional to
             node idleness time. '''
         
+        # Record the node visit.
+        self.nodeVisits[node] += 1
+
         idleness = self.pg.getNodeIdlenessTime(node, timeStamp)
         self.pg.setNodeVisitTime(node, timeStamp)
         return self._minMaxNormalize(idleness, minimum=0.0, maximum=timeStamp)

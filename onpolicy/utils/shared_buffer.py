@@ -163,17 +163,17 @@ class SharedReplayBuffer(object):
         # Increment step count.
         self.step += 1
 
-    def after_update(self):
+    def after_update(self, last_step=-1):
         """Copy last timestep data to first index. Called after update to model."""
-        self.share_obs[0] = self.share_obs[-1].copy()
-        self.obs[0] = self.obs[-1].copy()
-        self.rnn_states[0] = self.rnn_states[-1].copy()
-        self.rnn_states_critic[0] = self.rnn_states_critic[-1].copy()
-        self.masks[0] = self.masks[-1].copy()
-        self.bad_masks[0] = self.bad_masks[-1].copy()
-        self.active_masks[0] = self.active_masks[-1].copy()
+        self.share_obs[0] = self.share_obs[last_step].copy()
+        self.obs[0] = self.obs[last_step].copy()
+        self.rnn_states[0] = self.rnn_states[last_step].copy()
+        self.rnn_states_critic[0] = self.rnn_states_critic[last_step].copy()
+        self.masks[0] = self.masks[last_step].copy()
+        self.bad_masks[0] = self.bad_masks[last_step].copy()
+        self.active_masks[0] = self.active_masks[last_step].copy()
         if self.available_actions is not None:
-            self.available_actions[0] = self.available_actions[-1].copy()
+            self.available_actions[0] = self.available_actions[last_step].copy()
 
     def chooseafter_update(self):
         """Copy last timestep data to first index. This method is used for Hanabi."""
@@ -182,7 +182,7 @@ class SharedReplayBuffer(object):
         self.masks[0] = self.masks[-1].copy()
         self.bad_masks[0] = self.bad_masks[-1].copy()
 
-    def compute_returns(self, next_value, value_normalizer=None):
+    def compute_returns(self, next_value, value_normalizer=None, last_step=-1):
         """
         Compute returns either as discounted sum of rewards, or using GAE.
         :param next_value: (np.ndarray) value predictions for the step after the last episode step.
@@ -193,7 +193,7 @@ class SharedReplayBuffer(object):
         # Unfortunately, I don't have time to implement for all of the other options (like use_proper_time_limits),
         # so I just ignore them!
         if self._use_gae_amadm and not self._use_gae:
-            self.value_preds[-1] = next_value
+            self.value_preds[last_step] = next_value
             gae = 0
             for step in reversed(range(self.rewards.shape[0])):
                 if self._use_popart or self._use_valuenorm:
@@ -210,7 +210,7 @@ class SharedReplayBuffer(object):
         
         elif self._use_proper_time_limits:
             if self._use_gae:
-                self.value_preds[-1] = next_value
+                self.value_preds[last_step] = next_value
                 gae = 0
                 for step in reversed(range(self.rewards.shape[0])):
                     if self._use_popart or self._use_valuenorm:
@@ -228,7 +228,7 @@ class SharedReplayBuffer(object):
                         gae = gae * self.bad_masks[step + 1]
                         self.returns[step] = gae + self.value_preds[step]
             else:
-                self.returns[-1] = next_value
+                self.returns[last_step] = next_value
                 for step in reversed(range(self.rewards.shape[0])):
                     if self._use_popart or self._use_valuenorm:
                         self.returns[step] = (self.returns[step + 1] * self.gamma * self.masks[step + 1] + self.rewards[
@@ -241,7 +241,7 @@ class SharedReplayBuffer(object):
                                              + (1 - self.bad_masks[step + 1]) * self.value_preds[step]
         else:
             if self._use_gae:
-                self.value_preds[-1] = next_value
+                self.value_preds[last_step] = next_value
                 gae = 0
                 for step in reversed(range(self.rewards.shape[0])):
                     if self._use_popart or self._use_valuenorm:
@@ -256,17 +256,20 @@ class SharedReplayBuffer(object):
                         gae = delta + self.gamma * self.gae_lambda * self.masks[step + 1] * gae
                         self.returns[step] = gae + self.value_preds[step]
             else:
-                self.returns[-1] = next_value
+                self.returns[last_step] = next_value
                 for step in reversed(range(self.rewards.shape[0])):
                     self.returns[step] = self.returns[step + 1] * self.gamma * self.masks[step + 1] + self.rewards[step]
 
-    def feed_forward_generator(self, advantages, num_mini_batch=None, mini_batch_size=None):
+    def feed_forward_generator(self, advantages, num_mini_batch=None, mini_batch_size=None, last_step=-1):
         """
         Yield training data for MLP policies.
         :param advantages: (np.ndarray) advantage estimates.
         :param num_mini_batch: (int) number of minibatches to split the batch into.
         :param mini_batch_size: (int) number of samples in each minibatch.
         """
+        if last_step != -1:
+            raise NotImplementedError("The last_step argument is not yet implemented for the SharedReplayBuffer. It is only available for SeparatedReplayBuffer.")
+
         episode_length, n_rollout_threads, num_agents = self.rewards.shape[0:3]
         batch_size = n_rollout_threads * episode_length * num_agents
 
@@ -322,12 +325,15 @@ class SharedReplayBuffer(object):
                   value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch,\
                   adv_targ, available_actions_batch
 
-    def naive_recurrent_generator(self, advantages, num_mini_batch):
+    def naive_recurrent_generator(self, advantages, num_mini_batch, last_step=-1):
         """
         Yield training data for non-chunked RNN training.
         :param advantages: (np.ndarray) advantage estimates.
         :param num_mini_batch: (int) number of minibatches to split the batch into.
         """
+        if last_step != -1:
+            raise NotImplementedError("The last_step argument is not yet implemented for the SharedReplayBuffer. It is only available for SeparatedReplayBuffer.")
+
         episode_length, n_rollout_threads, num_agents = self.rewards.shape[0:3]
         batch_size = n_rollout_threads * num_agents
         assert n_rollout_threads * num_agents >= num_mini_batch, (
@@ -419,13 +425,16 @@ class SharedReplayBuffer(object):
                   value_preds_batch, return_batch, masks_batch, active_masks_batch, old_action_log_probs_batch,\
                   adv_targ, available_actions_batch
 
-    def recurrent_generator(self, advantages, num_mini_batch, data_chunk_length):
+    def recurrent_generator(self, advantages, num_mini_batch, data_chunk_length, last_step=-1):
         """
         Yield training data for chunked RNN training.
         :param advantages: (np.ndarray) advantage estimates.
         :param num_mini_batch: (int) number of minibatches to split the batch into.
         :param data_chunk_length: (int) length of sequence chunks with which to train RNN.
         """
+        if last_step != -1:
+            raise NotImplementedError("The last_step argument is not yet implemented for the SharedReplayBuffer. It is only available for SeparatedReplayBuffer.")
+
         episode_length, n_rollout_threads, num_agents = self.rewards.shape[0:3]
         batch_size = n_rollout_threads * episode_length * num_agents
         data_chunks = batch_size // data_chunk_length  # [C=r*T*M/L]
