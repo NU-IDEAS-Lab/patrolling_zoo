@@ -56,6 +56,7 @@ class PatrollingEnv(object):
             observation_radius = args.observation_radius,
             observe_method = args.observe_method,
             observe_method_global = args.observe_method_global,
+            reward_method_terminal = args.reward_method_terminal,
             max_cycles = -1 if self.args.skip_steps_sync else args.episode_length
         )
             

@@ -48,6 +48,7 @@ class parallel_env(ParallelEnv):
                  speed = 1.0,
                  alpha = 10.0,
                  beta = 100.0,
+                 reward_method_terminal = "average",
                  observation_radius = np.inf,
                  observe_method = "ajg_new",
                  observe_method_global = None,
@@ -73,6 +74,7 @@ class parallel_env(ParallelEnv):
         self.observationRadius = observation_radius
         self.max_cycles = max_cycles
         self.comms_model = comms_model
+        self.reward_method_terminal = reward_method_terminal
         self.observe_method = observe_method
         self.observe_method_global = observe_method_global if observe_method_global != None else observe_method
 
@@ -194,6 +196,9 @@ class parallel_env(ParallelEnv):
 
         # Reset the graph.
         self.pg.reset()
+
+        # Reset the information about idleness over time.
+        self.avgIdlenessTimes = []
 
         # Reset the agents.
         self.agentOrigins = random.sample(list(self.pg.graph.nodes), len(self.possible_agents))
@@ -545,6 +550,9 @@ class parallel_env(ParallelEnv):
                 else:
                     raise ValueError(f"Invalid action {action} for agent {agent.name}")
 
+        # Record the average idleness time at this step.
+        self.avgIdlenessTimes.append(self.pg.getAverageIdlenessTime(self.step_count))
+
         # Assign the idleness penalty.
         # for agent in self.agents:
         #     # reward_dict[agent] -= np.log(self.pg.getStdDevIdlenessTime(self.step_count))
@@ -569,11 +577,21 @@ class parallel_env(ParallelEnv):
 
         # Check truncation conditions.
         if lastStep or (self.max_cycles >= 0 and self.step_count >= self.max_cycles):
-            # Provide an end-of-episode reward.
             for agent in self.agents:
-                # reward_dict[agent] += self.beta * self.step_count / (self.pg.getWorstIdlenessTime(self.step_count) + 1e-8)
-                reward_dict[agent] += self.beta * self.step_count / (self.pg.getAverageIdlenessTime(self.step_count) + 1e-8)
-                # reward_dict[agent] /= self._minMaxNormalize(self.pg.getWorstIdlenessTime(self.step_count), minimum=0.0, maximum=self.max_cycles)
+                # Provide an end-of-episode reward.
+                if self.reward_method_terminal == "average":
+                    reward_dict[agent] += self.beta * self.step_count / (self.pg.getAverageIdlenessTime(self.step_count) + 1e-8)
+                elif self.reward_method_terminal == "worst":
+                    reward_dict[agent] += self.beta * self.step_count / (self.pg.getWorstIdlenessTime(self.step_count) + 1e-8)
+                elif self.reward_method_terminal == "stddev":
+                    reward_dict[agent] += self.beta * self.step_count / (self.pg.getStdDevIdlenessTime(self.step_count) + 1e-8)
+                elif self.reward_method_terminal == "averageAverage":
+                    avg = np.average(self.avgIdlenessTimes)
+                    reward_dict[agent] += self.beta * self.step_count / (avg + 1e-8)
+                elif self.reward_method_terminal == "divNormalizedWorst":
+                    reward_dict[agent] /= self._minMaxNormalize(self.pg.getWorstIdlenessTime(self.step_count), minimum=0.0, maximum=self.max_cycles)
+                else:
+                    raise ValueError(f"Invalid terminal reward method {self.reward_method_terminal}")
 
                 info_dict[agent]["ready"] = True
             
