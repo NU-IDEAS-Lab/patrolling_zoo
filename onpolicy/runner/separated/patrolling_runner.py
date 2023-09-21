@@ -311,6 +311,10 @@ class PatrollingRunner(Runner):
         # Add the average idleness time to env infos.
         self.env_infos["avg_idleness"] = [i["avg_idleness"] for i in infos]
 
+        # Add the number of nodes visited to env infos.
+        for n in range(len(infos[0]["node_visits"])):
+            self.env_infos[f"node_visits/node_{n}"] = [i["node_visits"][n] for i in infos]
+
         # Reset RNN and mask arguments for done agents/envs.
         masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
         for i in range(self.n_rollout_threads):
@@ -468,7 +472,9 @@ class PatrollingRunner(Runner):
 
     def log_env(self, env_infos, total_num_steps):
         for k, v in env_infos.items():
-            if len(v) > 0:
+            if type(v) == wandb.viz.CustomChart and self.use_wandb:
+                wandb.log({k: v}, step=total_num_steps)
+            elif len(v) > 0:
                 if self.use_wandb:
                     wandb.log({k: np.mean(v)}, step=total_num_steps)
                 else:

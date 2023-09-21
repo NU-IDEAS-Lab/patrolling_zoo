@@ -200,6 +200,9 @@ class parallel_env(ParallelEnv):
         # Reset the information about idleness over time.
         self.avgIdlenessTimes = []
 
+        # Reset the node visit counts.
+        self.nodeVisits = np.zeros(self.pg.graph.number_of_nodes())
+
         # Reset the agents.
         self.agentOrigins = random.sample(list(self.pg.graph.nodes), len(self.possible_agents))
         startingPositions = [self.pg.getNodePosition(i) for i in self.agentOrigins]
@@ -574,6 +577,9 @@ class parallel_env(ParallelEnv):
 
             # Update the observation for the agent
             obs_dict[agent] = agent_observation
+        
+        # Record miscellaneous information.
+        info_dict["node_visits"] = self.nodeVisits
 
         # Check truncation conditions.
         if lastStep or (self.max_cycles >= 0 and self.step_count >= self.max_cycles):
@@ -606,6 +612,9 @@ class parallel_env(ParallelEnv):
             Returns the reward for visiting the node, which is proportional to
             node idleness time. '''
         
+        # Record the node visit.
+        self.nodeVisits[node] += 1
+
         idleness = self.pg.getNodeIdlenessTime(node, timeStamp)
         self.pg.setNodeVisitTime(node, timeStamp)
         return self._minMaxNormalize(idleness, minimum=0.0, maximum=timeStamp)
