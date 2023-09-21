@@ -185,5 +185,4 @@ class PatrollingEnv(object):
         # return obs
 
     def _info_wrapper(self, info):
-        info["avg_idleness"] = self.env.pg.getAverageIdlenessTime(self.env.step_count)
         return info

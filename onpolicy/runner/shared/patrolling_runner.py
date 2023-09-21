@@ -151,6 +151,8 @@ class PatrollingRunner(Runner):
 
         # Add the average idleness time to env infos.
         self.env_infos["avg_idleness"] = [i["avg_idleness"] for i in infos]
+        self.env_infos["stddev_idleness"] = [i["stddev_idleness"] for i in infos]
+        self.env_infos["worst_idleness"] = [i["worst_idleness"] for i in infos]
 
         # Add the number of nodes visited to env infos.
         for n in range(len(infos[0]["node_visits"])):
