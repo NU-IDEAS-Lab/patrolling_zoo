@@ -39,6 +39,9 @@ class RandomChoice(BaseAlgorithm):
             
             terms = [False]
             truncs = [False]
+
+            self.prevActions = {a: None for a in self.env.agents}
+
             while not any(terms) and not any(truncs):
                 actions = self.generateActions(obs)
                 obs, rewards, terms, truncs, infos = self.env.step(actions)
@@ -49,6 +52,8 @@ class RandomChoice(BaseAlgorithm):
                 if render:
                     clear_output(wait=True)
                     self.env.render()
+                
+                self.prevActions = actions
 
 
     def generateActions(self, obs):
@@ -57,7 +62,10 @@ class RandomChoice(BaseAlgorithm):
         actions = {}
 
         for agent in self.env.agents:
-            targetNode = random.randint(0, len(self.env.pg.graph.nodes) - 1)
+            if agent.edge == None:
+                targetNode = random.randint(0, len(self.env.pg.graph.nodes) - 1)
+            else:
+                targetNode = self.prevActions[agent]
             actions[agent] = targetNode
         
         return actions
