@@ -529,6 +529,8 @@ class parallel_env(ParallelEnv):
                     # Provide penalty for visiting the same node again.
                     # if agent.lastNodeVisited == dstNode:
                     #     reward_dict[agent] -= 0.5 * np.abs(r)
+                    if agent.lastNodeVisited == dstNode:
+                        reward_dict[agent] -= 1.0
 
                     # Take a step towards the next node.
                     stepSize = agent.speed
