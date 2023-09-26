@@ -688,7 +688,7 @@ class PatrollingRunner(Runner):
                             s += self.buffer[i][agent_id].deltaSteps[s]
             else:
                 for agent_id in range(self.num_agents):
-                    self.buffer[agent_id].returns = self.critic_buffer.returns[:, agent_id]
+                    self.buffer[agent_id].returns = self.critic_buffer.returns[:, :, agent_id]
 
         # Compute returns for the decentralized critics.
         else:
