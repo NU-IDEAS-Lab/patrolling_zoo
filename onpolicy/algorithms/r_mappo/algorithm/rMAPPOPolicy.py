@@ -85,6 +85,18 @@ class R_MAPPOPolicy:
         values, _ = self.critic(cent_obs, rnn_states_critic, masks)
         return values
 
+    def get_values_rnn_states(self, cent_obs, rnn_states_critic, masks):
+        """
+        Get value function predictions.
+        :param cent_obs (np.ndarray): centralized input to the critic.
+        :param rnn_states_critic: (np.ndarray) if critic is RNN, RNN states for critic.
+        :param masks: (np.ndarray) denotes points at which RNN states should be reset.
+
+        :return values: (torch.Tensor) value function predictions.
+        """
+        values, rsc = self.critic(cent_obs, rnn_states_critic, masks)
+        return values, rsc
+
     def evaluate_actions(self, cent_obs, obs, rnn_states_actor, rnn_states_critic, action, masks,
                          available_actions=None, active_masks=None):
         """
