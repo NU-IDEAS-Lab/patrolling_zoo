@@ -665,8 +665,8 @@ class PatrollingRunner(Runner):
 
             # Check that the total step count is correct.
             stepSum = np.sum(buf.deltaSteps[:buf.step], axis=0)
-            # if np.any(stepSum != self.all_args.episode_length):
-            #     raise RuntimeError(f"Total step count is incorrect for critic buffer! Expected {self.all_args.episode_length}, got {stepSum}")
+            if not self.all_args.skip_steps_sync and np.any(stepSum != self.all_args.episode_length):
+                raise RuntimeError(f"Total step count is incorrect for critic buffer! Expected {self.all_args.episode_length}, got {stepSum}")
 
             next_value = self.trainer[0].policy.get_values(np.concatenate(buf.share_obs[buf.step - 1]), 
                                                             np.concatenate(buf.rnn_states_critic[buf.step - 1]),
@@ -723,7 +723,7 @@ class PatrollingRunner(Runner):
 
                     # Check that the total step count is correct.
                     stepSum = np.sum(buf.deltaSteps[:buf.step], axis=0)
-                    if np.any(stepSum != self.all_args.episode_length):
+                    if not self.all_args.skip_steps_sync and np.any(stepSum != self.all_args.episode_length):
                         raise RuntimeError(f"Total step count is incorrect for buffer {agent_id}! Expected {self.all_args.episode_length}, got {stepSum}")
 
                     next_value = self.trainer[agent_id].policy.get_values(
