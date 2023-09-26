@@ -247,6 +247,10 @@ class PatrollingRunner(Runner):
                 for agent_id in range(self.num_agents):
                     # If the agent is not ready, skip it.
                     if not self.ready[i, agent_id]:
+                        # if self.use_centralized_V:
+                        #     # We still need to update some data for the centralized critic.
+                        #     values[i][agent_id] = _t2n(value)[0]
+                        #     rnn_states_critic[i][agent_id] = _t2n(rnn_state_critic)[0]
                         continue
 
                     self.trainer[agent_id].prep_rollout()
@@ -351,6 +355,10 @@ class PatrollingRunner(Runner):
                     # If the agent was not ready for a new action, skip it.
                     # (we determine this by an action == None)
                     if actions[i][agent_id] == None:
+                        # if self.use_centralized_V:
+                        #     # If using the centralized critic, update some data regardless.
+                        #     c_values[i][agent_id] = values[i][agent_id]
+                        #     c_rnn_states_critic[i][agent_id] = rnn_states_critic[i][agent_id]
                         continue
 
                     if self.use_centralized_V:
@@ -685,6 +693,8 @@ class PatrollingRunner(Runner):
                         s = 0
                         for j in range(self.buffer[i][agent_id].step):
                             self.buffer[i][agent_id].returns[j] = self.critic_buffer.returns[s, i, agent_id]
+                            self.buffer[i][agent_id].value_preds[j] = self.critic_buffer.value_preds[s, i, agent_id]
+                            # assert(self.buffer[i][agent_id].value_preds[j] == self.critic_buffer.value_preds[s, i, agent_id])
                             s += int(self.buffer[i][agent_id].deltaSteps[j])
                         assert(s == self.critic_buffer.step)
             else:
