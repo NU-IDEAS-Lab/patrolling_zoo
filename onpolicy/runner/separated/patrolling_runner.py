@@ -235,9 +235,9 @@ class PatrollingRunner(Runner):
         # If using centralized critic, get values once for all agents.
         if self.use_centralized_V:
             value, rnn_state_critic = self.trainer[0].policy.get_values_rnn_states(
-                self.critic_buffer.share_obs[step],
-                self.critic_buffer.rnn_states_critic[step],
-                self.critic_buffer.masks[step]
+                np.concatenate(self.critic_buffer.share_obs[step]),
+                np.concatenate(self.critic_buffer.rnn_states_critic[step]),
+                np.concatenate(self.critic_buffer.masks[step])
             )
 
         # Get actions from the policy.
