@@ -684,7 +684,7 @@ class PatrollingRunner(Runner):
                     for agent_id in range(self.num_agents):
                         s = 0
                         for j in range(self.buffer[i][agent_id].step):
-                            self.buffer[i][agent_id].returns[j] = self.critic_buffer.returns[s]
+                            self.buffer[i][agent_id].returns[j] = self.critic_buffer.returns[s, i, agent_id]
                             s += int(self.buffer[i][agent_id].deltaSteps[j])
                         assert(s == self.critic_buffer.step)
             else:
