@@ -232,6 +232,14 @@ class PatrollingRunner(Runner):
         rnn_states_critic = [[None for a in range(self.num_agents)] for idx in range(self.n_rollout_threads)]
         actions_env = [[None for a in range(self.num_agents)] for idx in range(self.n_rollout_threads)]
 
+        # If using centralized critic, get values once for all agents.
+        if self.use_centralized_V:
+            value, rnn_state_critic = self.trainer[0].policy.get_values_rnn_states(
+                self.critic_buffer.share_obs[step],
+                self.critic_buffer.rnn_states_critic[step],
+                self.critic_buffer.masks[step]
+            )
+
         # Get actions from the policy.
         if self.all_args.skip_steps_async:
             # In asynchronous skipping mode, we use individual buffers for each rollout thread and agent.
@@ -243,16 +251,21 @@ class PatrollingRunner(Runner):
 
                     self.trainer[agent_id].prep_rollout()
 
-                    value, action, action_log_prob, rnn_state, rnn_state_critic = self.trainer[agent_id].policy.get_actions(
+                    v, action, action_log_prob, rnn_state, rsc = self.trainer[agent_id].policy.get_actions(
                         self.buffer[i][agent_id].share_obs[step],
                         self.buffer[i][agent_id].obs[step],
                         self.buffer[i][agent_id].rnn_states[step],
                         self.buffer[i][agent_id].rnn_states_critic[step],
                         self.buffer[i][agent_id].masks[step]
                     )
+
+                    # Determine whether to use value from centralized critic.
+                    if not self.use_centralized_V:
+                        value = v
+                        rnn_state_critic = rsc
+
                     values[i][agent_id] = _t2n(value)[0]
                     action = _t2n(action)[0]
-
                     actions[i][agent_id] = action
                     actions_env[i][agent_id] = action[0]
                     action_log_probs[i][agent_id] = _t2n(action_log_prob)[0]
@@ -264,17 +277,22 @@ class PatrollingRunner(Runner):
             for agent_id in range(self.num_agents):
                 self.trainer[agent_id].prep_rollout()
 
-                value, action, action_log_prob, rnn_state, rnn_state_critic = self.trainer[agent_id].policy.get_actions(
+                v, action, action_log_prob, rnn_state, rsc = self.trainer[agent_id].policy.get_actions(
                     self.buffer[agent_id].share_obs[step],
                     self.buffer[agent_id].obs[step],
                     self.buffer[agent_id].rnn_states[step],
                     self.buffer[agent_id].rnn_states_critic[step],
                     self.buffer[agent_id].masks[step]
                 )
+
+                # Determine whether to use value from centralized critic.
+                if not self.use_centralized_V:
+                    value = v
+                    rnn_state_critic = rsc
+
                 for i in range(self.n_rollout_threads):
                     values[i][agent_id] = _t2n(value)[i]
                     a = _t2n(action)[i]
-
                     actions[i][agent_id] = a
                     actions_env[i][agent_id] = a[0]
                     action_log_probs[i][agent_id] = _t2n(action_log_prob)[i]
@@ -360,8 +378,7 @@ class PatrollingRunner(Runner):
                         c_action_log_probs[i][agent_id] = action_log_probs[i][agent_id]
                         c_values[i][agent_id] = values[i][agent_id]
                         c_rewards[i, agent_id] = rewards[i, agent_id]
-                        # c_delta_steps[i, agent_id] = delta_steps[i, agent_id]
-                        c_delta_steps[i, agent_id] = 1 #critic only takes single steps!
+                        c_delta_steps[i, agent_id] = delta_steps[i, agent_id] if self.all_args.skip_steps_sync else 1
         
         # Otherwise, insert the data into a buffer for each agent.
         else:
@@ -411,8 +428,7 @@ class PatrollingRunner(Runner):
                     c_action_log_probs[:, agent_id] = action_log_probs[:, agent_id]
                     c_values[:, agent_id] = values[:, agent_id]
                     c_rewards[:, agent_id] = rewards[:, agent_id]
-                    # c_delta_steps[:, agent_id] = delta_steps[:, agent_id]
-                    c_delta_steps[:, agent_id] = 1
+                    c_delta_steps[:, agent_id] = delta_steps[:, agent_id] if self.all_args.skip_steps_sync else 1
 
         # If we are using a shared critic, insert the critic data.
         if self.use_centralized_V:
@@ -649,18 +665,30 @@ class PatrollingRunner(Runner):
 
             # Check that the total step count is correct.
             stepSum = np.sum(buf.deltaSteps[:buf.step], axis=0)
-            if np.any(stepSum != self.all_args.episode_length):
-                raise RuntimeError(f"Total step count is incorrect for critic buffer! Expected {self.all_args.episode_length}, got {stepSum}")
+            # if np.any(stepSum != self.all_args.episode_length):
+            #     raise RuntimeError(f"Total step count is incorrect for critic buffer! Expected {self.all_args.episode_length}, got {stepSum}")
 
-            next_value = self.trainer[0].policy.get_values(np.concatenate(buf.share_obs[buf.step]), 
-                                                            np.concatenate(buf.rnn_states_critic[buf.step]),
-                                                            np.concatenate(buf.masks[buf.step]))
+            next_value = self.trainer[0].policy.get_values(np.concatenate(buf.share_obs[buf.step - 1]), 
+                                                            np.concatenate(buf.rnn_states_critic[buf.step - 1]),
+                                                            np.concatenate(buf.masks[buf.step - 1]))
             next_value = np.array(np.split(_t2n(next_value), self.n_rollout_threads))
             self.critic_buffer.compute_returns(
                 next_value,
                 self.trainer[0].value_normalizer,
                 last_step=buf.step
             )
+
+            # Copy returns to each agent's buffer.
+            if self.all_args.skip_steps_async:
+                for i in range(self.n_rollout_threads):
+                    for agent_id in range(self.num_agents):
+                        s = 0
+                        for j in range(self.buffer[i][agent_id].step):
+                            self.buffer[i][agent_id].returns[j] = self.critic_buffer.returns[s]
+                            s += self.buffer[i][agent_id].deltaSteps[s]
+            else:
+                for agent_id in range(self.num_agents):
+                    self.buffer[agent_id].returns = self.critic_buffer.returns[:, agent_id]
 
         # Compute returns for the decentralized critics.
         else:
@@ -692,6 +720,12 @@ class PatrollingRunner(Runner):
                 for agent_id in range(self.num_agents):
                     self.trainer[agent_id].prep_rollout()
                     buf = self.buffer[agent_id]
+
+                    # Check that the total step count is correct.
+                    stepSum = np.sum(buf.deltaSteps[:buf.step], axis=0)
+                    if np.any(stepSum != self.all_args.episode_length):
+                        raise RuntimeError(f"Total step count is incorrect for buffer {agent_id}! Expected {self.all_args.episode_length}, got {stepSum}")
+
                     next_value = self.trainer[agent_id].policy.get_values(
                         buf.share_obs[buf.step - 1],
                         buf.rnn_states_critic[buf.step - 1],
