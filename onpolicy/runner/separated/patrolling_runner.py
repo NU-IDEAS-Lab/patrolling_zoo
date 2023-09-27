@@ -247,10 +247,10 @@ class PatrollingRunner(Runner):
                 for agent_id in range(self.num_agents):
                     # If the agent is not ready, skip it.
                     if not self.ready[i, agent_id]:
-                        # if self.use_centralized_V:
-                        #     # We still need to update some data for the centralized critic.
-                        #     values[i][agent_id] = _t2n(value)[0]
-                        #     rnn_states_critic[i][agent_id] = _t2n(rnn_state_critic)[0]
+                        if self.use_centralized_V:
+                            # We still need to update some data for the centralized critic.
+                            values[i][agent_id] = _t2n(value)[0]
+                            rnn_states_critic[i][agent_id] = _t2n(rnn_state_critic)[0]
                         continue
 
                     self.trainer[agent_id].prep_rollout()
@@ -355,10 +355,10 @@ class PatrollingRunner(Runner):
                     # If the agent was not ready for a new action, skip it.
                     # (we determine this by an action == None)
                     if actions[i][agent_id] == None:
-                        # if self.use_centralized_V:
-                        #     # If using the centralized critic, update some data regardless.
-                        #     c_values[i][agent_id] = values[i][agent_id]
-                        #     c_rnn_states_critic[i][agent_id] = rnn_states_critic[i][agent_id]
+                        if self.use_centralized_V:
+                            # If using the centralized critic, update some data regardless.
+                            c_values[i][agent_id] = values[i][agent_id]
+                            c_rnn_states_critic[i][agent_id] = rnn_states_critic[i][agent_id]
                         continue
 
                     if self.use_centralized_V:
@@ -691,12 +691,13 @@ class PatrollingRunner(Runner):
                 for i in range(self.n_rollout_threads):
                     for agent_id in range(self.num_agents):
                         s = 0
+                        # We iterate over the buffer based on the deltaSteps.
                         for j in range(self.buffer[i][agent_id].step):
                             self.buffer[i][agent_id].returns[j] = self.critic_buffer.returns[s, i, agent_id]
-                            self.buffer[i][agent_id].value_preds[j] = self.critic_buffer.value_preds[s, i, agent_id]
-                            # assert(self.buffer[i][agent_id].value_preds[j] == self.critic_buffer.value_preds[s, i, agent_id])
-                            s += int(self.buffer[i][agent_id].deltaSteps[j])
-                        assert(s == self.critic_buffer.step)
+                            assert(self.buffer[i][agent_id].value_preds[j] == self.critic_buffer.value_preds[s, i, agent_id])
+                            if j < self.buffer[i][agent_id].step - 1:
+                                s += int(self.buffer[i][agent_id].deltaSteps[j + 1])
+                        assert(s == self.critic_buffer.step - 1)
             else:
                 for agent_id in range(self.num_agents):
                     self.buffer[agent_id].returns = self.critic_buffer.returns[:, :, agent_id]
@@ -710,7 +711,8 @@ class PatrollingRunner(Runner):
                         self.trainer[agent_id].prep_rollout()
                         buf = self.buffer[i][agent_id]
 
-                        stepSum = sum(buf.deltaSteps[:buf.step])
+                        # Check that the total step count is correct.
+                        stepSum = np.sum(buf.deltaSteps[:buf.step])
                         if stepSum != self.all_args.episode_length:
                             raise RuntimeError(f"Total step count is incorrect for buffer {i}-{agent_id}! Expected {self.all_args.episode_length}, got {stepSum}")
 
@@ -743,7 +745,7 @@ class PatrollingRunner(Runner):
                         buf.masks[buf.step - 1]
                     )
                     next_value = _t2n(next_value)
-                    self.buffer[agent_id].compute_returns(
+                    buf.compute_returns(
                         next_value,
                         self.trainer[agent_id].value_normalizer,
                         last_step=buf.step
