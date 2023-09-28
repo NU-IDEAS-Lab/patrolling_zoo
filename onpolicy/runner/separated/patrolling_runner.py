@@ -360,6 +360,7 @@ class PatrollingRunner(Runner):
                     if actions[i][agent_id] == None:
                         if self.use_centralized_V:
                             # If using the centralized critic, update some data regardless.
+                            # TODO: Should I add rewards here as well?
                             c_values[i][agent_id] = values[i][agent_id]
                             c_rnn_states_critic[i][agent_id] = rnn_states_critic[i][agent_id]
                             c_delta_steps[i][agent_id] = 0
@@ -371,16 +372,18 @@ class PatrollingRunner(Runner):
                     else:
                         s_obs = np.array(list(obs[i, agent_id]))
 
-                    self.buffer[i][agent_id].insert(s_obs,
-                                                np.array(list(obs[i, agent_id])),
-                                                rnn_states[i][agent_id],
-                                                rnn_states_critic[i][agent_id],
-                                                actions[i][agent_id],
-                                                action_log_probs[i][agent_id],
-                                                values[i][agent_id],
-                                                rewards[i, agent_id],
-                                                masks[i, agent_id],
-                                                deltaSteps = delta_steps[i, agent_id])
+                    self.buffer[i][agent_id].insert(
+                        share_obs = s_obs,
+                        obs = np.array(list(obs[i, agent_id])),
+                        rnn_states = rnn_states[i][agent_id],
+                        rnn_states_critic = rnn_states_critic[i][agent_id],
+                        actions = actions[i][agent_id],
+                        action_log_probs = action_log_probs[i][agent_id],
+                        value_preds = values[i][agent_id],
+                        rewards = rewards[i, agent_id],
+                        masks = masks[i, agent_id],
+                        deltaSteps = delta_steps[i, agent_id]
+                    )
                     
                     # If we are using a shared critic, update the critic data.
                     if self.use_centralized_V:
