@@ -324,6 +324,8 @@ class PatrollingRunner(Runner):
             if data_critic == None:
                 data_critic = data
             
+            c_insert_required = False
+            
             # Split data.
             c_obs, c_share_obs, c_rewards, c_dones, c_infos, c_values, c_actions, c_action_log_probs, c_rnn_states, c_rnn_states_critic, c_delta_steps = data_critic
 
@@ -357,6 +359,7 @@ class PatrollingRunner(Runner):
                     if actions[i][agent_id] != None:
                         if self.use_centralized_V:
                             s_obs = share_obs[i]
+                            c_insert_required = True
                         else:
                             s_obs = np.array(list(obs[i, agent_id]))
 
@@ -371,7 +374,10 @@ class PatrollingRunner(Runner):
                             value_preds = values[i][agent_id],
                             rewards = rewards[i, agent_id],
                             masks = masks[i, agent_id],
-                            deltaSteps = delta_steps[i, agent_id]
+                            deltaSteps = delta_steps[i, agent_id],
+
+                            #TODO, the below will have issue if the critic buffer wraps around before episode ends (i.e., critic_buffer.step >= episode_length)
+                            criticStep = np.array(self.critic_buffer.step) if self.use_centralized_V else np.array(None)
                         )
                     
                     # If we are using a shared critic, update the critic data.
@@ -381,7 +387,7 @@ class PatrollingRunner(Runner):
                         c_rewards[i, agent_id] = rewards[i, agent_id]
                         c_values[i][agent_id] = values[i][agent_id]
                         c_rnn_states_critic[i][agent_id] = rnn_states_critic[i][agent_id]
-                        c_delta_steps[i, agent_id] = 1
+                        # c_delta_steps[i, agent_id] = 1
 
                         # Only update these if the agent was not skipped.
                         if actions[i][agent_id] != None:
@@ -391,6 +397,8 @@ class PatrollingRunner(Runner):
         
         # Otherwise, insert the data into a buffer for each agent.
         else:
+            c_insert_required = True
+
             # Convert to numpy arrays. Until this point, the data is in Python arrays to allow for ragged arrays (useful for async skipping).
             rnn_states = np.array(rnn_states)
             rnn_states_critic = np.array(rnn_states_critic)
@@ -408,7 +416,7 @@ class PatrollingRunner(Runner):
                 c_action_log_probs = np.array(c_action_log_probs)
                 c_values = np.array(c_values)
                 c_rewards = np.array(c_rewards)
-                c_delta_steps = np.array(c_delta_steps)
+                # c_delta_steps = np.array(c_delta_steps)
 
             # Insert for every agent.
             for agent_id in range(self.num_agents):
@@ -439,31 +447,38 @@ class PatrollingRunner(Runner):
                     c_action_log_probs[:, agent_id] = action_log_probs[:, agent_id]
                     c_values[:, agent_id] = values[:, agent_id]
                     c_rewards[:, agent_id] = rewards[:, agent_id]
-                    c_delta_steps[:, agent_id] = delta_steps[:, agent_id] if self.all_args.skip_steps_sync else 1
+                    # c_delta_steps[:, agent_id] = delta_steps[:, agent_id] if self.all_args.skip_steps_sync else 1
 
         # If we are using a shared critic, insert the critic data.
         if self.use_centralized_V:
-            # Reset RNN and mask arguments for done agents/envs.
-            c_masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
-            for i in range(self.n_rollout_threads):
-                for agent_id in range(self.num_agents):
-                    if dones[i, agent_id]:
-                        c_rnn_states[i][agent_id] = np.zeros((self.recurrent_N, self.hidden_size), dtype=np.float32)
-                        c_rnn_states_critic[i][agent_id] = np.zeros((self.recurrent_N, self.hidden_size), dtype=np.float32)
-                        c_masks[i, agent_id] = np.zeros((1, 1), dtype=np.float32)
+            if c_insert_required:
+                # Reset RNN and mask arguments for done agents/envs.
+                c_masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
+                for i in range(self.n_rollout_threads):
+                    for agent_id in range(self.num_agents):
+                        if dones[i, agent_id]:
+                            c_rnn_states[i][agent_id] = np.zeros((self.recurrent_N, self.hidden_size), dtype=np.float32)
+                            c_rnn_states_critic[i][agent_id] = np.zeros((self.recurrent_N, self.hidden_size), dtype=np.float32)
+                            c_masks[i, agent_id] = np.zeros((1, 1), dtype=np.float32)
 
-            self.critic_buffer.insert(
-                share_obs=np.array(c_share_obs),
-                obs=np.array(c_obs),
-                rnn_states=np.array(c_rnn_states),
-                rnn_states_critic=np.array(c_rnn_states_critic),
-                actions=np.array(c_actions),
-                action_log_probs=np.array(c_action_log_probs),
-                value_preds=np.array(c_values),
-                rewards=np.array(c_rewards),
-                masks=c_masks,
-                deltaSteps=np.array(c_delta_steps)
-            )
+                self.critic_buffer.insert(
+                    share_obs=np.array(c_share_obs),
+                    obs=np.array(c_obs),
+                    rnn_states=np.array(c_rnn_states),
+                    rnn_states_critic=np.array(c_rnn_states_critic),
+                    actions=np.array(c_actions),
+                    action_log_probs=np.array(c_action_log_probs),
+                    value_preds=np.array(c_values),
+                    rewards=np.array(c_rewards),
+                    masks=c_masks,
+                    deltaSteps=np.array(c_delta_steps)
+                )
+
+                c_delta_steps = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.int32)
+            
+            # If critic update not required, increment the step counter.
+            else:
+                c_delta_steps += 1
 
             # Update the previous data.
             data_critic = c_obs, c_share_obs, c_rewards, c_dones, c_infos, c_values, c_actions, c_action_log_probs, c_rnn_states, c_rnn_states_critic, c_delta_steps
@@ -688,14 +703,9 @@ class PatrollingRunner(Runner):
             if self.all_args.skip_steps_async:
                 for i in range(self.n_rollout_threads):
                     for agent_id in range(self.num_agents):
-                        s = 0
-                        # We iterate over the buffer based on the deltaSteps.
                         for j in range(self.buffer[i][agent_id].step):
+                            s = self.buffer[i][agent_id].criticStep[j]
                             self.buffer[i][agent_id].returns[j] = self.critic_buffer.returns[s, i, agent_id]
-                            assert(self.buffer[i][agent_id].value_preds[j] == self.critic_buffer.value_preds[s, i, agent_id])
-                            if j < self.buffer[i][agent_id].step - 1:
-                                s += int(self.buffer[i][agent_id].deltaSteps[j + 1])
-                        assert(s == self.critic_buffer.step - 1)
             else:
                 for agent_id in range(self.num_agents):
                     self.buffer[agent_id].returns = self.critic_buffer.returns[:, :, agent_id]
@@ -761,7 +771,8 @@ class PatrollingRunner(Runner):
             train_info = self.trainer[0].train(
                 self.critic_buffer,
                 update_actor=False,
-                update_critic=True
+                update_critic=True,
+                last_step=self.critic_buffer.step
             )
             train_infos["critic"].append(train_info)
             self.critic_buffer.after_update()
