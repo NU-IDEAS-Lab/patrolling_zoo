@@ -73,8 +73,6 @@ class SharedReplayBuffer(object):
             (self.episode_length, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
         self.deltaSteps = np.zeros(
             (self.episode_length, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
-        self.async_skip = np.zeros(
-            (self.episode_length, self.n_rollout_threads, num_agents, 1), dtype=bool)
 
         self.masks = np.ones((self.episode_length + 1, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
         self.bad_masks = np.ones_like(self.masks)
@@ -84,7 +82,7 @@ class SharedReplayBuffer(object):
 
     def insert(self, share_obs, obs, rnn_states, rnn_states_critic, actions, action_log_probs,
                value_preds, rewards, masks, bad_masks=None, active_masks=None, available_actions=None,
-               deltaSteps=None, async_skip=None):
+               deltaSteps=None):
         """
         Insert data into the buffer.
         :param share_obs: (argparse.Namespace) arguments containing relevant model, policy, and env information.
@@ -121,8 +119,6 @@ class SharedReplayBuffer(object):
             self.available_actions[self.step + 1] = available_actions.copy()
         if deltaSteps is not None:
             self.deltaSteps[self.step] = deltaSteps.copy()
-        if async_skip is not None:
-            self.async_skip[self.step] = async_skip.copy()
 
         # Increment step count.
         self.step += 1
@@ -201,28 +197,15 @@ class SharedReplayBuffer(object):
             gae = 0
             for step in reversed(range(self.rewards.shape[0])):
                 if self._use_popart or self._use_valuenorm:
-                    skip_step = self.async_skip[step]
-                    take_step = np.logical_not(skip_step)
-
                     delta = self.rewards[step] + np.power(self.gamma, self.deltaSteps[step]) * value_normalizer.denormalize(
                         self.value_preds[step + 1]) * self.masks[step + 1] \
                             - value_normalizer.denormalize(self.value_preds[step])
-                    
-                    # Only update GAE if we are not skipping the step.
-                    gae = (delta + np.power(self.gamma * self.gae_lambda, self.deltaSteps[step]) * self.masks[step + 1] * gae) * take_step \
-                        + gae * skip_step
-
-                    # We could do the same for returns, but it doesn't matter since we don't use them for skipped steps anyway.
+                    gae = delta + np.power(self.gamma * self.gae_lambda, self.deltaSteps[step]) * self.masks[step + 1] * gae
                     self.returns[step] = gae + value_normalizer.denormalize(self.value_preds[step])
                 else:
                     delta = self.rewards[step] + np.power(self.gamma, self.deltaSteps[step]) * self.value_preds[step + 1] * self.masks[step + 1] - \
                             self.value_preds[step]
-                    
-                    # Only update GAE if we are not skipping the step.
-                    gae = (delta + np.power(self.gamma * self.gae_lambda, self.deltaSteps[step]) * self.masks[step + 1] * gae) * take_step \
-                        + gae * skip_step
-
-                    # We could do the same for returns, but it doesn't matter since we don't use them for skipped steps anyway.
+                    gae = delta + np.power(self.gamma * self.gae_lambda, self.deltaSteps[step]) * self.masks[step + 1] * gae
                     self.returns[step] = gae + self.value_preds[step]
         
         elif self._use_proper_time_limits:
