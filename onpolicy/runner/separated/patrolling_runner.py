@@ -354,46 +354,44 @@ class PatrollingRunner(Runner):
                 for agent_id in range(self.num_agents):
                     # If the agent was not ready for a new action, skip it.
                     # (we determine this by an action == None)
-                    if actions[i][agent_id] == None:
+                    if actions[i][agent_id] != None:
                         if self.use_centralized_V:
-                            # If using the centralized critic, update some data regardless.
-                            # TODO: Should I add rewards here as well?
-                            c_values[i][agent_id] = values[i][agent_id]
-                            c_rnn_states_critic[i][agent_id] = rnn_states_critic[i][agent_id]
-                        continue
+                            s_obs = share_obs[i]
+                        else:
+                            s_obs = np.array(list(obs[i, agent_id]))
 
-                    if self.use_centralized_V:
-                        s_obs = share_obs[i]
-                    else:
-                        s_obs = np.array(list(obs[i, agent_id]))
-
-                    self.buffer[i][agent_id].insert(
-                        share_obs = s_obs,
-                        obs = np.array(list(obs[i, agent_id])),
-                        rnn_states = rnn_states[i][agent_id],
-                        rnn_states_critic = rnn_states_critic[i][agent_id],
-                        actions = actions[i][agent_id],
-                        action_log_probs = action_log_probs[i][agent_id],
-                        value_preds = values[i][agent_id],
-                        rewards = rewards[i, agent_id],
-                        masks = masks[i, agent_id],
-                        deltaSteps = delta_steps[i, agent_id]
-                    )
+                        # Insert the data into the agent's buffer.
+                        self.buffer[i][agent_id].insert(
+                            share_obs = s_obs,
+                            obs = np.array(list(obs[i, agent_id])),
+                            rnn_states = rnn_states[i][agent_id],
+                            rnn_states_critic = rnn_states_critic[i][agent_id],
+                            actions = actions[i][agent_id],
+                            action_log_probs = action_log_probs[i][agent_id],
+                            value_preds = values[i][agent_id],
+                            rewards = rewards[i, agent_id],
+                            masks = masks[i, agent_id],
+                            deltaSteps = delta_steps[i, agent_id]
+                        )
                     
                     # If we are using a shared critic, update the critic data.
                     if self.use_centralized_V:
+                        # Update these regardless of whether the agent was skipped.
                         c_obs[i, agent_id] = obs[i, agent_id]
-                        c_rnn_states[i][agent_id] = rnn_states[i][agent_id]
-                        c_rnn_states_critic[i][agent_id] = rnn_states_critic[i][agent_id]
-                        c_actions[i][agent_id] = actions[i][agent_id]
-                        c_action_log_probs[i][agent_id] = action_log_probs[i][agent_id]
-                        c_values[i][agent_id] = values[i][agent_id]
                         c_rewards[i, agent_id] = rewards[i, agent_id]
-                        c_delta_steps[i, agent_id] = delta_steps[i, agent_id] if self.all_args.skip_steps_sync else 1
+                        c_values[i][agent_id] = values[i][agent_id]
+                        c_rnn_states_critic[i][agent_id] = rnn_states_critic[i][agent_id]
+                        c_delta_steps[i, agent_id] = 1
+
+                        # Only update these if the agent was not skipped.
+                        if actions[i][agent_id] != None:
+                            c_rnn_states[i][agent_id] = rnn_states[i][agent_id]
+                            c_actions[i][agent_id] = actions[i][agent_id]
+                            c_action_log_probs[i][agent_id] = action_log_probs[i][agent_id]
         
         # Otherwise, insert the data into a buffer for each agent.
         else:
-            # Convert to numpy arrays.
+            # Convert to numpy arrays. Until this point, the data is in Python arrays to allow for ragged arrays (useful for async skipping).
             rnn_states = np.array(rnn_states)
             rnn_states_critic = np.array(rnn_states_critic)
             actions = np.array(actions)
@@ -419,16 +417,18 @@ class PatrollingRunner(Runner):
                 else:
                     s_obs = np.array(list(obs[:, agent_id]))
                 
-                self.buffer[agent_id].insert(s_obs,
-                                            np.array(list(obs[:, agent_id])),
-                                            rnn_states[:, agent_id],
-                                            rnn_states_critic[:, agent_id],
-                                            actions[:, agent_id],
-                                            action_log_probs[:, agent_id],
-                                            values[:, agent_id],
-                                            rewards[:, agent_id],
-                                            masks[:, agent_id],
-                                            deltaSteps = delta_steps[:, agent_id])
+                self.buffer[agent_id].insert(
+                    share_obs = s_obs,
+                    obs = np.array(list(obs[:, agent_id])),
+                    rnn_states = rnn_states[:, agent_id],
+                    rnn_states_critic = rnn_states_critic[:, agent_id],
+                    actions = actions[:, agent_id],
+                    action_log_probs = action_log_probs[:, agent_id],
+                    value_preds = values[:, agent_id],
+                    rewards = rewards[:, agent_id],
+                    masks = masks[:, agent_id],
+                    deltaSteps = delta_steps[:, agent_id]
+                )
                 
                 # If we are using a shared critic, update the critic data.
                 if self.use_centralized_V:
@@ -467,12 +467,7 @@ class PatrollingRunner(Runner):
 
             # Update the previous data.
             data_critic = c_obs, c_share_obs, c_rewards, c_dones, c_infos, c_values, c_actions, c_action_log_probs, c_rnn_states, c_rnn_states_critic, c_delta_steps
-
-            # Check whether any invalid data (None) is in the critic data.
-            for d in data_critic:
-                if None in d:
-                    raise RuntimeError("None in critic data!")
-
+        
         return data_critic
 
     def log_train(self, train_infos, total_num_steps): 
