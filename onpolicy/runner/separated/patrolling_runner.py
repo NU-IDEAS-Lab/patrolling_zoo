@@ -329,9 +329,6 @@ class PatrollingRunner(Runner):
 
             # Set up the critic shared observation.
             c_share_obs = np.repeat(share_obs[:, np.newaxis, :], self.num_agents, axis=1)
-
-            # Record agent skip information.
-            c_skip = np.zeros((self.n_rollout_threads, self.num_agents, 1), dtype=bool)
         
         # Add the average idleness time to env infos.
         self.env_infos["avg_idleness"] = [i["avg_idleness"] for i in infos]
@@ -363,8 +360,6 @@ class PatrollingRunner(Runner):
                             # TODO: Should I add rewards here as well?
                             c_values[i][agent_id] = values[i][agent_id]
                             c_rnn_states_critic[i][agent_id] = rnn_states_critic[i][agent_id]
-                            c_delta_steps[i][agent_id] = 0
-                            c_skip[i][agent_id] = True
                         continue
 
                     if self.use_centralized_V:
@@ -394,7 +389,7 @@ class PatrollingRunner(Runner):
                         c_action_log_probs[i][agent_id] = action_log_probs[i][agent_id]
                         c_values[i][agent_id] = values[i][agent_id]
                         c_rewards[i, agent_id] = rewards[i, agent_id]
-                        c_delta_steps[i, agent_id] = delta_steps[i, agent_id]
+                        c_delta_steps[i, agent_id] = delta_steps[i, agent_id] if self.all_args.skip_steps_sync else 1
         
         # Otherwise, insert the data into a buffer for each agent.
         else:
@@ -444,7 +439,7 @@ class PatrollingRunner(Runner):
                     c_action_log_probs[:, agent_id] = action_log_probs[:, agent_id]
                     c_values[:, agent_id] = values[:, agent_id]
                     c_rewards[:, agent_id] = rewards[:, agent_id]
-                    c_delta_steps[:, agent_id] = delta_steps[:, agent_id]
+                    c_delta_steps[:, agent_id] = delta_steps[:, agent_id] if self.all_args.skip_steps_sync else 1
 
         # If we are using a shared critic, insert the critic data.
         if self.use_centralized_V:
@@ -467,8 +462,7 @@ class PatrollingRunner(Runner):
                 value_preds=np.array(c_values),
                 rewards=np.array(c_rewards),
                 masks=c_masks,
-                deltaSteps=np.array(c_delta_steps),
-                async_skip=c_skip
+                deltaSteps=np.array(c_delta_steps)
             )
 
             # Update the previous data.
@@ -703,11 +697,7 @@ class PatrollingRunner(Runner):
                         # We iterate over the buffer based on the deltaSteps.
                         for j in range(self.buffer[i][agent_id].step):
                             self.buffer[i][agent_id].returns[j] = self.critic_buffer.returns[s, i, agent_id]
-                            assert(np.all(self.buffer[i][agent_id].value_preds[j] == self.critic_buffer.value_preds[s, i, agent_id]))
-
-                            # PERHAPS THE PROBLEM IS THAT RETURNS SHOULD BE CALCULATED USING THE DELTASTEPS FROM THE ACTOR, >1 ?
-                            # assert(np.all(self.buffer[i][agent_id].deltaSteps[j] == self.critic_buffer.deltaSteps[s, i, agent_id]))
-
+                            assert(self.buffer[i][agent_id].value_preds[j] == self.critic_buffer.value_preds[s, i, agent_id])
                             if j < self.buffer[i][agent_id].step - 1:
                                 s += int(self.buffer[i][agent_id].deltaSteps[j + 1])
                         assert(s == self.critic_buffer.step - 1)
