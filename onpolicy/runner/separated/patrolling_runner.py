@@ -699,13 +699,17 @@ class PatrollingRunner(Runner):
                 last_step=buf.step
             )
 
-            # Copy returns to each agent's buffer.
+            # Copy value predictions and returns to each agent's buffer.
             if self.all_args.skip_steps_async:
                 for i in range(self.n_rollout_threads):
                     for agent_id in range(self.num_agents):
                         for j in range(self.buffer[i][agent_id].step):
                             s = self.buffer[i][agent_id].criticStep[j]
                             self.buffer[i][agent_id].returns[j] = self.critic_buffer.returns[s, i, agent_id]
+
+                        # Copy values for last step to capture the final value/return.
+                        self.buffer[i][agent_id].returns[j + 1] = self.critic_buffer.returns[self.critic_buffer.step, i, agent_id]
+                        self.buffer[i][agent_id].value_preds[j + 1] = self.critic_buffer.value_preds[self.critic_buffer.step, i, agent_id]
             else:
                 for agent_id in range(self.num_agents):
                     self.buffer[agent_id].returns = self.critic_buffer.returns[:, :, agent_id]
