@@ -388,6 +388,8 @@ class SharedReplayBuffer(object):
 
             # [N[T, dim]]
             T, N = self.episode_length, num_envs_per_batch
+            if last_step != -1:
+                T = last_step
             # These are all from_numpys of size (T, N, -1)
             share_obs_batch = np.stack(share_obs_batch, 1)
             obs_batch = np.stack(obs_batch, 1)
