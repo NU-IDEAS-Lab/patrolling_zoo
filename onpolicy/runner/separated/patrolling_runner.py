@@ -780,7 +780,9 @@ class PatrollingRunner(Runner):
                 last_step=self.critic_buffer.step
             )
             train_infos["critic"].append(train_info)
-            self.critic_buffer.after_update()
+            self.critic_buffer.after_update(
+                last_step = self.critic_buffer.step
+            )
 
         # Update the actors (and critics in case of per-agent critics).
         if self.all_args.skip_steps_async:
