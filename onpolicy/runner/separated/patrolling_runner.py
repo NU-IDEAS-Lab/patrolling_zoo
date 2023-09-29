@@ -235,9 +235,9 @@ class PatrollingRunner(Runner):
         # If using centralized critic, get values once for all agents.
         if self.use_centralized_V:
             value, rnn_state_critic = self.trainer[0].policy.get_values_rnn_states(
-                np.concatenate(self.critic_buffer.share_obs[step]),
-                np.concatenate(self.critic_buffer.rnn_states_critic[step]),
-                np.concatenate(self.critic_buffer.masks[step])
+                np.concatenate(self.critic_buffer.share_obs[self.critic_buffer.step]),
+                np.concatenate(self.critic_buffer.rnn_states_critic[self.critic_buffer.step]),
+                np.concatenate(self.critic_buffer.masks[self.critic_buffer.step])
             )
 
         # Get actions from the policy.
@@ -255,12 +255,13 @@ class PatrollingRunner(Runner):
 
                     self.trainer[agent_id].prep_rollout()
 
+                    buf = self.buffer[i][agent_id]
                     v, action, action_log_prob, rnn_state, rsc = self.trainer[agent_id].policy.get_actions(
-                        self.buffer[i][agent_id].share_obs[step],
-                        self.buffer[i][agent_id].obs[step],
-                        self.buffer[i][agent_id].rnn_states[step],
-                        self.buffer[i][agent_id].rnn_states_critic[step],
-                        self.buffer[i][agent_id].masks[step]
+                        buf.share_obs[buf.step],
+                        buf.obs[buf.step],
+                        buf.rnn_states[buf.step],
+                        buf.rnn_states_critic[buf.step],
+                        buf.masks[buf.step]
                     )
 
                     # Determine whether to use value from centralized critic.
