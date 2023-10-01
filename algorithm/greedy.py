@@ -22,7 +22,7 @@ class GreedyIdleness(BaseAlgorithm):
         pass
 
 
-    def evaluate(self, render=False, max_cycles=None, max_episodes=1, seed=None):
+    def evaluate(self, render=False, render_terminal=False, max_cycles=None, max_episodes=1, seed=None):
         ''' Evaluates the model. '''
         
         if max_cycles != None:
@@ -48,6 +48,10 @@ class GreedyIdleness(BaseAlgorithm):
                 if render:
                     clear_output(wait=True)
                     self.env.render()
+            
+            if render_terminal:
+                clear_output(wait=True)
+                self.env.render()
 
 
     def generateActions(self, obs):
@@ -81,8 +85,8 @@ class GreedyDistance(GreedyIdleness):
             vertexDistances = obs[agent]["vertex_distances"][agent]
 
             # Remove nodes which have already been visited.
-            for node, dist in enumerate(vertexDistances):
-                if dist <= 0.001 and node in agent.nodes:
+            for node in agent.nodes:
+                if agent.lastNode == node and agent.edge == None:
                     agent.nodes.remove(node)
             
             # If no nodes remain, reset the list of nodes.
