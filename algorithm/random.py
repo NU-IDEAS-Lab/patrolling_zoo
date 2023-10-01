@@ -23,7 +23,7 @@ class RandomChoice(BaseAlgorithm):
         pass
 
 
-    def evaluate(self, render=False, max_cycles=None, max_episodes=1, seed=None):
+    def evaluate(self, render=False, render_terminal=False, max_cycles=None, max_episodes=1, seed=None):
         ''' Evaluates the model. '''
         
         if max_cycles != None:
@@ -54,6 +54,10 @@ class RandomChoice(BaseAlgorithm):
                     self.env.render()
                 
                 self.prevActions = actions
+            
+            if render_terminal:
+                clear_output(wait=True)
+                self.env.render()
 
 
     def generateActions(self, obs):
