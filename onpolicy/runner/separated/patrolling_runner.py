@@ -112,7 +112,15 @@ class PatrollingRunner(Runner):
                 values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env = self.collect(step)
                     
                 # Obser reward and next obs
-                combined_obs, rewards, dones, infos = self.envs.step(actions_env)
+                action_metadata = []
+                for i in range(self.n_rollout_threads):
+                    action_metadata.append({
+                        "action": actions_env[i],
+                        "metadata": {
+                            "last_step": self.all_args.skip_steps_async and step == self.episode_length - 1
+                        }
+                    })
+                combined_obs, rewards, dones, infos = self.envs.step(action_metadata)
 
                 # Pull agent ready state from the info message.
                 for i in range(self.n_rollout_threads):
@@ -150,9 +158,9 @@ class PatrollingRunner(Runner):
                 
                 # Check termination conditions.
                 if self.all_args.use_centralized_V:
-                    if self.critic_buffer.step >= self.episode_length:
+                    if self.critic_buffer.step >= self.episode_length - 1:
                         break
-                elif step >= self.episode_length:
+                elif step >= self.episode_length - 1:
                     break
 
                 # Increase the step count.
@@ -697,6 +705,8 @@ class PatrollingRunner(Runner):
             buf = self.critic_buffer
 
             # Check that the total step count is correct.
+            if self.critic_buffer.step != self.all_args.episode_length - 1:
+                raise RuntimeError(f"Total step count is incorrect for critic buffer! Expected {self.all_args.episode_length}, got {self.critic_buffer.step}")
             # stepSum = np.sum(buf.deltaSteps[:buf.step], axis=0)
             # if not self.all_args.skip_steps_sync and np.any(stepSum != self.all_args.episode_length):
             #     raise RuntimeError(f"Total step count is incorrect for critic buffer! Expected {self.all_args.episode_length}, got {stepSum}")

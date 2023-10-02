@@ -57,7 +57,7 @@ class PatrollingEnv(object):
             observe_method = args.observe_method,
             observe_method_global = args.observe_method_global,
             reward_method_terminal = args.reward_method_terminal,
-            max_cycles = -1 if self.args.skip_steps_sync else args.episode_length
+            max_cycles = -1 if self.args.skip_steps_sync or self.args.skip_steps_async else args.episode_length
         )
             
         self.remove_redundancy = args.remove_redundancy
@@ -87,10 +87,16 @@ class PatrollingEnv(object):
 
         return combined_obs
 
-    def step(self, action):
+    def step(self, action_metadata):
 
         ready = False
         done = []
+        action = action_metadata["action"]
+        last_step = False
+        if "metadata" in action_metadata:
+            metadata = action_metadata["metadata"]
+            last_step = metadata["last_step"]
+
 
         # Start with the previous action.
         actionPz = self.prevAction
@@ -107,7 +113,7 @@ class PatrollingEnv(object):
 
         while not ready and not any(done):
             # We want to determine if this is the last step when using syncronized step skipping.
-            lastStep = self.args.skip_steps_sync and self.ppoSteps >= self.args.episode_length - 1
+            lastStep = last_step or (self.args.skip_steps_sync and self.ppoSteps >= self.args.episode_length - 1)
             
             # Take a step.
             obs, reward, done, trunc, info = self.env.step(actionPz, lastStep=lastStep)
