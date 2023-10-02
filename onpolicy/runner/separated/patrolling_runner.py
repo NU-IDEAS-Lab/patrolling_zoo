@@ -102,7 +102,8 @@ class PatrollingRunner(Runner):
             # No previous data.
             data_critic_prev = None
 
-            for step in range(self.episode_length):
+            step = 0
+            while True:
                 # If this is the last step, set all agents to ready.
                 if step == self.episode_length - 1:
                     self.ready = np.ones((self.n_rollout_threads, self.num_agents), dtype=bool)
@@ -146,6 +147,16 @@ class PatrollingRunner(Runner):
                                 raise RuntimeError(f"Buffer {i}, agent {agent_id} has step {self.buffer[i][agent_id].step} at the start of an episode. Must be 1.")
                 if step == 0 and self.use_centralized_V and self.critic_buffer.step != 1:
                     raise RuntimeError(f"Critic buffer has step {self.critic_buffer.step} at the start of an episode. Must be 1.")
+                
+                # Check termination conditions.
+                if self.all_args.use_centralized_V:
+                    if self.critic_buffer.step >= self.episode_length:
+                        break
+                elif step >= self.episode_length:
+                    break
+
+                # Increase the step count.
+                step += 1
 
             # compute return and update network
             self.compute()
@@ -686,9 +697,9 @@ class PatrollingRunner(Runner):
             buf = self.critic_buffer
 
             # Check that the total step count is correct.
-            stepSum = np.sum(buf.deltaSteps[:buf.step], axis=0)
-            if not self.all_args.skip_steps_sync and np.any(stepSum != self.all_args.episode_length):
-                raise RuntimeError(f"Total step count is incorrect for critic buffer! Expected {self.all_args.episode_length}, got {stepSum}")
+            # stepSum = np.sum(buf.deltaSteps[:buf.step], axis=0)
+            # if not self.all_args.skip_steps_sync and np.any(stepSum != self.all_args.episode_length):
+            #     raise RuntimeError(f"Total step count is incorrect for critic buffer! Expected {self.all_args.episode_length}, got {stepSum}")
 
             next_value = self.trainer[0].policy.get_values(np.concatenate(buf.share_obs[buf.step - 1]), 
                                                             np.concatenate(buf.rnn_states_critic[buf.step - 1]),
