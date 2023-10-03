@@ -88,6 +88,15 @@ class PatrollingRunner(Runner):
             # Create a matrix indicating whether each agent in each environment is ready for a new action.
             self.ready = np.ones((self.n_rollout_threads, self.num_agents), dtype=bool)
 
+            # Set up a temporary buffer to be used for asynchronous skipping.
+            tb_actions = -1.0 * np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.int32)
+            tb_action_log_probs = np.zeros((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
+            tb_rnn_states = np.zeros((self.n_rollout_threads, self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
+
+            # Set up a reward sum matrix to hold the sum of rewards given between actions (in case of skipping).
+            # Currently only used for asynchronous skipping.
+            rewardSums = np.zeros((self.n_rollout_threads, self.num_agents), dtype=np.float32)
+
             # Set the delta steps to 1.
             delta_steps = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.int32)
 
@@ -104,63 +113,70 @@ class PatrollingRunner(Runner):
 
             step = 0
             while True:
-                # If this is the last step, set all agents to ready.
-                if step == self.episode_length - 1:
+                last_step = self._is_last_step(step)
+                if last_step:
+                    # If this is the last step, set all agents to ready.
                     self.ready = np.ones((self.n_rollout_threads, self.num_agents), dtype=bool)
 
-                # Sample actions
+                # Sample actions, collect values and probabilities.
                 values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env = self.collect(step)
                     
-                # Obser reward and next obs
+                # Set up combined action and metadata structure to feed to the environment.
+                # We do this to avoid modifying the underlying MAPPO code to add another argument.
                 action_metadata = []
                 for i in range(self.n_rollout_threads):
                     action_metadata.append({
                         "action": actions_env[i],
                         "metadata": {
-                            "last_step": self.all_args.skip_steps_async and step == self.episode_length - 1
+                            "last_step": last_step
                         }
                     })
+                
+                # Take the step and observe.
                 combined_obs, rewards, dones, infos = self.envs.step(action_metadata)
 
-                # Pull agent ready state from the info message.
+                # Process information after taking the step.
+                obs, share_obs = self._process_combined_obs(combined_obs)
                 for i in range(self.n_rollout_threads):
                     for a in range(self.num_agents):
+                        # Pull agent ready state from the info message.
                         self.ready[i, a] = infos[i]["ready"][a]
 
-                # Split the combined observations into obs and share_obs, then combine across environments.
-                obs = []
-                share_obs = []
-                for o in combined_obs:
-                    obs.append(o["obs"])
-                    share_obs.append(o["share_obs"][0])
-                obs = np.array(obs)
-                share_obs = np.array(share_obs)
+                        # Get the number of steps taken by each agent since the agent was last ready.
+                        delta_steps = np.array([info["deltaSteps"] for info in infos])
+
+                        # Update the reward sums.
+                        rewardSums[i, a] = rewards[i][a]
+
+                        # Update the temporary buffer.
+                        if actions[i][a] != None:
+                            tb_actions[i, a] = actions[i][a]
+                            tb_action_log_probs[i, a] = action_log_probs[i][a]
+                            tb_rnn_states[i, a] = rnn_states[i][a]                
 
                 # Combine into single data structure.
-                data = obs, share_obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic, delta_steps
+                data = obs, share_obs, rewardSums, dones, infos, values, tb_actions, tb_action_log_probs, tb_rnn_states, rnn_states_critic, delta_steps
                 
                 # Insert data into buffer
                 data_critic_prev = self.insert(data, data_critic_prev)
 
-                # Get the delta steps from the environment info.
-                # Do not set this number until after the data has been inserted into the buffer.
-                # This is because the action at this step might have been 0, resulting in no insertion.
-                delta_steps = np.array([info["deltaSteps"] for info in infos])
+                # Reset the reward sums for any agents that are ready.
+                for i in range(self.n_rollout_threads):
+                    for a in range(self.num_agents):
+                        if self.ready[i, a]:
+                            rewardSums[i, a] = 0.0
 
                 # Ensure that all buffers are at step 0.
                 if step == 0 and self.all_args.skip_steps_async:
                     for i in range(self.n_rollout_threads):
                         for agent_id in range(self.num_agents):
-                            if self.buffer[i][agent_id].step != 1:
-                                raise RuntimeError(f"Buffer {i}, agent {agent_id} has step {self.buffer[i][agent_id].step} at the start of an episode. Must be 1.")
-                if step == 0 and self.use_centralized_V and self.critic_buffer.step != 1:
-                    raise RuntimeError(f"Critic buffer has step {self.critic_buffer.step} at the start of an episode. Must be 1.")
+                            if self.buffer[i][agent_id].step > 1:
+                                raise RuntimeError(f"Buffer {i}, agent {agent_id} has step {self.buffer[i][agent_id].step} at the start of an episode. Must be <= 1.")
+                if step == 0 and self.use_centralized_V and self.critic_buffer.step > 1:
+                    raise RuntimeError(f"Critic buffer has step {self.critic_buffer.step} at the start of an episode. Must be <= 1.")
                 
                 # Check termination conditions.
-                if self.all_args.use_centralized_V:
-                    if self.critic_buffer.step >= self.episode_length - 1:
-                        break
-                elif step >= self.episode_length - 1:
+                if last_step:
                     break
 
                 # Increase the step count.
@@ -324,11 +340,6 @@ class PatrollingRunner(Runner):
                     rnn_states_critic[i][agent_id] = _t2n(rnn_state_critic)[i]
         
         actions_env = np.array(actions_env)
-        # values = np.array(values)#.transpose(1, 0, 2)
-        # actions = np.array(actions)#.transpose(1, 0, 2)
-        # action_log_probs = np.array(action_log_probs)#.transpose(1, 0, 2)
-        # rnn_states = np.array(rnn_states)#.transpose(1, 0, 2, 3)
-        # rnn_states_critic = np.array(rnn_states_critic)#.transpose(1, 0, 2, 3)
 
         return values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env
 
@@ -374,9 +385,8 @@ class PatrollingRunner(Runner):
         if self.all_args.skip_steps_async:
             for i in range(self.n_rollout_threads):
                 for agent_id in range(self.num_agents):
-                    # If the agent was not ready for a new action, skip it.
-                    # (we determine this by an action == None)
-                    if actions[i][agent_id] != None:
+                    # Only insert if the agent is ready for a new action.
+                    if self.ready[i, agent_id]:
                         if self.use_centralized_V:
                             s_obs = share_obs[i]
                             c_insert_required = True
@@ -397,7 +407,9 @@ class PatrollingRunner(Runner):
                             deltaSteps = delta_steps[i, agent_id],
 
                             #TODO, the below will have issue if the critic buffer wraps around before episode ends (i.e., critic_buffer.step >= episode_length)
-                            criticStep = np.array(self.critic_buffer.step) if self.use_centralized_V else np.array(None)
+                            criticStep = np.array(self.critic_buffer.step) if self.use_centralized_V else np.array(None),
+
+                            no_reset = True
                         )
                     
                     # If we are using a shared critic, update the critic data.
@@ -491,7 +503,8 @@ class PatrollingRunner(Runner):
                     value_preds=np.array(c_values),
                     rewards=np.array(c_rewards),
                     masks=c_masks,
-                    deltaSteps=np.array(c_delta_steps)
+                    deltaSteps=np.array(c_delta_steps),
+                    no_reset=self.all_args.skip_steps_async
                 )
 
                 c_delta_steps = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.int32)
@@ -836,3 +849,29 @@ class PatrollingRunner(Runner):
                 self.buffer[agent_id].after_update()
 
         return train_infos
+    
+    def _is_last_step(self, step):
+        ''' Determine whether this step is the last step of the episode. '''
+
+        if self.all_args.skip_steps_async:
+            if self.use_centralized_V:
+                bufferStep = self.critic_buffer.step
+            else:
+                maxBufferStep = 0
+                for i in range(self.n_rollout_threads):
+                    for agent_id in range(self.num_agents):
+                        maxBufferStep = max(maxBufferStep, self.buffer[i][agent_id].step)
+                bufferStep = maxBufferStep
+            last_step = bufferStep >= self.episode_length - 2
+        else:
+            last_step = step == self.episode_length - 1
+        return last_step
+
+    def _process_combined_obs(self, combined_obs):
+        ''' Process the combined observations into obs and share_obs. '''
+        obs = []
+        share_obs = []
+        for o in combined_obs:
+            obs.append(o["obs"])
+            share_obs.append(o["share_obs"][0])
+        return np.array(obs), np.array(share_obs)
