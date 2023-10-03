@@ -449,7 +449,7 @@ class PatrollingRunner(Runner):
                 c_action_log_probs = np.array(c_action_log_probs)
                 c_values = np.array(c_values)
                 c_rewards = np.array(c_rewards)
-                # c_delta_steps = np.array(c_delta_steps)
+                c_delta_steps = np.array(c_delta_steps)
 
             # Insert for every agent.
             for agent_id in range(self.num_agents):
@@ -480,7 +480,7 @@ class PatrollingRunner(Runner):
                     c_action_log_probs[:, agent_id] = action_log_probs[:, agent_id]
                     c_values[:, agent_id] = values[:, agent_id]
                     c_rewards[:, agent_id] = rewards[:, agent_id]
-                    # c_delta_steps[:, agent_id] = delta_steps[:, agent_id] if self.all_args.skip_steps_sync else 1
+                    c_delta_steps[:, agent_id] = delta_steps[:, agent_id]
 
         # If we are using a shared critic, insert the critic data.
         if self.use_centralized_V:
