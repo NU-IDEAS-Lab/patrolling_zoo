@@ -95,7 +95,7 @@ class PatrollingRunner(Runner):
 
             # Set up a reward sum matrix to hold the sum of rewards given between actions (in case of skipping).
             # Currently only used for asynchronous skipping.
-            rewardSums = np.zeros((self.n_rollout_threads, self.num_agents), dtype=np.float32)
+            rewardSums = np.zeros((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
 
             # Set the delta steps to 1.
             delta_steps = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.int32)
