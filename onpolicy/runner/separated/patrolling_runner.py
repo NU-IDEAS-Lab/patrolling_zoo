@@ -715,7 +715,7 @@ class PatrollingRunner(Runner):
             buf = self.critic_buffer
 
             # Check that the total step count is correct.
-            if self.critic_buffer.step != self.all_args.episode_length - 1:
+            if self.critic_buffer.step != self.all_args.episode_length:
                 raise RuntimeError(f"Total step count is incorrect for critic buffer! Expected {self.all_args.episode_length}, got {self.critic_buffer.step}")
             # stepSum = np.sum(buf.deltaSteps[:buf.step], axis=0)
             # if not self.all_args.skip_steps_sync and np.any(stepSum != self.all_args.episode_length):
@@ -814,6 +814,15 @@ class PatrollingRunner(Runner):
             self.critic_buffer.after_update(
                 last_step = self.critic_buffer.step
             )
+
+        # Print the entire actor buffer.
+        # buf = self.buffer[0][0]
+        # for at in ["obs", "share_obs", "actions", "value_preds", "returns", "masks", "rnn_states", "rnn_states_critic", "deltaSteps"]:
+        #     print(f"======= ATTRIBUTE: {at} =======")
+        #     for i in buf.__dict__[at]:
+        #         print(i)
+        #     print()
+        # raise Exception("Done printing buffer.")
 
         # Update the actors (and critics in case of per-agent critics).
         if self.all_args.skip_steps_async:
