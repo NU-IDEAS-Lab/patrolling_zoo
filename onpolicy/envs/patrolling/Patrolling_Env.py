@@ -149,7 +149,7 @@ class PatrollingEnv(object):
             rewards = global_reward * np.ones((self.num_agents, 1), dtype=np.float32)
         
         # Convert back from numpy to list.
-        rewards = [rewards[i][0] for i in range(self.num_agents)]
+        rewards = [rewards[i] for i in range(self.num_agents)]
 
         info["deltaSteps"] = [[self.deltaSteps[a]] for a in self.env.possible_agents]
         info["ready"] = [info[a]["ready"] for a in self.env.possible_agents]
