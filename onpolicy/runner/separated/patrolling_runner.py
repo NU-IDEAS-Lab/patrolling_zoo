@@ -405,10 +405,7 @@ class PatrollingRunner(Runner):
                             rewards = rewards[i, agent_id],
                             masks = masks[i, agent_id],
                             deltaSteps = delta_steps[i, agent_id],
-
-                            #TODO, the below will have issue if the critic buffer wraps around before episode ends (i.e., critic_buffer.step >= episode_length)
                             criticStep = np.array(self.critic_buffer.step) if self.use_centralized_V else np.array(None),
-
                             no_reset = True
                         )
                     
