@@ -65,10 +65,14 @@ class SeparatedReplayBuffer(object):
 
     def insert(self, share_obs, obs, rnn_states, rnn_states_critic, actions, action_log_probs,
                value_preds, rewards, masks, bad_masks=None, active_masks=None, available_actions=None,
-               deltaSteps=None, criticStep=None):
+               deltaSteps=None, criticStep=None, no_reset=False):
         
         # Reset the step count if we are at the end of an episode.
-        self.step = (self.step) % self.episode_length
+        if no_reset:
+            if self.step >= self.episode_length:
+                raise ValueError("Buffer has reached end of episode. Reset buffer before inserting data.")
+        else:
+            self.step = self.step % self.episode_length
 
         self.share_obs[self.step + 1] = share_obs.copy()
         self.obs[self.step + 1] = obs.copy()
