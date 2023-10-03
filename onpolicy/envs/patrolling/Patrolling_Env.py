@@ -125,7 +125,7 @@ class PatrollingEnv(object):
                 "share_obs": self._share_obs_wrapper(self.env.state_all())
             }
 
-            reward = [reward[a] for a in self.env.possible_agents]
+            reward = [[reward[a]] for a in self.env.possible_agents]
             if self.share_reward:
                 global_reward = np.sum(reward)
                 reward = [[global_reward]] * self.num_agents
