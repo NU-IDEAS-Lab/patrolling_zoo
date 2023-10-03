@@ -91,11 +91,15 @@ class PatrollingEnv(object):
 
         ready = False
         done = []
-        action = action_metadata["action"]
-        last_step = False
-        if "metadata" in action_metadata:
-            metadata = action_metadata["metadata"]
-            last_step = metadata["last_step"]
+        if type(action_metadata) == dict:
+            action = action_metadata["action"]
+            last_step = False
+            if "metadata" in action_metadata:
+                metadata = action_metadata["metadata"]
+                last_step = metadata["last_step"]
+        else:
+            action = action_metadata
+            last_step = False
 
 
         # Start with the previous action.
