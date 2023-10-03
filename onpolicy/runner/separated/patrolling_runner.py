@@ -411,10 +411,10 @@ class PatrollingRunner(Runner):
                     if self.use_centralized_V:
                         # Update these regardless of whether the agent was skipped.
                         c_obs[i, agent_id] = obs[i, agent_id]
+                        c_share_obs[i, agent_id] = share_obs[i]
                         c_rewards[i, agent_id] = rewards[i, agent_id]
                         c_values[i][agent_id] = values[i][agent_id]
                         c_rnn_states_critic[i][agent_id] = rnn_states_critic[i][agent_id]
-                        # c_delta_steps[i, agent_id] = 1
 
                         # Only update these if the agent was not skipped.
                         if actions[i][agent_id] != None:
@@ -468,6 +468,7 @@ class PatrollingRunner(Runner):
                 # If we are using a shared critic, update the critic data.
                 if self.use_centralized_V:
                     c_obs[:, agent_id] = obs[:, agent_id]
+                    c_share_obs[:, agent_id] = share_obs[:]
                     c_rnn_states[:, agent_id] = rnn_states[:, agent_id]
                     c_rnn_states_critic[:, agent_id] = rnn_states_critic[:, agent_id]
                     c_actions[:, agent_id] = actions[:, agent_id]
@@ -729,7 +730,7 @@ class PatrollingRunner(Runner):
                 last_step=buf.step
             )
 
-            # Copy value predictions and returns to each agent's buffer.
+            # Copy returns to each agent's buffer.
             if self.all_args.skip_steps_async:
                 for i in range(self.n_rollout_threads):
                     for agent_id in range(self.num_agents):
@@ -737,12 +738,13 @@ class PatrollingRunner(Runner):
                             s = self.buffer[i][agent_id].criticStep[j]
                             self.buffer[i][agent_id].returns[j] = self.critic_buffer.returns[s, i, agent_id]
 
-                        # Copy values for last step to capture the final value/return.
-                        # self.buffer[i][agent_id].returns[j + 1] = self.critic_buffer.returns[self.critic_buffer.step, i, agent_id]
-                        # self.buffer[i][agent_id].value_preds[j + 1] = self.critic_buffer.value_preds[self.critic_buffer.step, i, agent_id]
+                        # Copy the last step to capture the final return and value.
+                        self.buffer[i][agent_id].returns[j + 1] = self.critic_buffer.returns[self.critic_buffer.step, i, agent_id]
+                        self.buffer[i][agent_id].value_preds[j + 1] = self.critic_buffer.value_preds[self.critic_buffer.step, i, agent_id]
             else:
                 for agent_id in range(self.num_agents):
                     self.buffer[agent_id].returns = self.critic_buffer.returns[:, :, agent_id]
+                    self.buffer[agent_id].value_preds[self.buffer[agent_id].step] = self.critic_buffer.value_preds[self.critic_buffer.step, :, agent_id]
 
         # Compute returns for the decentralized critics.
         else:
@@ -813,16 +815,6 @@ class PatrollingRunner(Runner):
                 last_step = self.critic_buffer.step
             )
 
-        # Print the entire actor buffer.
-        # buf = self.critic_buffer
-        # # buf = self.buffer[0][0]
-        # for at in ["obs", "share_obs", "actions", "value_preds", "returns", "masks", "rnn_states", "rnn_states_critic", "deltaSteps"]:
-        #     print(f"======= ATTRIBUTE: {at} =======")
-        #     for i in buf.__dict__[at]:
-        #         print(i)
-        #     print()
-        # raise Exception("Done printing buffer.")
-
         # Update the actors (and critics in case of per-agent critics).
         if self.all_args.skip_steps_async:
             # In case of asynchronous skipping, we update each agent's policy using buffers from each rollout thread.
@@ -852,6 +844,18 @@ class PatrollingRunner(Runner):
                 for i in range(self.n_rollout_threads):
                     train_infos["actors"][i].append(train_info)       
                 self.buffer[agent_id].after_update()
+
+        # # Print the entire actor buffer.
+        # # buf = self.critic_buffer
+        # # buf = self.buffer[0][0]
+        # buf = self.buffer[0]
+        # for at in ["obs", "share_obs", "actions", "value_preds", "returns", "masks", "rnn_states", "rnn_states_critic", "deltaSteps"]:
+        #     print(f"======= ATTRIBUTE: {at} =======")
+        #     for i in buf.__dict__[at]:
+        #         # print(i[0])
+        #         print(i)
+        #     print()
+        # raise Exception("Done printing buffer.")
 
         return train_infos
     
