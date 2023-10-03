@@ -235,13 +235,7 @@ class PatrollingRunner(Runner):
         combined_obs = self.envs.reset()
 
         # Split the combined observations into obs and share_obs, then combine across environments.
-        obs = []
-        share_obs = []
-        for o in combined_obs:
-            obs.append(o["obs"])
-            share_obs.append(o["share_obs"][0])
-        obs = np.array(obs)
-        share_obs = np.array(share_obs)
+        obs, share_obs = self._process_combined_obs(combined_obs)
 
         if self.use_centralized_V:
             c_share_obs = np.repeat(share_obs, self.num_agents, axis=1)
@@ -821,6 +815,7 @@ class PatrollingRunner(Runner):
 
         # Print the entire actor buffer.
         # buf = self.critic_buffer
+        # # buf = self.buffer[0][0]
         # for at in ["obs", "share_obs", "actions", "value_preds", "returns", "masks", "rnn_states", "rnn_states_critic", "deltaSteps"]:
         #     print(f"======= ATTRIBUTE: {at} =======")
         #     for i in buf.__dict__[at]:
@@ -883,5 +878,5 @@ class PatrollingRunner(Runner):
         share_obs = []
         for o in combined_obs:
             obs.append(o["obs"])
-            share_obs.append(o["share_obs"][0])
+            share_obs.append(o["share_obs"])
         return np.array(obs), np.array(share_obs)
