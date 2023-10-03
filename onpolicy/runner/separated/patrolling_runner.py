@@ -859,9 +859,9 @@ class PatrollingRunner(Runner):
                     for agent_id in range(self.num_agents):
                         maxBufferStep = max(maxBufferStep, self.buffer[i][agent_id].step)
                 bufferStep = maxBufferStep
-            last_step = bufferStep >= self.episode_length - 2
+            last_step = bufferStep >= self.episode_length - 1
         else:
-            last_step = step == self.episode_length - 1
+            last_step = step >= self.episode_length - 1
         return last_step
 
     def _process_combined_obs(self, combined_obs):
