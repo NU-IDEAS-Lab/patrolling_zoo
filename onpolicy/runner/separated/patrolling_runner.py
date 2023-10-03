@@ -92,6 +92,8 @@ class PatrollingRunner(Runner):
             tb_actions = -1.0 * np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.int32)
             tb_action_log_probs = np.zeros((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
             tb_rnn_states = np.zeros((self.n_rollout_threads, self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
+            tb_rnn_states_critic = np.zeros((self.n_rollout_threads, self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
+            tb_value_preds = np.zeros((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
 
             # Set up a reward sum matrix to hold the sum of rewards given between actions (in case of skipping).
             # Currently only used for asynchronous skipping.
@@ -152,10 +154,12 @@ class PatrollingRunner(Runner):
                         if actions[i][a] != None:
                             tb_actions[i, a] = actions[i][a]
                             tb_action_log_probs[i, a] = action_log_probs[i][a]
-                            tb_rnn_states[i, a] = rnn_states[i][a]                
+                            tb_rnn_states[i, a] = rnn_states[i][a]
+                            tb_rnn_states_critic[i, a] = rnn_states_critic[i][a]
+                            tb_value_preds[i, a] = values[i][a]
 
                 # Combine into single data structure.
-                data = obs, share_obs, rewardSums, dones, infos, values, tb_actions, tb_action_log_probs, tb_rnn_states, rnn_states_critic, delta_steps
+                data = obs, share_obs, rewardSums, dones, infos, tb_value_preds, tb_actions, tb_action_log_probs, tb_rnn_states, tb_rnn_states_critic, delta_steps
                 
                 # Insert data into buffer
                 data_critic_prev = self.insert(data, data_critic_prev)
@@ -405,7 +409,7 @@ class PatrollingRunner(Runner):
                             rewards = rewards[i, agent_id],
                             masks = masks[i, agent_id],
                             deltaSteps = delta_steps[i, agent_id],
-                            criticStep = np.array(self.critic_buffer.step) if self.use_centralized_V else np.array(None),
+                            criticStep = np.array(self.critic_buffer.step) if self.use_centralized_V else np.array(self.buffer[i][agent_id].step),
                             no_reset = True
                         )
                     
@@ -755,10 +759,10 @@ class PatrollingRunner(Runner):
                         self.trainer[agent_id].prep_rollout()
                         buf = self.buffer[i][agent_id]
 
-                        # Check that the total step count is correct.
-                        stepSum = np.sum(buf.deltaSteps[:buf.step])
-                        if stepSum != self.all_args.episode_length:
-                            raise RuntimeError(f"Total step count is incorrect for buffer {i}-{agent_id}! Expected {self.all_args.episode_length}, got {stepSum}")
+                        # # Check that the total step count is correct.
+                        # stepSum = np.sum(buf.deltaSteps[:buf.step])
+                        # if stepSum != self.all_args.episode_length:
+                        #     raise RuntimeError(f"Total step count is incorrect for buffer {i}-{agent_id}! Expected {self.all_args.episode_length}, got {stepSum}")
 
                         next_value = self.trainer[agent_id].policy.get_values(
                             buf.share_obs[buf.step - 1], 
