@@ -740,8 +740,8 @@ class PatrollingRunner(Runner):
                             self.buffer[i][agent_id].returns[j] = self.critic_buffer.returns[s, i, agent_id]
 
                         # Copy values for last step to capture the final value/return.
-                        self.buffer[i][agent_id].returns[j + 1] = self.critic_buffer.returns[self.critic_buffer.step, i, agent_id]
-                        self.buffer[i][agent_id].value_preds[j + 1] = self.critic_buffer.value_preds[self.critic_buffer.step, i, agent_id]
+                        # self.buffer[i][agent_id].returns[j + 1] = self.critic_buffer.returns[self.critic_buffer.step, i, agent_id]
+                        # self.buffer[i][agent_id].value_preds[j + 1] = self.critic_buffer.value_preds[self.critic_buffer.step, i, agent_id]
             else:
                 for agent_id in range(self.num_agents):
                     self.buffer[agent_id].returns = self.critic_buffer.returns[:, :, agent_id]
@@ -816,7 +816,7 @@ class PatrollingRunner(Runner):
             )
 
         # Print the entire actor buffer.
-        # buf = self.buffer[0][0]
+        # buf = self.critic_buffer
         # for at in ["obs", "share_obs", "actions", "value_preds", "returns", "masks", "rnn_states", "rnn_states_critic", "deltaSteps"]:
         #     print(f"======= ATTRIBUTE: {at} =======")
         #     for i in buf.__dict__[at]:
