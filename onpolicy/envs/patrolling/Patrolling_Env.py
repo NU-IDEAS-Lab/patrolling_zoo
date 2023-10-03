@@ -105,6 +105,8 @@ class PatrollingEnv(object):
             elif not self.args.skip_steps_async:
                 raise ValueError(f"Action cannot be None when skip_steps_async is False. Agent: {i}")
 
+        rewards = np.zeros((self.num_agents, 1), dtype=np.float32)
+
         while not ready and not any(done):
             # We want to determine if this is the last step when using syncronized step skipping.
             lastStep = self.args.skip_steps_sync and self.ppoSteps >= self.args.episode_length - 1
@@ -125,10 +127,8 @@ class PatrollingEnv(object):
                 "share_obs": self._share_obs_wrapper(self.env.state_all())
             }
 
-            reward = [[reward[a]] for a in self.env.possible_agents]
-            if self.share_reward:
-                global_reward = np.sum(reward)
-                reward = [[global_reward]] * self.num_agents
+            # Increase reward.
+            rewards += np.array([reward[a] for a in self.env.possible_agents]).reshape(-1, 1)
 
             info = self._info_wrapper(info)
 
@@ -143,6 +143,13 @@ class PatrollingEnv(object):
             # Check if any agents are ready
             ready = any([info[a]["ready"] for a in self.env.agents])
 
+        # If we are sharing the reward, then we need to sum the rewards.
+        if self.share_reward:
+            global_reward = np.sum(rewards)
+            rewards = global_reward * np.ones((self.num_agents, 1), dtype=np.float32)
+        
+        # Convert back from numpy to list.
+        rewards = [rewards[i][0] for i in range(self.num_agents)]
 
         info["deltaSteps"] = [[self.deltaSteps[a]] for a in self.env.possible_agents]
         info["ready"] = [info[a]["ready"] for a in self.env.possible_agents]
@@ -152,7 +159,7 @@ class PatrollingEnv(object):
         # Update the previous action.
         self.prevAction = actionPz
 
-        return combined_obs, reward, done, info
+        return combined_obs, rewards, done, info
 
     def seed(self, seed=None):
         if seed is None:
