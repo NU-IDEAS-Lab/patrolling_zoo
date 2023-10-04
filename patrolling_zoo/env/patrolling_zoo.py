@@ -507,10 +507,10 @@ class parallel_env(ParallelEnv):
                 action = action_dict[agent]
 
                 # Update the agent's position.
-                if action in self.pg.graph.nodes:
+                if int(action) in self.pg.graph.nodes:
                     
                     # Destination node is the action value.
-                    dstNode = action
+                    dstNode = int(action)
 
                     # Calculate the shortest path.
                     path = self._getPathToNode(agent, dstNode)
