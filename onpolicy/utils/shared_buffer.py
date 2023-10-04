@@ -72,7 +72,7 @@ class SharedReplayBuffer(object):
         self.rewards = np.zeros(
             (self.episode_length, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
         self.deltaSteps = np.zeros(
-            (self.episode_length, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
+            (self.episode_length, self.n_rollout_threads, num_agents, 1), dtype=np.int32)
 
         self.masks = np.ones((self.episode_length + 1, self.n_rollout_threads, num_agents, 1), dtype=np.float32)
         self.bad_masks = np.ones_like(self.masks)
@@ -82,7 +82,7 @@ class SharedReplayBuffer(object):
 
     def insert(self, share_obs, obs, rnn_states, rnn_states_critic, actions, action_log_probs,
                value_preds, rewards, masks, bad_masks=None, active_masks=None, available_actions=None,
-               deltaSteps=None):
+               deltaSteps=None, no_reset=False):
         """
         Insert data into the buffer.
         :param share_obs: (argparse.Namespace) arguments containing relevant model, policy, and env information.
@@ -100,7 +100,11 @@ class SharedReplayBuffer(object):
         """
 
         # Reset the step count if we are at the end of an episode.
-        self.step = (self.step) % self.episode_length
+        if no_reset:
+            if self.step >= self.episode_length:
+                raise ValueError("Buffer has reached end of episode. Reset buffer before inserting data.")
+        else:
+            self.step = self.step % self.episode_length
 
         self.share_obs[self.step + 1] = share_obs.copy()
         self.obs[self.step + 1] = obs.copy()
@@ -189,13 +193,16 @@ class SharedReplayBuffer(object):
         :param value_normalizer: (PopArt) If not None, PopArt value normalizer instance.
         """
 
+        if last_step == -1:
+            last_step = self.episode_length
+
         # Check whether we should use the AMADM GAE modification from https://arxiv.org/abs/2308.06036
         # Unfortunately, I don't have time to implement for all of the other options (like use_proper_time_limits),
         # so I just ignore them!
         if self._use_gae_amadm and not self._use_gae:
             self.value_preds[last_step] = next_value
             gae = 0
-            for step in reversed(range(self.rewards.shape[0])):
+            for step in reversed(range(last_step)):
                 if self._use_popart or self._use_valuenorm:
                     delta = self.rewards[step] + np.power(self.gamma, self.deltaSteps[step]) * value_normalizer.denormalize(
                         self.value_preds[step + 1]) * self.masks[step + 1] \
@@ -267,10 +274,9 @@ class SharedReplayBuffer(object):
         :param num_mini_batch: (int) number of minibatches to split the batch into.
         :param mini_batch_size: (int) number of samples in each minibatch.
         """
-        if last_step != -1:
-            raise NotImplementedError("The last_step argument is not yet implemented for the SharedReplayBuffer. It is only available for SeparatedReplayBuffer.")
-
         episode_length, n_rollout_threads, num_agents = self.rewards.shape[0:3]
+        if last_step != -1:
+            episode_length = last_step
         batch_size = n_rollout_threads * episode_length * num_agents
 
         if mini_batch_size is None:
@@ -286,17 +292,17 @@ class SharedReplayBuffer(object):
         rand = torch.randperm(batch_size).numpy()
         sampler = [rand[i * mini_batch_size:(i + 1) * mini_batch_size] for i in range(num_mini_batch)]
 
-        share_obs = self.share_obs[:-1].reshape(-1, *self.share_obs.shape[3:])
-        obs = self.obs[:-1].reshape(-1, *self.obs.shape[3:])
-        rnn_states = self.rnn_states[:-1].reshape(-1, *self.rnn_states.shape[3:])
-        rnn_states_critic = self.rnn_states_critic[:-1].reshape(-1, *self.rnn_states_critic.shape[3:])
+        share_obs = self.share_obs[:last_step].reshape(-1, *self.share_obs.shape[3:])
+        obs = self.obs[:last_step].reshape(-1, *self.obs.shape[3:])
+        rnn_states = self.rnn_states[:last_step].reshape(-1, *self.rnn_states.shape[3:])
+        rnn_states_critic = self.rnn_states_critic[:last_step].reshape(-1, *self.rnn_states_critic.shape[3:])
         actions = self.actions.reshape(-1, self.actions.shape[-1])
         if self.available_actions is not None:
-            available_actions = self.available_actions[:-1].reshape(-1, self.available_actions.shape[-1])
-        value_preds = self.value_preds[:-1].reshape(-1, 1)
-        returns = self.returns[:-1].reshape(-1, 1)
-        masks = self.masks[:-1].reshape(-1, 1)
-        active_masks = self.active_masks[:-1].reshape(-1, 1)
+            available_actions = self.available_actions[:last_step].reshape(-1, self.available_actions.shape[-1])
+        value_preds = self.value_preds[:last_step].reshape(-1, 1)
+        returns = self.returns[:last_step].reshape(-1, 1)
+        masks = self.masks[:last_step].reshape(-1, 1)
+        active_masks = self.active_masks[:last_step].reshape(-1, 1)
         action_log_probs = self.action_log_probs.reshape(-1, self.action_log_probs.shape[-1])
         advantages = advantages.reshape(-1, 1)
 
@@ -331,9 +337,6 @@ class SharedReplayBuffer(object):
         :param advantages: (np.ndarray) advantage estimates.
         :param num_mini_batch: (int) number of minibatches to split the batch into.
         """
-        if last_step != -1:
-            raise NotImplementedError("The last_step argument is not yet implemented for the SharedReplayBuffer. It is only available for SeparatedReplayBuffer.")
-
         episode_length, n_rollout_threads, num_agents = self.rewards.shape[0:3]
         batch_size = n_rollout_threads * num_agents
         assert n_rollout_threads * num_agents >= num_mini_batch, (
@@ -373,22 +376,24 @@ class SharedReplayBuffer(object):
 
             for offset in range(num_envs_per_batch):
                 ind = perm[start_ind + offset]
-                share_obs_batch.append(share_obs[:-1, ind])
-                obs_batch.append(obs[:-1, ind])
+                share_obs_batch.append(share_obs[:last_step, ind])
+                obs_batch.append(obs[:last_step, ind])
                 rnn_states_batch.append(rnn_states[0:1, ind])
                 rnn_states_critic_batch.append(rnn_states_critic[0:1, ind])
                 actions_batch.append(actions[:, ind])
                 if self.available_actions is not None:
-                    available_actions_batch.append(available_actions[:-1, ind])
-                value_preds_batch.append(value_preds[:-1, ind])
-                return_batch.append(returns[:-1, ind])
-                masks_batch.append(masks[:-1, ind])
-                active_masks_batch.append(active_masks[:-1, ind])
+                    available_actions_batch.append(available_actions[:last_step, ind])
+                value_preds_batch.append(value_preds[:last_step, ind])
+                return_batch.append(returns[:last_step, ind])
+                masks_batch.append(masks[:last_step, ind])
+                active_masks_batch.append(active_masks[:last_step, ind])
                 old_action_log_probs_batch.append(action_log_probs[:, ind])
                 adv_targ.append(advantages[:, ind])
 
             # [N[T, dim]]
             T, N = self.episode_length, num_envs_per_batch
+            if last_step != -1:
+                T = last_step
             # These are all from_numpys of size (T, N, -1)
             share_obs_batch = np.stack(share_obs_batch, 1)
             obs_batch = np.stack(obs_batch, 1)
@@ -432,10 +437,9 @@ class SharedReplayBuffer(object):
         :param num_mini_batch: (int) number of minibatches to split the batch into.
         :param data_chunk_length: (int) length of sequence chunks with which to train RNN.
         """
-        if last_step != -1:
-            raise NotImplementedError("The last_step argument is not yet implemented for the SharedReplayBuffer. It is only available for SeparatedReplayBuffer.")
-
         episode_length, n_rollout_threads, num_agents = self.rewards.shape[0:3]
+        if last_step != -1:
+            episode_length = last_step
         batch_size = n_rollout_threads * episode_length * num_agents
         data_chunks = batch_size // data_chunk_length  # [C=r*T*M/L]
         mini_batch_size = data_chunks // num_mini_batch
@@ -444,28 +448,28 @@ class SharedReplayBuffer(object):
         sampler = [rand[i * mini_batch_size:(i + 1) * mini_batch_size] for i in range(num_mini_batch)]
 
         if len(self.share_obs.shape) > 4:
-            share_obs = self.share_obs[:-1].transpose(1, 2, 0, 3, 4, 5).reshape(-1, *self.share_obs.shape[3:])
-            obs = self.obs[:-1].transpose(1, 2, 0, 3, 4, 5).reshape(-1, *self.obs.shape[3:])
+            share_obs = self.share_obs[:last_step].transpose(1, 2, 0, 3, 4, 5).reshape(-1, *self.share_obs.shape[3:])
+            obs = self.obs[:last_step].transpose(1, 2, 0, 3, 4, 5).reshape(-1, *self.obs.shape[3:])
         else:
-            share_obs = _cast(self.share_obs[:-1])
-            obs = _cast(self.obs[:-1])
+            share_obs = _cast(self.share_obs[:last_step])
+            obs = _cast(self.obs[:last_step])
 
         actions = _cast(self.actions)
         action_log_probs = _cast(self.action_log_probs)
         advantages = _cast(advantages)
-        value_preds = _cast(self.value_preds[:-1])
-        returns = _cast(self.returns[:-1])
-        masks = _cast(self.masks[:-1])
-        active_masks = _cast(self.active_masks[:-1])
-        # rnn_states = _cast(self.rnn_states[:-1])
-        # rnn_states_critic = _cast(self.rnn_states_critic[:-1])
-        rnn_states = self.rnn_states[:-1].transpose(1, 2, 0, 3, 4).reshape(-1, *self.rnn_states.shape[3:])
-        rnn_states_critic = self.rnn_states_critic[:-1].transpose(1, 2, 0, 3, 4).reshape(-1,
+        value_preds = _cast(self.value_preds[:last_step])
+        returns = _cast(self.returns[:last_step])
+        masks = _cast(self.masks[:last_step])
+        active_masks = _cast(self.active_masks[:last_step])
+        # rnn_states = _cast(self.rnn_states[:last_step])
+        # rnn_states_critic = _cast(self.rnn_states_critic[:last_step])
+        rnn_states = self.rnn_states[:last_step].transpose(1, 2, 0, 3, 4).reshape(-1, *self.rnn_states.shape[3:])
+        rnn_states_critic = self.rnn_states_critic[:last_step].transpose(1, 2, 0, 3, 4).reshape(-1,
                                                                                          *self.rnn_states_critic.shape[
                                                                                           3:])
 
         if self.available_actions is not None:
-            available_actions = _cast(self.available_actions[:-1])
+            available_actions = _cast(self.available_actions[:last_step])
 
         for indices in sampler:
             share_obs_batch = []

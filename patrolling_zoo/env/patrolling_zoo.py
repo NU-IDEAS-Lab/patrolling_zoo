@@ -492,7 +492,7 @@ class parallel_env(ParallelEnv):
         '''
         self.step_count += 1
         obs_dict = {}
-        reward_dict = {agent: 0 for agent in self.agents}
+        reward_dict = {agent: 0.0 for agent in self.agents}
         done_dict = {}
         truncated_dict = {agent: False for agent in self.agents}
         info_dict = {
@@ -507,10 +507,10 @@ class parallel_env(ParallelEnv):
                 action = action_dict[agent]
 
                 # Update the agent's position.
-                if action in self.pg.graph.nodes:
+                if int(action) in self.pg.graph.nodes:
                     
                     # Destination node is the action value.
-                    dstNode = action
+                    dstNode = int(action)
 
                     # Calculate the shortest path.
                     path = self._getPathToNode(agent, dstNode)

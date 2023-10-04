@@ -53,7 +53,9 @@ class SeparatedReplayBuffer(object):
         self.action_log_probs = np.zeros((self.episode_length, self.n_rollout_threads, act_shape), dtype=np.float32)
         self.rewards = np.zeros((self.episode_length, self.n_rollout_threads, 1), dtype=np.float32)
         self.deltaSteps = np.zeros(
-            (self.episode_length, self.n_rollout_threads, 1), dtype=np.float32)
+            (self.episode_length, self.n_rollout_threads, 1), dtype=np.int32)
+        self.criticStep = np.zeros(
+            (self.episode_length, self.n_rollout_threads, 1), dtype=np.int32)
 
         self.masks = np.ones((self.episode_length + 1, self.n_rollout_threads, 1), dtype=np.float32)
         self.bad_masks = np.ones_like(self.masks)
@@ -63,10 +65,14 @@ class SeparatedReplayBuffer(object):
 
     def insert(self, share_obs, obs, rnn_states, rnn_states_critic, actions, action_log_probs,
                value_preds, rewards, masks, bad_masks=None, active_masks=None, available_actions=None,
-               deltaSteps=None):
+               deltaSteps=None, criticStep=None, no_reset=False):
         
         # Reset the step count if we are at the end of an episode.
-        self.step = (self.step) % self.episode_length
+        if no_reset:
+            if self.step >= self.episode_length:
+                raise ValueError("Buffer has reached end of episode. Reset buffer before inserting data.")
+        else:
+            self.step = self.step % self.episode_length
 
         self.share_obs[self.step + 1] = share_obs.copy()
         self.obs[self.step + 1] = obs.copy()
@@ -85,6 +91,8 @@ class SeparatedReplayBuffer(object):
             self.available_actions[self.step + 1] = available_actions.copy()
         if deltaSteps is not None:
             self.deltaSteps[self.step] = deltaSteps.copy()
+        if criticStep is not None:
+            self.criticStep[self.step] = criticStep.copy()
 
         # Increment step count.
         self.step += 1
@@ -132,6 +140,9 @@ class SeparatedReplayBuffer(object):
         self.bad_masks[0] = self.bad_masks[-1].copy()
 
     def compute_returns(self, next_value, value_normalizer=None, last_step=-1):
+        if last_step == -1:
+            last_step = self.episode_length
+
         # Check whether we should use the AMADM GAE modification from https://arxiv.org/abs/2308.06036
         # Unfortunately, I don't have time to implement for all of the other options (like use_proper_time_limits),
         # so I just ignore them!
