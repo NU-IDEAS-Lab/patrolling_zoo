@@ -73,15 +73,17 @@ class PatrollingEnv(object):
         self.action_space = [self.env.action_spaces[a] for a in self.env.possible_agents]
 
         # Set up observation space.
-        self.flatten_observations = False
-        if type(self.env.state_space) == Dict:
-            self.flatten_observations = True
-        
+        self.flatten_observations = type(self.env.observation_spaces[self.env.possible_agents[0]]) == Dict
         if self.flatten_observations:
             self.observation_space = [flatten_space(self.env.observation_spaces[a]) for a in self.env.possible_agents]
-            self.share_observation_space = [flatten_space(self.env.state_space) for a in self.env.possible_agents]
         else:
             self.observation_space = [self.env.observation_spaces[a] for a in self.env.possible_agents]
+        
+        # Set up global observation space.
+        self.flatten_observations_global = type(self.env.state_space) == Dict
+        if self.flatten_observations_global:
+            self.share_observation_space = [flatten_space(self.env.state_space) for a in self.env.possible_agents]
+        else:
             self.share_observation_space = [self.env.state_space for a in self.env.possible_agents]
 
 
@@ -206,7 +208,7 @@ class PatrollingEnv(object):
     def _share_obs_wrapper(self, obs):
 
         # Flatten the PZ observation.
-        if self.flatten_observations:
+        if self.flatten_observations_global:
             # res = []
             # for a in self.env.possible_agents:
             #     res.append(flatten(self.env.state_space, obs[a]))
@@ -218,7 +220,7 @@ class PatrollingEnv(object):
             # Flatten the PZ observation.
             obs = flatten(self.env.state_space, obs)
         else:
-            obs = [obs for a in self.env.possible_agents]
+            obs = obs
         
         return obs
 
