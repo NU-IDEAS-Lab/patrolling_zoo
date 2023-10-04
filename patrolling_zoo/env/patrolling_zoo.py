@@ -452,7 +452,8 @@ class parallel_env(ParallelEnv):
             adjacency = -1.0 * np.ones(self.observation_space(agent)["adjacency"].shape, dtype=np.float32)
             for edge in self.pg.graph.edges:
                 maxWeight = max([self.pg.graph.edges[e]["weight"] for e in self.pg.graph.edges])
-                weight = self._minMaxNormalize(self.pg.graph.edges[edge]["weight"], minimum=0.0, maximum=maxWeight)
+                minWeight = min([self.pg.graph.edges[e]["weight"] for e in self.pg.graph.edges])
+                weight = self._minMaxNormalize(self.pg.graph.edges[edge]["weight"], minimum=minWeight, maximum=maxWeight)
                 adjacency[edge[0], edge[1]] = weight
                 adjacency[edge[1], edge[0]] = weight
             obs["adjacency"] = adjacency
@@ -512,7 +513,7 @@ class parallel_env(ParallelEnv):
             if agent in action_dict:
                 action = action_dict[agent]
 
-                if type(action) != int:
+                if not np.issubdtype(type(action), np.integer):
                     raise ValueError(f"Invalid action {action} of type {type(action)} provided.")
 
                 # Interpret the action using the "full" method.
@@ -522,13 +523,19 @@ class parallel_env(ParallelEnv):
                     dstNode = action
                 
                 # Interpret the action using the "neighbors" method.
-                # This is rather primitive as we don't account for the agent being on an edge, etc.
                 elif self.action_method == "neighbors":
-                    if action >= self.pg.graph.degree(agent.lastNode):
-                        # Provide a penalty for invalid actions.
-                        reward_dict[agent] -= 0.5 * self.alpha
-                        continue
-                    dstNode = list(self.pg.graph.neighbors(agent.lastNode))[action]
+                    if agent.edge == None:
+                        if action >= self.pg.graph.degree(agent.lastNode):
+                            # Provide a penalty for invalid actions.
+                            reward_dict[agent] -= 1.0
+                            continue
+                        dstNode = list(self.pg.graph.neighbors(agent.lastNode))[action]
+                    else:
+                        if action >= 2: #only 2 actions are possible when on an edge
+                            # Provide a penalty for invalid actions.
+                            reward_dict[agent] -= 1.0
+                            continue
+                        dstNode = agent.edge[action]
                 
                 else:
                     raise ValueError(f"Invalid action method {self.action_method}")
