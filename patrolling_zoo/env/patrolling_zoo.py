@@ -80,6 +80,7 @@ class parallel_env(ParallelEnv):
         self.reward_method_terminal = reward_method_terminal
         self.observe_method = observe_method
         self.observe_method_global = observe_method_global if observe_method_global != None else observe_method
+        self.observe_bitmap_dims = (50, 50)
 
         self.reward_interval = reward_interval
 
@@ -171,7 +172,7 @@ class parallel_env(ParallelEnv):
             state_space = spaces.Box(
                 low=-2.0,
                 high=np.inf,
-                shape=(self.pg.widthPixels, self.pg.heightPixels, len(self.OBSERVATION_CHANNELS)),# + self.pg.graph.number_of_nodes()),
+                shape=(self.observe_bitmap_dims[0], self.observe_bitmap_dims[1], len(self.OBSERVATION_CHANNELS)),
                 dtype=np.float32,
             )
         
@@ -406,13 +407,19 @@ class parallel_env(ParallelEnv):
             # Set the observing agent's ID in the (0, 0) position. This is a bit hacky.
             bitmap[0, 0, self.OBSERVATION_CHANNELS.AGENT_ID] = agent.id
 
+            def _normPosition(pos):
+                x = self._minMaxNormalize(pos[0], a=0.0, b=self.observe_bitmap_dims[0], minimum=0.0, maximum=self.pg.widthPixels)
+                y = self._minMaxNormalize(pos[1], a=0.0, b=self.observe_bitmap_dims[1], minimum=0.0, maximum=self.pg.heightPixels)
+                return x, y
+
             # Add agents to the observation.
             for a in agents:
-                bitmap[int(a.position[0]), int(a.position[1]), self.OBSERVATION_CHANNELS.AGENT_ID] = a.id
+                pos = _normPosition(a.position)
+                bitmap[int(pos[0]), int(pos[1]), self.OBSERVATION_CHANNELS.AGENT_ID] = a.id
             
             # Add vertex idleness times to the observation.
             for v in vertices:
-                pos = self.pg.getNodePosition(v)
+                pos = _normPosition(self.pg.getNodePosition(v))
                 bitmap[int(pos[0]), int(pos[1]), self.OBSERVATION_CHANNELS.IDLENESS] = self.pg.getNodeIdlenessTime(v, self.step_count)
             
             # Create a connectivity matrix for each vertex and then add it to the remaining channels in the observation.
@@ -425,13 +432,13 @@ class parallel_env(ParallelEnv):
 
             # Add vertices to the graph channel.
             for v in vertices:
-                pos = self.pg.getNodePosition(v)
+                pos = _normPosition(self.pg.getNodePosition(v))
                 bitmap[int(pos[0]), int(pos[1]), self.OBSERVATION_CHANNELS.GRAPH] = v
 
             # Add edges to the graph channel.
             for edge in self.pg.graph.edges:
-                pos1 = self.pg.getNodePosition(edge[0])
-                pos2 = self.pg.getNodePosition(edge[1])
+                pos1 = _normPosition(self.pg.getNodePosition(edge[0]))
+                pos2 = _normPosition(self.pg.getNodePosition(edge[1]))
                 dist = self._dist(pos1, pos2)
                 if dist > 0.0:
                     for i in range(int(dist)):
@@ -753,7 +760,7 @@ class parallel_env(ParallelEnv):
             maximum = np.max(x)
         if minimum is None:
             minimum = np.min(x)
-        return (x - minimum) / (maximum - minimum + eps)
+        return a + (x - minimum) * (b - a) / (maximum - minimum + eps)
 
 
     def observe_with_communication(self, agent):
