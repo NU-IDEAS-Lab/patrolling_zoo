@@ -732,16 +732,16 @@ class PatrollingRunner(Runner):
                     for agent_id in range(self.num_agents):
                         buf = self.buffer[i][agent_id]
                         
-                        cbuf.share_obs[cbuf.step:cbuf.step + buf.step] = cbuf.share_obs[:buf.step]
-                        cbuf.obs[cbuf.step:cbuf.step + buf.step] = cbuf.obs[:buf.step]
-                        cbuf.rnn_states[cbuf.step:cbuf.step + buf.step] = cbuf.rnn_states[:buf.step]
-                        cbuf.rnn_states_critic[cbuf.step:cbuf.step + buf.step] = cbuf.rnn_states_critic[:buf.step]
-                        cbuf.actions[cbuf.step:cbuf.step + buf.step] = cbuf.actions[:buf.step]
-                        cbuf.action_log_probs[cbuf.step:cbuf.step + buf.step] = cbuf.action_log_probs[:buf.step]
-                        cbuf.value_preds[cbuf.step:cbuf.step + buf.step] = cbuf.value_preds[:buf.step]
-                        cbuf.rewards[cbuf.step:cbuf.step + buf.step] = cbuf.rewards[:buf.step]
-                        cbuf.masks[cbuf.step:cbuf.step + buf.step] = cbuf.masks[:buf.step]
-                        cbuf.deltaSteps[cbuf.step:cbuf.step + buf.step] = cbuf.deltaSteps[:buf.step]
+                        cbuf.share_obs[cbuf.step:cbuf.step + buf.step] = buf.share_obs[:buf.step]
+                        cbuf.obs[cbuf.step:cbuf.step + buf.step] = buf.obs[:buf.step]
+                        cbuf.rnn_states[cbuf.step:cbuf.step + buf.step] = buf.rnn_states[:buf.step]
+                        cbuf.rnn_states_critic[cbuf.step:cbuf.step + buf.step] = buf.rnn_states_critic[:buf.step]
+                        cbuf.actions[cbuf.step:cbuf.step + buf.step] = buf.actions[:buf.step]
+                        cbuf.action_log_probs[cbuf.step:cbuf.step + buf.step] = buf.action_log_probs[:buf.step]
+                        cbuf.value_preds[cbuf.step:cbuf.step + buf.step] = buf.value_preds[:buf.step]
+                        cbuf.rewards[cbuf.step:cbuf.step + buf.step] = buf.rewards[:buf.step]
+                        cbuf.masks[cbuf.step:cbuf.step + buf.step] = buf.masks[:buf.step]
+                        cbuf.deltaSteps[cbuf.step:cbuf.step + buf.step] = buf.deltaSteps[:buf.step]
                         cbuf.step += buf.step
 
                 if cbuf.step != totalSteps:
@@ -879,12 +879,12 @@ class PatrollingRunner(Runner):
                     #         f.write(f"======= ATTRIBUTE: {at} =======\n")
                     #         f.write(f"{buf.__dict__[at]}\n")
                     #         f.write("\n")
-                    # buf = self.critic_buffer
+                    # buf = self.critic_buffer_series
                     # with open(f"buffer_critic_{i}.txt", "w") as f:
                     #     f.write(f"======= CRITIC: {i} =======\n")
                     #     for at in ["obs", "share_obs", "actions", "value_preds", "returns", "masks", "rnn_states", "rnn_states_critic", "deltaSteps"]:
                     #         f.write(f"======= ATTRIBUTE: {at} =======\n")
-                    #         f.write(f"{buf.__dict__[at][:, i]}\n")
+                    #         f.write(f"{buf.__dict__[at]}\n")
                     #         f.write("\n")
                     # # raise Exception("Done printing buffer.")
 
