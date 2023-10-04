@@ -167,7 +167,7 @@ class parallel_env(ParallelEnv):
             }) # type: ignore
         
         # Add bitmap observation.
-        if self.observe_method in ["bitmap"]:
+        if observe_method in ["bitmap"]:
             state_space = spaces.Box(
                 low=-2.0,
                 high=np.inf,
@@ -399,7 +399,7 @@ class parallel_env(ParallelEnv):
             obs["vertex_distances"] = vertexDistances
 
         # Add bitmap observation.
-        if self.observe_method in ["bitmap"]:
+        if observe_method in ["bitmap"]:
             # Create an image which defaults to -1.
             bitmap = -1.0 * np.ones(self.observation_space(agent).shape, dtype=np.float32)
 
@@ -453,7 +453,7 @@ class parallel_env(ParallelEnv):
         # Add adjacency matrix.
         if observe_method in ["ajg_newer"]:
             # Create adjacency matrix.
-            adjacency = -1.0 * np.ones(self.observation_space(agent)["adjacency"].shape, dtype=np.float32)
+            adjacency = -1.0 * np.ones((self.pg.graph.number_of_nodes(), self.pg.graph.number_of_nodes()), dtype=np.float32)
             for edge in self.pg.graph.edges:
                 adjacency[edge[0], edge[1]] = 1.0
                 adjacency[edge[1], edge[0]] = 1.0
@@ -462,7 +462,7 @@ class parallel_env(ParallelEnv):
         # Add weighted adjacency matrix (normalized).
         if observe_method in ["adjacency"]:
             # Create adjacency matrix.
-            adjacency = -1.0 * np.ones(self.observation_space(agent)["adjacency"].shape, dtype=np.float32)
+            adjacency = -1.0 * np.ones((self.pg.graph.number_of_nodes(), self.pg.graph.number_of_nodes()), dtype=np.float32)
             for edge in self.pg.graph.edges:
                 maxWeight = max([self.pg.graph.edges[e]["weight"] for e in self.pg.graph.edges])
                 minWeight = min([self.pg.graph.edges[e]["weight"] for e in self.pg.graph.edges])
@@ -476,11 +476,11 @@ class parallel_env(ParallelEnv):
             graphPos = {}
             # Set default value of -1.0
             for a in self.possible_agents:
-                graphPos[a] = -1.0 * np.ones(self.observation_space(agent)["agent_graph_position"][a].shape, dtype=np.float32)
+                graphPos[a] = -1.0 * np.ones(3, dtype=np.float32)
             
             # Fill in actual values for agents we can see.
             for a in agents:
-                vec = np.zeros(self.observation_space(agent)["agent_graph_position"][a].shape, dtype=np.float32)
+                vec = np.zeros(3, dtype=np.float32)
                 if a.edge == None:
                     vec[0] = a.lastNode
                     vec[1] = a.lastNode
