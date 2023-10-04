@@ -17,7 +17,7 @@ class AHPA(BaseAlgorithm):
         pass
 
 
-    def evaluate(self, render=False, max_cycles=None, max_episodes=1, seed=None):
+    def evaluate(self, render=False, render_terminal=False, max_cycles=None, max_episodes=1, seed=None):
         ''' Evaluates the model. '''
         
         if max_cycles != None:
@@ -49,6 +49,10 @@ class AHPA(BaseAlgorithm):
                     clear_output(wait=True)
                     self.env.render()
 
+            if render_terminal:
+                clear_output(wait=True)
+                self.env.render()
+
 
     def processObservation(self, obs):
         ''' Returns the next node to visit. '''
@@ -56,7 +60,7 @@ class AHPA(BaseAlgorithm):
         # Check whether any agents have reached their target node.
         for agent in self.env.agents:
             targetNode = agent.ahpa.nodes[agent.ahpa.currentNodeIdx]
-            if obs[self.env.agents[0]]["vertex_distances"][agent][targetNode] <= 0.001:
+            if agent.lastNode == targetNode and agent.edge == None:
                 nextNode = agent.ahpa.getNextNode()
 
 
@@ -70,7 +74,7 @@ class AhpaAgent:
         self.voronoiOrigins = self.agentOrigins.copy()
         cell = self.getNodeAllocation(self.voronoiOrigins, self.agentOrigins)
         self.nodes = self.getNodeOrder(cell)
-        self.currentNodeIdx = 1
+        self.currentNodeIdx = 1 if len(self.nodes) > 1 else 0
     
 
     def getNodeAllocation(self, origins, originalOrigins):
@@ -99,5 +103,6 @@ class AhpaAgent:
         if self.currentNodeIdx >= len(self.nodes) - 1:
             self.currentNodeIdx = 0
         node = self.nodes[self.currentNodeIdx]
-        self.currentNodeIdx += 1
+        if len(self.nodes) > 1:
+            self.currentNodeIdx += 1
         return node

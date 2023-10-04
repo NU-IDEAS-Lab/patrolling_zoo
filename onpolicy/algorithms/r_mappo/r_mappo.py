@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
-from onpolicy.utils.util import get_gard_norm, huber_loss, mse_loss
+from onpolicy.utils.util import get_grad_norm, huber_loss, mse_loss
 from onpolicy.utils.valuenorm import ValueNorm
 from onpolicy.algorithms.utils.util import check
 
@@ -49,7 +49,7 @@ class R_MAPPO():
         else:
             self.value_normalizer = None
 
-    def cal_value_loss(self, values, value_preds_batch, return_batch, active_masks_batch):
+    def cal_value_loss(self, values, value_preds_batch, return_batch, active_masks_batch, update_value_normalizer=True):
         """
         Calculate value function loss.
         :param values: (torch.Tensor) value function predictions.
@@ -62,7 +62,8 @@ class R_MAPPO():
         value_pred_clipped = value_preds_batch + (values - value_preds_batch).clamp(-self.clip_param,
                                                                                         self.clip_param)
         if self._use_popart or self._use_valuenorm:
-            self.value_normalizer.update(return_batch)
+            if update_value_normalizer:
+                self.value_normalizer.update(return_batch)
             error_clipped = self.value_normalizer.normalize(return_batch) - value_pred_clipped
             error_original = self.value_normalizer.normalize(return_batch) - values
         else:
@@ -88,11 +89,12 @@ class R_MAPPO():
 
         return value_loss
 
-    def ppo_update(self, sample, update_actor=True):
+    def ppo_update(self, sample, update_actor=True, update_critic=True):
         """
         Update actor and critic networks.
         :param sample: (Tuple) contains data batch with which to update networks.
         :update_actor: (bool) whether to update actor network.
+        :update_critic: (bool) whether to update critic network.
 
         :return value_loss: (torch.Tensor) value function loss.
         :return critic_grad_norm: (torch.Tensor) gradient norm from critic up9date.
@@ -135,48 +137,53 @@ class R_MAPPO():
 
         policy_loss = policy_action_loss
 
-        self.policy.actor_optimizer.zero_grad()
 
         if update_actor:
+            self.policy.actor_optimizer.zero_grad()
             (policy_loss - dist_entropy * self.entropy_coef).backward()
 
         if self._use_max_grad_norm:
             actor_grad_norm = nn.utils.clip_grad_norm_(self.policy.actor.parameters(), self.max_grad_norm)
         else:
-            actor_grad_norm = get_gard_norm(self.policy.actor.parameters())
+            actor_grad_norm = get_grad_norm(self.policy.actor.parameters())
 
-        self.policy.actor_optimizer.step()
+        if update_actor:
+            self.policy.actor_optimizer.step()
 
         # critic update
-        value_loss = self.cal_value_loss(values, value_preds_batch, return_batch, active_masks_batch)
+        value_loss = self.cal_value_loss(values, value_preds_batch, return_batch, active_masks_batch, update_value_normalizer=update_critic)
 
-        self.policy.critic_optimizer.zero_grad()
 
-        (value_loss * self.value_loss_coef).backward()
+        if update_critic:
+            self.policy.critic_optimizer.zero_grad()
+            (value_loss * self.value_loss_coef).backward()
 
         if self._use_max_grad_norm:
             critic_grad_norm = nn.utils.clip_grad_norm_(self.policy.critic.parameters(), self.max_grad_norm)
         else:
-            critic_grad_norm = get_gard_norm(self.policy.critic.parameters())
+            critic_grad_norm = get_grad_norm(self.policy.critic.parameters())
 
-        self.policy.critic_optimizer.step()
+        if update_critic:
+            self.policy.critic_optimizer.step()
 
         return value_loss, critic_grad_norm, policy_loss, dist_entropy, actor_grad_norm, imp_weights
 
-    def train(self, buffer, update_actor=True):
+    def train(self, buffer, update_actor=True, update_critic=True, last_step=-1):
         """
         Perform a training update using minibatch GD.
         :param buffer: (SharedReplayBuffer) buffer containing training data.
         :param update_actor: (bool) whether to update actor network.
+        :param update_critic: (bool) whether to update critic network.
+        :param last_step: (int) last step of the episode. Defaults to -1, which will use all steps in the buffer.
 
         :return train_info: (dict) contains information regarding training update (e.g. loss, grad norms, etc).
         """
         if self._use_popart or self._use_valuenorm:
-            advantages = buffer.returns[:-1] - self.value_normalizer.denormalize(buffer.value_preds[:-1])
+            advantages = buffer.returns[:last_step] - self.value_normalizer.denormalize(buffer.value_preds[:last_step])
         else:
-            advantages = buffer.returns[:-1] - buffer.value_preds[:-1]
+            advantages = buffer.returns[:last_step] - buffer.value_preds[:last_step]
         advantages_copy = advantages.copy()
-        advantages_copy[buffer.active_masks[:-1] == 0.0] = np.nan
+        advantages_copy[buffer.active_masks[:last_step] == 0.0] = np.nan
         mean_advantages = np.nanmean(advantages_copy)
         std_advantages = np.nanstd(advantages_copy)
         advantages = (advantages - mean_advantages) / (std_advantages + 1e-5)
@@ -191,18 +198,20 @@ class R_MAPPO():
         train_info['critic_grad_norm'] = 0
         train_info['ratio'] = 0
 
+        num_updates = 0
+
         for _ in range(self.ppo_epoch):
             if self._use_recurrent_policy:
-                data_generator = buffer.recurrent_generator(advantages, self.num_mini_batch, self.data_chunk_length)
+                data_generator = buffer.recurrent_generator(advantages, self.num_mini_batch, self.data_chunk_length, last_step=last_step)
             elif self._use_naive_recurrent:
-                data_generator = buffer.naive_recurrent_generator(advantages, self.num_mini_batch)
+                data_generator = buffer.naive_recurrent_generator(advantages, self.num_mini_batch, last_step=last_step)
             else:
-                data_generator = buffer.feed_forward_generator(advantages, self.num_mini_batch)
+                data_generator = buffer.feed_forward_generator(advantages, self.num_mini_batch, last_step=last_step)
 
             for sample in data_generator:
 
                 value_loss, critic_grad_norm, policy_loss, dist_entropy, actor_grad_norm, imp_weights \
-                    = self.ppo_update(sample, update_actor)
+                    = self.ppo_update(sample, update_actor, update_critic)
 
                 train_info['value_loss'] += value_loss.item()
                 train_info['policy_loss'] += policy_loss.item()
@@ -211,7 +220,7 @@ class R_MAPPO():
                 train_info['critic_grad_norm'] += critic_grad_norm
                 train_info['ratio'] += imp_weights.mean()
 
-        num_updates = self.ppo_epoch * self.num_mini_batch
+                num_updates += 1
 
         for k in train_info.keys():
             train_info[k] /= num_updates

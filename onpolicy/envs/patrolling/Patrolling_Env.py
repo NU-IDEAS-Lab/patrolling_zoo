@@ -55,8 +55,11 @@ class PatrollingEnv(object):
             alpha = args.alpha,
             beta = args.beta,
             observation_radius = args.observation_radius,
+            action_method = args.action_method,
             observe_method = args.observe_method,
-            max_cycles = -1 if self.args.skip_steps_sync else args.episode_length
+            observe_method_global = args.observe_method_global,
+            reward_method_terminal = args.reward_method_terminal,
+            max_cycles = -1 if self.args.skip_steps_sync or self.args.skip_steps_async else args.episode_length
         )
             
         self.remove_redundancy = args.remove_redundancy
@@ -96,10 +99,20 @@ class PatrollingEnv(object):
 
         return combined_obs
 
-    def step(self, action):
+    def step(self, action_metadata):
 
         ready = False
         done = []
+        if type(action_metadata) == dict:
+            action = action_metadata["action"]
+            last_step = False
+            if "metadata" in action_metadata:
+                metadata = action_metadata["metadata"]
+                last_step = metadata["last_step"]
+        else:
+            action = action_metadata
+            last_step = False
+
 
         # Start with the previous action.
         actionPz = self.prevAction
@@ -114,9 +127,11 @@ class PatrollingEnv(object):
             elif not self.args.skip_steps_async:
                 raise ValueError(f"Action cannot be None when skip_steps_async is False. Agent: {i}")
 
+        rewards = np.zeros((self.num_agents, 1), dtype=np.float32)
+
         while not ready and not any(done):
             # We want to determine if this is the last step when using syncronized step skipping.
-            lastStep = self.args.skip_steps_sync and self.ppoSteps >= self.args.episode_length - 1
+            lastStep = last_step or (self.args.skip_steps_sync and self.ppoSteps >= self.args.episode_length - 1)
             
             # Take a step.
             obs, reward, done, trunc, info = self.env.step(actionPz, lastStep=lastStep)
@@ -134,10 +149,8 @@ class PatrollingEnv(object):
                 "share_obs": self._share_obs_wrapper(self.env.state())
             }
 
-            reward = [reward[a] for a in self.env.possible_agents]
-            if self.share_reward:
-                global_reward = np.sum(reward)
-                reward = [[global_reward]] * self.num_agents
+            # Increase reward.
+            rewards += np.array([reward[a] for a in self.env.possible_agents]).reshape(-1, 1)
 
             info = self._info_wrapper(info)
 
@@ -152,6 +165,13 @@ class PatrollingEnv(object):
             # Check if any agents are ready
             ready = any([info[a]["ready"] for a in self.env.agents])
 
+        # If we are sharing the reward, then we need to sum the rewards.
+        if self.share_reward:
+            global_reward = np.sum(rewards)
+            rewards = global_reward * np.ones((self.num_agents, 1), dtype=np.float32)
+        
+        # Convert back from numpy to list.
+        rewards = [rewards[i] for i in range(self.num_agents)]
 
         info["deltaSteps"] = [[self.deltaSteps[a]] for a in self.env.possible_agents]
         info["ready"] = [info[a]["ready"] for a in self.env.possible_agents]
@@ -161,7 +181,7 @@ class PatrollingEnv(object):
         # Update the previous action.
         self.prevAction = actionPz
 
-        return combined_obs, reward, done, info
+        return combined_obs, rewards, done, info
 
     def seed(self, seed=None):
         if seed is None:
@@ -180,9 +200,6 @@ class PatrollingEnv(object):
             obs = np.reshape(obs, (self.num_agents, -1))
         else:
             obs = [obs[a] for a in self.env.possible_agents]
-
-        if self.num_agents == 1:
-            obs = obs[np.newaxis, :]
         
         return obs
     
@@ -190,18 +207,20 @@ class PatrollingEnv(object):
 
         # Flatten the PZ observation.
         if self.flatten_observations:
+            # res = []
+            # for a in self.env.possible_agents:
+            #     res.append(flatten(self.env.state_space, obs[a]))
+            # res = np.array(res)
+            # res = np.reshape(res, (self.num_agents, -1))
+            # return res
+
+            #This older code below is for use with the state() method. Above code is for the state_all() method.
+            # Flatten the PZ observation.
             obs = flatten(self.env.state_space, obs)
-            obs = np.repeat(obs[np.newaxis, :], self.num_agents, axis=0)
         else:
             obs = [obs for a in self.env.possible_agents]
         
         return obs
 
     def _info_wrapper(self, info):
-        # state = self.env.state()
-        # info.update(state[0])
-        info["avg_idleness"] = self.env.pg.getAverageIdlenessTime(self.env.step_count)
-        # info["active"] = np.array([state[i]["active"] for i in range(self.num_agents)])
-        # info["designated"] = np.array([state[i]["designated"] for i in range(self.num_agents)])
-        # info["sticky_actions"] = np.stack([state[i]["sticky_actions"] for i in range(self.num_agents)])
         return info
