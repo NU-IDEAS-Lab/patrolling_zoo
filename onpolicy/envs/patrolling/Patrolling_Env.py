@@ -54,6 +54,7 @@ class PatrollingEnv(object):
             alpha = args.alpha,
             beta = args.beta,
             observation_radius = args.observation_radius,
+            action_method = args.action_method,
             observe_method = args.observe_method,
             observe_method_global = args.observe_method_global,
             reward_method_terminal = args.reward_method_terminal,

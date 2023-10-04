@@ -48,6 +48,7 @@ class parallel_env(ParallelEnv):
                  speed = 1.0,
                  alpha = 10.0,
                  beta = 100.0,
+                 action_method = "full",
                  reward_method_terminal = "average",
                  observation_radius = np.inf,
                  observe_method = "ajg_new",
@@ -74,6 +75,7 @@ class parallel_env(ParallelEnv):
         self.observationRadius = observation_radius
         self.max_cycles = max_cycles
         self.comms_model = comms_model
+        self.action_method = action_method
         self.reward_method_terminal = reward_method_terminal
         self.observe_method = observe_method
         self.observe_method_global = observe_method_global if observe_method_global != None else observe_method
@@ -93,7 +95,11 @@ class parallel_env(ParallelEnv):
         ]
 
         # Create the action space.
-        self.action_spaces = {agent: spaces.Discrete(len(self.pg.graph)) for agent in self.possible_agents}
+        if self.action_method == "full":
+            self.action_spaces = {agent: spaces.Discrete(len(self.pg.graph)) for agent in self.possible_agents}
+        elif self.action_method == "neighbors":
+            maxDegree = max([self.pg.graph.degree(node) for node in self.pg.graph.nodes])
+            self.action_spaces = {agent: spaces.Discrete(maxDegree) for agent in self.possible_agents}
 
         # The state space is a complete observation of the environment.
         # This is not part of the standard PettingZoo API, but is useful for centralized training.
@@ -506,54 +512,65 @@ class parallel_env(ParallelEnv):
             if agent in action_dict:
                 action = action_dict[agent]
 
-                # Update the agent's position.
-                if int(action) in self.pg.graph.nodes:
-                    
-                    # Destination node is the action value.
-                    dstNode = int(action)
+                if type(action) != int:
+                	raise ValueError(f"Invalid action {action} of type {type(action)} provided.")
 
-                    # Calculate the shortest path.
-                    path = self._getPathToNode(agent, dstNode)
-                    pathLen = self._getAgentPathLength(agent, path)
-                    
-                    # Provide reward for moving towards a node.
-                    # idlenessDelta = self.pg.getNodeIdlenessTime(dstNode, self.step_count) - self.pg.getAverageIdlenessTime(self.step_count)
-                    # idlenessDelta = self.pg.getNodeIdlenessTime(dstNode, self.step_count) / self.pg.getAverageIdlenessTime(self.step_count)
-                    #if idlenessDelta >= 0:
-                    #    r = self.alpha * idlenessDelta / (1.0 + np.log(1.0 + pathLen) / np.log(1000000))
-                    #else:
-                    #    r = self.alpha * idlenessDelta
-                    # r = self.alpha * idlenessDelta
-                    # reward_dict[agent] += r
-
-                    # Provide penalty for visiting the same node again.
-                    # if agent.lastNodeVisited == dstNode:
-                    #     reward_dict[agent] -= 0.5 * np.abs(r)
-                    if agent.lastNodeVisited == dstNode:
-                        reward_dict[agent] -= 1.0
-
-                    # Take a step towards the next node.
-                    stepSize = agent.speed
-                    for nextNode in path:
-                        reached, stepSize = self._moveTowardsNode(agent, nextNode, stepSize)
-
-                        # The agent has reached the next node.
-                        if reached:
-                            if nextNode == dstNode or not self.requireExplicitVisit:
-                                # The agent has reached its destination, visiting the node.
-                                # The agent receives a reward for visiting the node.
-                                r = self.onNodeVisit(nextNode, self.step_count)
-                                reward_dict[agent] += self.alpha * r
-
-                                agent.lastNodeVisited = nextNode
-                                if nextNode == dstNode:
-                                    info_dict[agent]["ready"] = True
+                # Interpret the action using the "full" method.
+                if self.action_method == "full":
+                    if action not in self.pg.graph.nodes:
+                        raise ValueError(f"Invalid action {action} for agent {agent.name}")
+                    dstNode = action
                 
-                        # The agent has exceeded its movement budget for this step.
-                        if stepSize <= 0.0:
-                            break
+                # Interpret the action using the "neighbors" method.
+                # This is rather primitive as we don't account for the agent being on an edge, etc.
+                elif self.action_method == "neighbors":
+                    if action >= self.pg.graph.degree(agent.lastNode):
+                        # Provide a penalty for invalid actions.
+                        reward_dict[agent] -= 0.5 * self.alpha
+                        continue
+                    dstNode = list(self.pg.graph.neighbors(agent.lastNode))[action]
+                
                 else:
-                    raise ValueError(f"Invalid action {action} for agent {agent.name}")
+                    raise ValueError(f"Invalid action method {self.action_method}")
+
+                # Calculate the shortest path.
+                path = self._getPathToNode(agent, dstNode)
+                pathLen = self._getAgentPathLength(agent, path)
+                
+                # Provide reward for moving towards a node.
+                # idlenessDelta = self.pg.getNodeIdlenessTime(dstNode, self.step_count) - self.pg.getAverageIdlenessTime(self.step_count)
+                # idlenessDelta = self.pg.getNodeIdlenessTime(dstNode, self.step_count) / self.pg.getAverageIdlenessTime(self.step_count)
+                #if idlenessDelta >= 0:
+                #    r = self.alpha * idlenessDelta / (1.0 + np.log(1.0 + pathLen) / np.log(1000000))
+                #else:
+                #    r = self.alpha * idlenessDelta
+                # r = self.alpha * idlenessDelta
+                # reward_dict[agent] += r
+
+                # Provide penalty for visiting the same node again.
+                # if agent.lastNodeVisited == dstNode:
+                #     reward_dict[agent] -= 0.5 * np.abs(r)
+
+                # Take a step towards the next node.
+                stepSize = agent.speed
+                for nextNode in path:
+                    reached, stepSize = self._moveTowardsNode(agent, nextNode, stepSize)
+
+                    # The agent has reached the next node.
+                    if reached:
+                        if nextNode == dstNode or not self.requireExplicitVisit:
+                            # The agent has reached its destination, visiting the node.
+                            # The agent receives a reward for visiting the node.
+                            r = self.onNodeVisit(nextNode, self.step_count)
+                            reward_dict[agent] += self.alpha * r
+
+                            agent.lastNodeVisited = nextNode
+                            if nextNode == dstNode:
+                                info_dict[agent]["ready"] = True
+            
+                    # The agent has exceeded its movement budget for this step.
+                    if stepSize <= 0.0:
+                        break
 
         # Record the average idleness time at this step.
         self.avgIdlenessTimes.append(self.pg.getAverageIdlenessTime(self.step_count))
