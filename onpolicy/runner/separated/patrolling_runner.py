@@ -92,6 +92,8 @@ class PatrollingRunner(Runner):
             tb_actions = -1.0 * np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.int32)
             tb_action_log_probs = np.zeros((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
             tb_rnn_states = np.zeros((self.n_rollout_threads, self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
+            tb_rnn_states_critic = np.zeros((self.n_rollout_threads, self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
+            tb_value_preds = np.zeros((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
 
             # Set up a reward sum matrix to hold the sum of rewards given between actions (in case of skipping).
             # Currently only used for asynchronous skipping.
@@ -152,10 +154,12 @@ class PatrollingRunner(Runner):
                         if actions[i][a] != None:
                             tb_actions[i, a] = actions[i][a]
                             tb_action_log_probs[i, a] = action_log_probs[i][a]
-                            tb_rnn_states[i, a] = rnn_states[i][a]                
+                            tb_rnn_states[i, a] = rnn_states[i][a]
+                            tb_rnn_states_critic[i, a] = rnn_states_critic[i][a]
+                            tb_value_preds[i, a] = values[i][a]
 
                 # Combine into single data structure.
-                data = obs, share_obs, rewardSums, dones, infos, values, tb_actions, tb_action_log_probs, tb_rnn_states, rnn_states_critic, delta_steps
+                data = obs, share_obs, rewardSums, dones, infos, tb_value_preds, tb_actions, tb_action_log_probs, tb_rnn_states, tb_rnn_states_critic, delta_steps
                 
                 # Insert data into buffer
                 data_critic_prev = self.insert(data, data_critic_prev)
@@ -231,13 +235,7 @@ class PatrollingRunner(Runner):
         combined_obs = self.envs.reset()
 
         # Split the combined observations into obs and share_obs, then combine across environments.
-        obs = []
-        share_obs = []
-        for o in combined_obs:
-            obs.append(o["obs"])
-            share_obs.append(o["share_obs"][0])
-        obs = np.array(obs)
-        share_obs = np.array(share_obs)
+        obs, share_obs = self._process_combined_obs(combined_obs)
 
         if self.use_centralized_V:
             c_share_obs = np.repeat(share_obs, self.num_agents, axis=1)
@@ -405,7 +403,7 @@ class PatrollingRunner(Runner):
                             rewards = rewards[i, agent_id],
                             masks = masks[i, agent_id],
                             deltaSteps = delta_steps[i, agent_id],
-                            criticStep = np.array(self.critic_buffer.step) if self.use_centralized_V else np.array(None),
+                            criticStep = np.array(self.critic_buffer.step) if self.use_centralized_V else np.array(self.buffer[i][agent_id].step),
                             no_reset = True
                         )
                     
@@ -413,10 +411,10 @@ class PatrollingRunner(Runner):
                     if self.use_centralized_V:
                         # Update these regardless of whether the agent was skipped.
                         c_obs[i, agent_id] = obs[i, agent_id]
+                        c_share_obs[i, agent_id] = share_obs[i]
                         c_rewards[i, agent_id] = rewards[i, agent_id]
                         c_values[i][agent_id] = values[i][agent_id]
                         c_rnn_states_critic[i][agent_id] = rnn_states_critic[i][agent_id]
-                        # c_delta_steps[i, agent_id] = 1
 
                         # Only update these if the agent was not skipped.
                         if actions[i][agent_id] != None:
@@ -445,7 +443,7 @@ class PatrollingRunner(Runner):
                 c_action_log_probs = np.array(c_action_log_probs)
                 c_values = np.array(c_values)
                 c_rewards = np.array(c_rewards)
-                # c_delta_steps = np.array(c_delta_steps)
+                c_delta_steps = np.array(c_delta_steps)
 
             # Insert for every agent.
             for agent_id in range(self.num_agents):
@@ -470,13 +468,14 @@ class PatrollingRunner(Runner):
                 # If we are using a shared critic, update the critic data.
                 if self.use_centralized_V:
                     c_obs[:, agent_id] = obs[:, agent_id]
+                    c_share_obs[:, agent_id] = share_obs[:]
                     c_rnn_states[:, agent_id] = rnn_states[:, agent_id]
                     c_rnn_states_critic[:, agent_id] = rnn_states_critic[:, agent_id]
                     c_actions[:, agent_id] = actions[:, agent_id]
                     c_action_log_probs[:, agent_id] = action_log_probs[:, agent_id]
                     c_values[:, agent_id] = values[:, agent_id]
                     c_rewards[:, agent_id] = rewards[:, agent_id]
-                    # c_delta_steps[:, agent_id] = delta_steps[:, agent_id] if self.all_args.skip_steps_sync else 1
+                    c_delta_steps[:, agent_id] = delta_steps[:, agent_id]
 
         # If we are using a shared critic, insert the critic data.
         if self.use_centralized_V:
@@ -731,7 +730,7 @@ class PatrollingRunner(Runner):
                 last_step=buf.step
             )
 
-            # Copy value predictions and returns to each agent's buffer.
+            # Copy returns to each agent's buffer.
             if self.all_args.skip_steps_async:
                 for i in range(self.n_rollout_threads):
                     for agent_id in range(self.num_agents):
@@ -739,12 +738,13 @@ class PatrollingRunner(Runner):
                             s = self.buffer[i][agent_id].criticStep[j]
                             self.buffer[i][agent_id].returns[j] = self.critic_buffer.returns[s, i, agent_id]
 
-                        # Copy values for last step to capture the final value/return.
-                        # self.buffer[i][agent_id].returns[j + 1] = self.critic_buffer.returns[self.critic_buffer.step, i, agent_id]
-                        # self.buffer[i][agent_id].value_preds[j + 1] = self.critic_buffer.value_preds[self.critic_buffer.step, i, agent_id]
+                        # Copy the last step to capture the final return and value.
+                        self.buffer[i][agent_id].returns[j + 1] = self.critic_buffer.returns[self.critic_buffer.step, i, agent_id]
+                        self.buffer[i][agent_id].value_preds[j + 1] = self.critic_buffer.value_preds[self.critic_buffer.step, i, agent_id]
             else:
                 for agent_id in range(self.num_agents):
                     self.buffer[agent_id].returns = self.critic_buffer.returns[:, :, agent_id]
+                    self.buffer[agent_id].value_preds[self.buffer[agent_id].step] = self.critic_buffer.value_preds[self.critic_buffer.step, :, agent_id]
 
         # Compute returns for the decentralized critics.
         else:
@@ -755,10 +755,10 @@ class PatrollingRunner(Runner):
                         self.trainer[agent_id].prep_rollout()
                         buf = self.buffer[i][agent_id]
 
-                        # Check that the total step count is correct.
-                        stepSum = np.sum(buf.deltaSteps[:buf.step])
-                        if stepSum != self.all_args.episode_length:
-                            raise RuntimeError(f"Total step count is incorrect for buffer {i}-{agent_id}! Expected {self.all_args.episode_length}, got {stepSum}")
+                        # # Check that the total step count is correct.
+                        # stepSum = np.sum(buf.deltaSteps[:buf.step])
+                        # if stepSum != self.all_args.episode_length:
+                        #     raise RuntimeError(f"Total step count is incorrect for buffer {i}-{agent_id}! Expected {self.all_args.episode_length}, got {stepSum}")
 
                         next_value = self.trainer[agent_id].policy.get_values(
                             buf.share_obs[buf.step - 1], 
@@ -815,15 +815,6 @@ class PatrollingRunner(Runner):
                 last_step = self.critic_buffer.step
             )
 
-        # Print the entire actor buffer.
-        # buf = self.critic_buffer
-        # for at in ["obs", "share_obs", "actions", "value_preds", "returns", "masks", "rnn_states", "rnn_states_critic", "deltaSteps"]:
-        #     print(f"======= ATTRIBUTE: {at} =======")
-        #     for i in buf.__dict__[at]:
-        #         print(i)
-        #     print()
-        # raise Exception("Done printing buffer.")
-
         # Update the actors (and critics in case of per-agent critics).
         if self.all_args.skip_steps_async:
             # In case of asynchronous skipping, we update each agent's policy using buffers from each rollout thread.
@@ -854,6 +845,18 @@ class PatrollingRunner(Runner):
                     train_infos["actors"][i].append(train_info)       
                 self.buffer[agent_id].after_update()
 
+        # # Print the entire actor buffer.
+        # # buf = self.critic_buffer
+        # # buf = self.buffer[0][0]
+        # buf = self.buffer[0]
+        # for at in ["obs", "share_obs", "actions", "value_preds", "returns", "masks", "rnn_states", "rnn_states_critic", "deltaSteps"]:
+        #     print(f"======= ATTRIBUTE: {at} =======")
+        #     for i in buf.__dict__[at]:
+        #         # print(i[0])
+        #         print(i)
+        #     print()
+        # raise Exception("Done printing buffer.")
+
         return train_infos
     
     def _is_last_step(self, step):
@@ -879,5 +882,5 @@ class PatrollingRunner(Runner):
         share_obs = []
         for o in combined_obs:
             obs.append(o["obs"])
-            share_obs.append(o["share_obs"][0])
+            share_obs.append(o["share_obs"])
         return np.array(obs), np.array(share_obs)
