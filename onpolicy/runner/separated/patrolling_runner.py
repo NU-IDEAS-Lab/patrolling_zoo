@@ -742,6 +742,10 @@ class PatrollingRunner(Runner):
                         cbuf.rewards[cbuf.step:cbuf.step + buf.step] = buf.rewards[:buf.step]
                         cbuf.masks[cbuf.step:cbuf.step + buf.step] = buf.masks[:buf.step]
                         cbuf.deltaSteps[cbuf.step:cbuf.step + buf.step] = buf.deltaSteps[:buf.step]
+
+                        # Set the mask for the first step to 0 (reset the RNN)
+                        cbuf.masks[cbuf.step] = np.zeros_like(cbuf.masks[cbuf.step])
+
                         cbuf.step += buf.step
 
                 if cbuf.step != totalSteps:
@@ -872,19 +876,20 @@ class PatrollingRunner(Runner):
                     # # Print the entire actor buffer.
                     # # buf = self.critic_buffer
                     # # buf = self.buffer[0]
+                    # np.set_printoptions(threshold=np.inf)
                     # buf = self.buffer[i][agent_id]
                     # with open(f"buffer_actor_{i}_{agent_id}.txt", "w") as f:
                     #     f.write(f"======= BUFFER: {i} =======\n")
                     #     for at in ["obs", "share_obs", "actions", "value_preds", "returns", "masks", "rnn_states", "rnn_states_critic", "deltaSteps"]:
                     #         f.write(f"======= ATTRIBUTE: {at} =======\n")
-                    #         f.write(f"{buf.__dict__[at]}\n")
+                    #         f.write(f"{buf.__dict__[at][:buf.step]}\n")
                     #         f.write("\n")
                     # buf = self.critic_buffer_series
                     # with open(f"buffer_critic_{i}.txt", "w") as f:
                     #     f.write(f"======= CRITIC: {i} =======\n")
                     #     for at in ["obs", "share_obs", "actions", "value_preds", "returns", "masks", "rnn_states", "rnn_states_critic", "deltaSteps"]:
                     #         f.write(f"======= ATTRIBUTE: {at} =======\n")
-                    #         f.write(f"{buf.__dict__[at]}\n")
+                    #         f.write(f"{buf.__dict__[at][:buf.step]}\n")
                     #         f.write("\n")
                     # # raise Exception("Done printing buffer.")
 
