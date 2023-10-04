@@ -513,7 +513,7 @@ class parallel_env(ParallelEnv):
                 action = action_dict[agent]
 
                 if type(action) != int:
-                	raise ValueError(f"Invalid action {action} of type {type(action)} provided.")
+                    raise ValueError(f"Invalid action {action} of type {type(action)} provided.")
 
                 # Interpret the action using the "full" method.
                 if self.action_method == "full":
