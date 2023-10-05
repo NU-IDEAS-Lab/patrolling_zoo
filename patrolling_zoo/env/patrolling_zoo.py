@@ -408,28 +408,28 @@ class parallel_env(ParallelEnv):
             bitmap[0, 0, self.OBSERVATION_CHANNELS.AGENT_ID] = agent.id
 
             def _normPosition(pos):
-                x = self._minMaxNormalize(pos[0], a=0.0, b=self.observe_bitmap_dims[0], minimum=0.0, maximum=self.pg.widthPixels)
-                y = self._minMaxNormalize(pos[1], a=0.0, b=self.observe_bitmap_dims[1], minimum=0.0, maximum=self.pg.heightPixels)
+                if radius == np.inf:
+                    x = self._minMaxNormalize(pos[0], a=0.0, b=self.observe_bitmap_dims[0], minimum=0.0, maximum=self.pg.widthPixels, eps=0.01)
+                    y = self._minMaxNormalize(pos[1], a=0.0, b=self.observe_bitmap_dims[1], minimum=0.0, maximum=self.pg.heightPixels, eps=0.01)
+                else:
+                    x = self._minMaxNormalize(pos[0], a=0.0, b=self.observe_bitmap_dims[0], minimum=agent.position[0] - radius, maximum=agent.position[0] + radius, eps=0.01)
+                    y = self._minMaxNormalize(pos[1], a=0.0, b=self.observe_bitmap_dims[1], minimum=agent.position[1] - radius, maximum=agent.position[1] + radius, eps=0.01)
                 return x, y
 
             # Add agents to the observation.
             for a in agents:
                 pos = _normPosition(a.position)
+                if pos[0] < 0 or pos[0] >= self.observe_bitmap_dims[0] or pos[1] < 0 or pos[1] >= self.observe_bitmap_dims[1]:
+                    continue
                 bitmap[int(pos[0]), int(pos[1]), self.OBSERVATION_CHANNELS.AGENT_ID] = a.id
             
             # Add vertex idleness times to the observation.
             for v in vertices:
                 pos = _normPosition(self.pg.getNodePosition(v))
+                if pos[0] < 0 or pos[0] >= self.observe_bitmap_dims[0] or pos[1] < 0 or pos[1] >= self.observe_bitmap_dims[1]:
+                    continue
                 bitmap[int(pos[0]), int(pos[1]), self.OBSERVATION_CHANNELS.IDLENESS] = self.pg.getNodeIdlenessTime(v, self.step_count)
             
-            # Create a connectivity matrix for each vertex and then add it to the remaining channels in the observation.
-            # We assume that the agent always knows the graph in advance.
-            # for v in self.pg.graph.nodes:
-            #     pos = self.pg.getNodePosition(v)
-            #     edges = self.pg.graph.edges(v)
-            #     for _, neighbor in edges:
-            #         bitmap[int(pos[0]), int(pos[1]), len(self.OBSERVATION_CHANNELS) + neighbor] = 1.0
-
             # Add edges to the graph channel.
             for edge in self.pg.graph.edges:
                 pos1 = _normPosition(self.pg.getNodePosition(edge[0]))
@@ -437,22 +437,16 @@ class parallel_env(ParallelEnv):
                 dist = self._dist(pos1, pos2)
                 if dist > 0.0:
                     for i in range(int(dist)):
-                        bitmap[int(pos1[0] + (pos2[0] - pos1[0]) * i / dist), int(pos1[1] + (pos2[1] - pos1[1]) * i / dist), self.OBSERVATION_CHANNELS.GRAPH] = -2.0
-
-            # Fancier edge drawing.
-            # for edge in self.pg.graph.edges:
-            #     pos1 = np.array(self.pg.getNodePosition(edge[0]))
-            #     pos2 = np.array(self.pg.getNodePosition(edge[1]))
-            #     for i in range(bitmap.shape[0]):
-            #         for j in range(bitmap.shape[1]):
-            #             pos3 = np.array((i, j))
-            #             d = np.cross(pos2 - pos1, pos3 - pos1) / np.linalg.norm(pos2 - pos1)
-            #             if d < 5.0:
-            #                 bitmap[i, j, self.OBSERVATION_CHANNELS.OBSTACLE] = 0.0
+                        pos = (int(pos1[0] + (pos2[0] - pos1[0]) * i / dist), int(pos1[1] + (pos2[1] - pos1[1]) * i / dist))
+                        if pos[0] < 0 or pos[0] >= self.observe_bitmap_dims[0] or pos[1] < 0 or pos[1] >= self.observe_bitmap_dims[1]:
+                            continue
+                        bitmap[pos[0], pos[1], self.OBSERVATION_CHANNELS.GRAPH] = -2.0
 
             # Add vertices to the graph channel.
             for v in vertices:
                 pos = _normPosition(self.pg.getNodePosition(v))
+                if pos[0] < 0 or pos[0] >= self.observe_bitmap_dims[0] or pos[1] < 0 or pos[1] >= self.observe_bitmap_dims[1]:
+                    continue
                 bitmap[int(pos[0]), int(pos[1]), self.OBSERVATION_CHANNELS.GRAPH] = v
 
             obs = bitmap
