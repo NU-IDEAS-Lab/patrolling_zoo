@@ -430,11 +430,6 @@ class parallel_env(ParallelEnv):
             #     for _, neighbor in edges:
             #         bitmap[int(pos[0]), int(pos[1]), len(self.OBSERVATION_CHANNELS) + neighbor] = 1.0
 
-            # Add vertices to the graph channel.
-            for v in vertices:
-                pos = _normPosition(self.pg.getNodePosition(v))
-                bitmap[int(pos[0]), int(pos[1]), self.OBSERVATION_CHANNELS.GRAPH] = v
-
             # Add edges to the graph channel.
             for edge in self.pg.graph.edges:
                 pos1 = _normPosition(self.pg.getNodePosition(edge[0]))
@@ -454,6 +449,11 @@ class parallel_env(ParallelEnv):
             #             d = np.cross(pos2 - pos1, pos3 - pos1) / np.linalg.norm(pos2 - pos1)
             #             if d < 5.0:
             #                 bitmap[i, j, self.OBSERVATION_CHANNELS.OBSTACLE] = 0.0
+
+            # Add vertices to the graph channel.
+            for v in vertices:
+                pos = _normPosition(self.pg.getNodePosition(v))
+                bitmap[int(pos[0]), int(pos[1]), self.OBSERVATION_CHANNELS.GRAPH] = v
 
             obs = bitmap
 
