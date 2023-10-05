@@ -53,6 +53,7 @@ class parallel_env(ParallelEnv):
                  observation_radius = np.inf,
                  observe_method = "ajg_new",
                  observe_method_global = None,
+                 observe_bitmap_dims = (50, 50),
                  max_cycles: int = -1,
                  reward_interval: int = -1,
                  *args,
@@ -80,7 +81,7 @@ class parallel_env(ParallelEnv):
         self.reward_method_terminal = reward_method_terminal
         self.observe_method = observe_method
         self.observe_method_global = observe_method_global if observe_method_global != None else observe_method
-        self.observe_bitmap_dims = (50, 50)
+        self.observe_bitmap_dims = observe_bitmap_dims
 
         self.reward_interval = reward_interval
 

@@ -58,6 +58,7 @@ class PatrollingEnv(object):
             action_method = args.action_method,
             observe_method = args.observe_method,
             observe_method_global = args.observe_method_global,
+            observe_bitmap_dims = (args.observe_bitmap_size, args.observe_bitmap_size),
             reward_method_terminal = args.reward_method_terminal,
             max_cycles = -1 if self.args.skip_steps_sync or self.args.skip_steps_async else args.episode_length
         )
