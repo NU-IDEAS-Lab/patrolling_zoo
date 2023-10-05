@@ -90,10 +90,6 @@ class PatrollingRunner(Runner):
         # Split the combined observations into obs and share_obs, then combine across environments.
         obs, share_obs = self._process_combined_obs(combined_obs)
 
-        if self.use_centralized_V:
-            share_obs = np.repeat(share_obs, self.num_agents, axis=1)
-            share_obs = np.reshape(share_obs, self.buffer.share_obs[0].shape)
-
         # insert obs to buffer
         self.buffer.share_obs[0] = share_obs.copy()
         self.buffer.obs[0] = obs.copy()
@@ -316,4 +312,11 @@ class PatrollingRunner(Runner):
         for o in combined_obs:
             obs.append(o["obs"])
             share_obs.append(o["share_obs"])
-        return np.array(obs), np.array(share_obs)
+        
+        share_obs = np.array(share_obs)
+        if self.use_centralized_V:
+            # Make a copy of the share_obs for each agent.
+            share_obs = np.repeat(share_obs, self.num_agents, axis=1)
+            share_obs = np.reshape(share_obs, self.buffer.share_obs[0].shape)
+
+        return np.array(obs), share_obs
