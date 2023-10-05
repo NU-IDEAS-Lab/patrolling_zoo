@@ -662,21 +662,23 @@ class parallel_env(ParallelEnv):
             Returns the reward for visiting the node, which is proportional to
             node idleness time. '''
         
+    def onNodeVisit(self, node, timeStamp):
+        ''' Called when an agent visits a node.
+            Returns the reward for visiting the node, which is proportional to
+            node idleness time. '''
+        
         # Record the node visit.
         self.nodeVisits[node] += 1
 
+        # Calculate a visitation reward.
         idleness = self.pg.getNodeIdlenessTime(node, timeStamp)
+        avgIdleness = self.pg.getAverageIdlenessTime(timeStamp)
+        reward = self._minMaxNormalize(idleness, minimum=0.0, maximum=avgIdleness)
+
+        # Update the node visit time.
         self.pg.setNodeVisitTime(node, timeStamp)
-        return self._minMaxNormalize(idleness, minimum=0.0, maximum=timeStamp)
 
-        # avgIdleTime = self.pg.getAverageIdlenessTime(timeStamp)
-        # self.pg.setNodeVisitTime(node, timeStamp)
-        # deltaAvgIdleTime = avgIdleTime - self.pg.getAverageIdlenessTime(timeStamp)
-        
-        # return a reward which is proportional to the rank of the node, where the most idle node has the highest reward
-        # return self.alpha * deltaAvgIdleTime
-
-        # return self.alpha ** max((index - self.reward_shift * len(indices))/self.pg.graph.number_of_nodes(), 0)
+        return reward
 
 
     def _moveTowardsNode(self, agent, node, stepSize):
