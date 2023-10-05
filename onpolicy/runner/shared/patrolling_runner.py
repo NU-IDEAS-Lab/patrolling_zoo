@@ -38,15 +38,7 @@ class PatrollingRunner(Runner):
                 combined_obs, rewards, dones, infos = self.envs.step(actions_env)
 
                 # Split the combined observations into obs and share_obs, then combine across environments.
-                obs = []
-                share_obs = []
-                for o in combined_obs:
-                    obs.append(o["obs"])
-                    share_obs.append(o["share_obs"][0])
-                obs = np.array(obs)
-                share_obs = np.array(share_obs)
-                share_obs = np.repeat(share_obs, self.num_agents, axis=1)
-                share_obs = np.reshape(share_obs, (self.n_rollout_threads, self.num_agents, -1))
+                obs, share_obs = self._process_combined_obs(combined_obs)
 
                 # Get the delta steps from the environment info.
                 delta_steps = [info["deltaSteps"] for info in infos]
@@ -96,15 +88,7 @@ class PatrollingRunner(Runner):
         combined_obs = self.envs.reset()
 
         # Split the combined observations into obs and share_obs, then combine across environments.
-        obs = []
-        share_obs = []
-        for o in combined_obs:
-            obs.append(o["obs"])
-            share_obs.append(o["share_obs"][0])
-        obs = np.array(obs)
-        share_obs = np.array(share_obs)
-        share_obs = np.repeat(share_obs, self.num_agents, axis=1)
-        share_obs = np.reshape(share_obs, (self.n_rollout_threads, self.num_agents, -1))
+        obs, share_obs = self._process_combined_obs(combined_obs)
 
         # insert obs to buffer
         self.buffer.share_obs[0] = share_obs.copy()
@@ -139,15 +123,6 @@ class PatrollingRunner(Runner):
         
         # update env_infos if done
         dones_env = np.all(dones, axis=-1)
-        # if np.any(dones_env):
-        #     for done, info in zip(dones_env, infos):
-        #         if done:
-        #             self.env_infos["goal"].append(info["score_reward"])
-        #             if info["score_reward"] > 0:
-        #                 self.env_infos["win_rate"].append(1)
-        #             else:
-        #                 self.env_infos["win_rate"].append(0)
-        #             self.env_infos["steps"].append(info["max_steps"] - info["steps_left"])
 
         # Add the average idleness time to env infos.
         self.env_infos["avg_idleness"] = [i["avg_idleness"] for i in infos]
@@ -282,15 +257,7 @@ class PatrollingRunner(Runner):
             masks = np.ones((self.n_render_rollout_threads, self.num_agents, 1), dtype=np.float32)
 
             # Split the combined observations into obs and share_obs, then combine across environments.
-            obs = []
-            share_obs = []
-            for o in combined_obs:
-                obs.append(o["obs"])
-                share_obs.append(o["share_obs"][0])
-            obs = np.array(obs)
-            share_obs = np.array(share_obs)
-            share_obs = np.repeat(share_obs, self.num_agents, axis=1)
-            share_obs = np.reshape(share_obs, (self.n_render_rollout_threads, self.num_agents, -1))
+            obs, share_obs = self._process_combined_obs(combined_obs)
 
             if self.all_args.save_gifs:        
                 frames = []
@@ -317,15 +284,7 @@ class PatrollingRunner(Runner):
                 combined_obs, render_rewards, dones, infos = render_env.step(actions_env)
 
                 # Split the combined observations into obs and share_obs, then combine across environments.
-                obs = []
-                share_obs = []
-                for o in combined_obs:
-                    obs.append(o["obs"])
-                    share_obs.append(o["share_obs"][0])
-                obs = np.array(obs)
-                share_obs = np.array(share_obs)
-                share_obs = np.repeat(share_obs, self.num_agents, axis=1)
-                share_obs = np.reshape(share_obs, (self.n_render_rollout_threads, self.num_agents, -1))
+                obs, share_obs = self._process_combined_obs(combined_obs)
 
                 if not np.any(dones):
                     if ipython_clear_output:
@@ -346,3 +305,18 @@ class PatrollingRunner(Runner):
                     duration=self.all_args.ifi,
                 )
     
+    def _process_combined_obs(self, combined_obs):
+        ''' Process the combined observations into obs and share_obs. '''
+        obs = []
+        share_obs = []
+        for o in combined_obs:
+            obs.append(o["obs"])
+            share_obs.append(o["share_obs"])
+        
+        share_obs = np.array(share_obs)
+        if self.use_centralized_V:
+            # Make a copy of the share_obs for each agent.
+            share_obs = np.repeat(share_obs, self.num_agents, axis=1)
+            share_obs = np.reshape(share_obs, self.buffer.share_obs[0].shape)
+
+        return np.array(obs), share_obs
