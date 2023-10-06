@@ -935,6 +935,12 @@ class PatrollingRunner(Runner):
         ''' Determine whether this step is the last step of the episode. '''
 
         if self.all_args.skip_steps_async:
+            # Check that all agent buffers have enough data.
+            for i in range(self.n_rollout_threads):
+                for agent_id in range(self.num_agents):
+                    if self.buffer[i][agent_id].step < self.all_args.data_chunk_length:
+                        return False
+
             if self.use_centralized_V:
                 bufferStep = self.critic_buffer.step
             else:
