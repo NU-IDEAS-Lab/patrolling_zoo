@@ -449,9 +449,11 @@ class SharedReplayBuffer(object):
 
         if len(self.share_obs.shape) > 4:
             share_obs = self.share_obs[:last_step].transpose(1, 2, 0, 3, 4, 5).reshape(-1, *self.share_obs.shape[3:])
-            obs = self.obs[:last_step].transpose(1, 2, 0, 3, 4, 5).reshape(-1, *self.obs.shape[3:])
         else:
             share_obs = _cast(self.share_obs[:last_step])
+        if len(self.obs.shape) > 4:
+            obs = self.obs[:last_step].transpose(1, 2, 0, 3, 4, 5).reshape(-1, *self.obs.shape[3:])
+        else:
             obs = _cast(self.obs[:last_step])
 
         actions = _cast(self.actions)

@@ -67,6 +67,8 @@ def parse_args(args, parser):
     parser.add_argument("--graph_name", type=str,
                         default="4nodes", 
                         help="which graph to run on.")
+    parser.add_argument("--max_cycles", type=int, default=1000,
+                        help="max number of cycles for the environment.")
     parser.add_argument("--reward_method_terminal", type=str,
                         default="average", 
                         help="the method to use for terminal reward.")
@@ -80,10 +82,14 @@ def parse_args(args, parser):
                         help="representation used to build the observation.")
     parser.add_argument("--rewards", type=str, default="scoring", 
                         help="comma separated list of rewards to be added.")
+    parser.add_argument("--action_method", type=str, default="full", 
+                        help="the action method to use")
     parser.add_argument("--observe_method", type=str, default="ajg_new", 
                         help="the observation method to use")
     parser.add_argument("--observe_method_global", type=str, default=None, 
                         help="the observation method to use for global observation")
+    parser.add_argument("--observe_bitmap_size", type=int, default=50, 
+                        help="the size (squared) to which the bitmap should be scaled for observation")
     parser.add_argument("--observation_radius", type=float, default=np.Inf, 
                         help="the observable radius for each agent")
     parser.add_argument("--smm_width", type=int, default=96,

@@ -1,11 +1,12 @@
 import networkx as nx
 import numpy as np
 from IPython.display import clear_output
+import random
 
 from .algorithm import BaseAlgorithm
 
 
-class GreedyIdleness(BaseAlgorithm):
+class RandomChoice(BaseAlgorithm):
     ''' This algorithm implements an idleness-based greedy heuristic for the patrolling problem. '''
 
     def save(self, *args, **kwargs):
@@ -38,6 +39,9 @@ class GreedyIdleness(BaseAlgorithm):
             
             terms = [False]
             truncs = [False]
+
+            self.prevActions = {a: None for a in self.env.agents}
+
             while not any(terms) and not any(truncs):
                 actions = self.generateActions(obs)
                 obs, rewards, terms, truncs, infos = self.env.step(actions)
@@ -48,6 +52,8 @@ class GreedyIdleness(BaseAlgorithm):
                 if render:
                     clear_output(wait=True)
                     self.env.render()
+                
+                self.prevActions = actions
             
             if render_terminal:
                 clear_output(wait=True)
@@ -60,45 +66,10 @@ class GreedyIdleness(BaseAlgorithm):
         actions = {}
 
         for agent in self.env.agents:
-            vertexStates = obs[agent]["vertex_state"]
-            targetNode = max(vertexStates, key=vertexStates.get)
-            actions[agent] = targetNode
-        
-        return actions
-
-
-class GreedyDistance(GreedyIdleness):
-    ''' This algorithm implements an distance-based greedy heuristic for the patrolling problem. '''
-
-    def _reset(self):
-        for agent in self.env.agents:
-            agent.nodes = list(self.env.pg.graph.nodes)
-            agent.nodes.remove(agent.startingNode)
-
-    def generateActions(self, obs):
-        ''' Generates a dictionary of actions. '''
-        
-        actions = {}
-
-        # Check whether any agents have reached their target node.
-        for agent in self.env.agents:
-            vertexDistances = obs[agent]["vertex_distances"][agent]
-
-            # Remove nodes which have already been visited.
-            for node in agent.nodes:
-                if agent.lastNode == node and agent.edge == None:
-                    agent.nodes.remove(node)
-            
-            # If no nodes remain, reset the list of nodes.
-            if len(agent.nodes) == 0:
-                agent.nodes = list(self.env.pg.graph.nodes)
-            
-            # For any node which the agent has already visited, set its distance to infinity.
-            for i in range(len(vertexDistances)):
-                if i not in agent.nodes:
-                    vertexDistances[i] = np.inf
-
-            targetNode = np.argmin(vertexDistances)
+            if agent.edge == None:
+                targetNode = random.randint(0, len(self.env.pg.graph.nodes) - 1)
+            else:
+                targetNode = self.prevActions[agent]
             actions[agent] = targetNode
         
         return actions

@@ -3,6 +3,7 @@ import random
 from patrolling_zoo.env.patrolling_zoo import parallel_env
 from patrolling_zoo.env.patrol_graph import PatrolGraph
 from gymnasium.spaces.utils import flatten, flatten_space
+from gymnasium.spaces import Dict
 import numpy as np
 
 
@@ -54,8 +55,10 @@ class PatrollingEnv(object):
             alpha = args.alpha,
             beta = args.beta,
             observation_radius = args.observation_radius,
+            action_method = args.action_method,
             observe_method = args.observe_method,
             observe_method_global = args.observe_method_global,
+            observe_bitmap_dims = (args.observe_bitmap_size, args.observe_bitmap_size),
             reward_method_terminal = args.reward_method_terminal,
             max_cycles = -1 if self.args.skip_steps_sync or self.args.skip_steps_async else args.episode_length
         )
@@ -67,10 +70,22 @@ class PatrollingEnv(object):
         self.observation_space = []
         self.share_observation_space = []
 
-        # Set up spaces.
+        # Set up action space.
         self.action_space = [self.env.action_spaces[a] for a in self.env.possible_agents]
-        self.observation_space = [flatten_space(self.env.observation_spaces[a]) for a in self.env.possible_agents]
-        self.share_observation_space = [flatten_space(self.env.state_space) for a in self.env.possible_agents]
+
+        # Set up observation space.
+        self.flatten_observations = type(self.env.observation_spaces[self.env.possible_agents[0]]) == Dict
+        if self.flatten_observations:
+            self.observation_space = [flatten_space(self.env.observation_spaces[a]) for a in self.env.possible_agents]
+        else:
+            self.observation_space = [self.env.observation_spaces[a] for a in self.env.possible_agents]
+        
+        # Set up global observation space.
+        self.flatten_observations_global = type(self.env.state_space) == Dict
+        if self.flatten_observations_global:
+            self.share_observation_space = [flatten_space(self.env.state_space) for a in self.env.possible_agents]
+        else:
+            self.share_observation_space = [self.env.state_space for a in self.env.possible_agents]
 
 
     def reset(self):
@@ -183,22 +198,31 @@ class PatrollingEnv(object):
     def _obs_wrapper(self, obs):
 
         # Flatten the PZ observation.
-        obs = flatten(self.env.observation_spaces, obs)
-        obs = np.reshape(obs, (self.num_agents, -1))
+        if self.flatten_observations:
+            obs = flatten(self.env.observation_spaces, obs)
+            obs = np.reshape(obs, (self.num_agents, -1))
+        else:
+            obs = [obs[a] for a in self.env.possible_agents]
         
         return obs
     
     def _share_obs_wrapper(self, obs):
-        # res = []
-        # for a in self.env.possible_agents:
-        #     res.append(flatten(self.env.state_space, obs[a]))
-        # res = np.array(res)
-        # res = np.reshape(res, (self.num_agents, -1))
-        # return res
 
-        #This older code below is for use with the state() method. Above code is for the state_all() method.
         # Flatten the PZ observation.
-        obs = flatten(self.env.state_space, obs)
+        if self.flatten_observations_global:
+            # res = []
+            # for a in self.env.possible_agents:
+            #     res.append(flatten(self.env.state_space, obs[a]))
+            # res = np.array(res)
+            # res = np.reshape(res, (self.num_agents, -1))
+            # return res
+
+            #This older code below is for use with the state() method. Above code is for the state_all() method.
+            # Flatten the PZ observation.
+            obs = flatten(self.env.state_space, obs)
+        else:
+            obs = obs
+        
         return obs
 
     def _info_wrapper(self, info):
