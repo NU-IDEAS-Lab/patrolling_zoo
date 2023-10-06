@@ -96,6 +96,8 @@ def parse_args(args, parser):
                         help="the method to use for agent attrition")
     parser.add_argument("--attrition_random_probability", type=float, default=0.0,
                         help="the random attrition probability")
+    parser.add_argument("--attrition_min_agents", type=int, default=2,
+                        help="the minimum number of agents that must be present for attrition to occur")
     parser.add_argument("--smm_width", type=int, default=96,
                         help="width of super minimap.")
     parser.add_argument("--smm_height", type=int, default=72,

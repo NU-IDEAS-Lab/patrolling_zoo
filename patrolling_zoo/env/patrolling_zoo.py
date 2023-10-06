@@ -56,6 +56,7 @@ class parallel_env(ParallelEnv):
                  observe_bitmap_dims = (50, 50),
                  attrition_method = "none",
                  attrition_random_probability = 0.0,
+                 attrition_min_agents = 2,
                  attrition_times = [],
                  max_cycles: int = -1,
                  reward_interval: int = -1,
@@ -88,6 +89,7 @@ class parallel_env(ParallelEnv):
         self.attrition_method = attrition_method
         self.attrition_random_probability = attrition_random_probability
         self.attrition_times = attrition_times
+        self.attrition_min_agents = attrition_min_agents
 
         self.reward_interval = reward_interval
 
@@ -572,7 +574,7 @@ class parallel_env(ParallelEnv):
         }
 
         # Perform attrition.
-        if len(self.agents) > 1:
+        if len(self.agents) >= self.attrition_min_agents:
             if self.attrition_method == "random":
                 if random.random() < self.attrition_random_probability:
                     random_index = random.randrange(len(self.agents))
