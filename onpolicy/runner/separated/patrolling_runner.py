@@ -619,7 +619,7 @@ class PatrollingRunner(Runner):
 
         for i_episode in range(self.all_args.render_episodes):
             combined_obs = render_env.reset()
-            render_actions = np.zeros((self.n_render_rollout_threads, self.num_agents), dtype=np.float32)
+            render_actions = np.zeros((self.n_render_rollout_threads, self.num_agents), dtype=np.int32)
             render_rnn_states = np.zeros((self.n_render_rollout_threads, self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
             render_masks = np.ones((self.n_render_rollout_threads, self.num_agents, 1), dtype=np.float32)
 
