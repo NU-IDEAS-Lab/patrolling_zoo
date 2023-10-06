@@ -54,6 +54,9 @@ class parallel_env(ParallelEnv):
                  observe_method = "ajg_new",
                  observe_method_global = None,
                  observe_bitmap_dims = (50, 50),
+                 attrition_method = "none",
+                 attrition_random_probability = 0.0,
+                 attrition_times = [],
                  max_cycles: int = -1,
                  reward_interval: int = -1,
                  *args,
@@ -82,6 +85,9 @@ class parallel_env(ParallelEnv):
         self.observe_method = observe_method
         self.observe_method_global = observe_method_global if observe_method_global != None else observe_method
         self.observe_bitmap_dims = observe_bitmap_dims
+        self.attrition_method = attrition_method
+        self.attrition_random_probability = attrition_random_probability
+        self.attrition_times = attrition_times
 
         self.reward_interval = reward_interval
 
@@ -558,13 +564,27 @@ class parallel_env(ParallelEnv):
         self.step_count += 1
         obs_dict = {}
         reward_dict = {agent: 0.0 for agent in self.possible_agents}
-        done_dict = {}
         truncated_dict = {agent: False for agent in self.possible_agents}
         info_dict = {
             agent: {
                 "ready": self.dones[agent], #if done, set ready to true. Otherwise we will have buffer size problems in MAPPO due to lack of insertion.
             } for agent in self.possible_agents
         }
+
+        # Perform attrition.
+        if len(self.agents) > 1:
+            if self.attrition_method == "random":
+                if random.random() < self.attrition_random_probability:
+                    random_index = random.randrange(len(self.agents))
+                    attrition_agent = self.agents.pop(random_index)
+                    self.dones[attrition_agent] = True
+                    print(f"Agent {attrition_agent.id} has been removed from the environment at step {self.step_count}.")
+            elif self.attrition_method == "fixed_time":
+                if self.step_count in self.attrition_times:
+                    random_index = random.randrange(len(self.agents))
+                    attrition_agent = self.agents.pop(random_index)
+                    self.dones[attrition_agent] = True
+                    print(f"Agent {attrition_agent.id} has been removed from the environment at step {self.step_count}.")
 
         # Perform actions.
         for agent in self.agents:
@@ -602,20 +622,6 @@ class parallel_env(ParallelEnv):
                 path = self._getPathToNode(agent, dstNode)
                 pathLen = self._getAgentPathLength(agent, path)
                 
-                # Provide reward for moving towards a node.
-                # idlenessDelta = self.pg.getNodeIdlenessTime(dstNode, self.step_count) - self.pg.getAverageIdlenessTime(self.step_count)
-                # idlenessDelta = self.pg.getNodeIdlenessTime(dstNode, self.step_count) / self.pg.getAverageIdlenessTime(self.step_count)
-                #if idlenessDelta >= 0:
-                #    r = self.alpha * idlenessDelta / (1.0 + np.log(1.0 + pathLen) / np.log(1000000))
-                #else:
-                #    r = self.alpha * idlenessDelta
-                # r = self.alpha * idlenessDelta
-                # reward_dict[agent] += r
-
-                # Provide penalty for visiting the same node again.
-                # if agent.lastNodeVisited == dstNode:
-                #     reward_dict[agent] -= 0.5 * np.abs(r)
-
                 # Take a step towards the next node.
                 stepSize = agent.speed
                 for nextNode in path:
@@ -638,23 +644,8 @@ class parallel_env(ParallelEnv):
                         break
 
         # Record the average idleness time at this step.
-        self.avgIdlenessTimes.append(self.pg.getAverageIdlenessTime(self.step_count))
+        self.avgIdlenessTimes.append(self.pg.getAverageIdlenessTime(self.step_count))        
 
-        # Assign the idleness penalty.
-        # for agent in self.agents:
-        #     # reward_dict[agent] -= np.log(self.pg.getStdDevIdlenessTime(self.step_count))
-        #     reward_dict[agent] -= np.log(self.pg.getAverageIdlenessTime(self.step_count))
-        #     #reward_dict[agent] -= np.log(self.pg.getWorstIdlenessTime(self.step_count))
-        
-        # for agent in self.agents:
-        #     reward_dict[agent] += self.beta * self.step_count / (self.pg.getAverageIdlenessTime(self.step_count) + 1e-8)
-        
-        if self.step_count == 3:
-            random_index = random.randrange(len(self.agents))
-            attrition_agent = self.agents.pop(random_index)
-            self.dones[attrition_agent] = True
-            done_dict[agent] = True
-        
         # Perform observations.
         for agent in self.possible_agents:
 
@@ -662,9 +653,6 @@ class parallel_env(ParallelEnv):
             # agent_observation = self.observe_with_communication(agent)
             agent_observation = self.observe(agent)
             
-            # Check if the agent is done
-            done_dict[agent] = self.dones[agent]
-
             # Update the observation for the agent
             obs_dict[agent] = agent_observation
         
@@ -703,6 +691,7 @@ class parallel_env(ParallelEnv):
                 # reward_dict[agent] += self.beta * self.step_count / (self.pg.getAverageIdlenessTime(self.step_count) + 1e-8)
                 reward_dict[agent] += self.beta / self._minMaxNormalize(self.pg.getAverageIdlenessTime(self.step_count), minimum=0.0, maximum=self.max_cycles)
 
+        done_dict = {agent: self.dones[agent] for agent in self.possible_agents}
         return obs_dict, reward_dict, done_dict, truncated_dict, info_dict
 
 

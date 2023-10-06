@@ -92,6 +92,10 @@ def parse_args(args, parser):
                         help="the size (squared) to which the bitmap should be scaled for observation")
     parser.add_argument("--observation_radius", type=float, default=np.Inf, 
                         help="the observable radius for each agent")
+    parser.add_argument("--attrition_method", type=str, default="none", 
+                        help="the method to use for agent attrition")
+    parser.add_argument("--attrition_random_probability", type=float, default=0.0,
+                        help="the random attrition probability")
     parser.add_argument("--smm_width", type=int, default=96,
                         help="width of super minimap.")
     parser.add_argument("--smm_height", type=int, default=72,
