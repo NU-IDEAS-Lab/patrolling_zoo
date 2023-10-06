@@ -711,40 +711,86 @@ class PatrollingRunner(Runner):
         if self.use_centralized_V:
             self.trainer[0].prep_rollout()
 
-            buf = self.critic_buffer
+            # Create a new self.critic_buffer if we are using asynchronous skipping.
+            if self.all_args.skip_steps_async:
+                totalSteps = 0
+                for i in range(self.n_rollout_threads):
+                    for agent_id in range(self.num_agents):
+                        totalSteps += self.buffer[i][agent_id].step
+                args = copy.deepcopy(self.all_args)
+                args.n_rollout_threads = 1
+                args.episode_length = totalSteps
+                cbuf = SeparatedReplayBuffer(
+                    args,
+                    self.envs.observation_space[0],
+                    self.envs.share_observation_space[0],
+                    self.envs.action_space[0]
+                )
+
+                # Append the buffers from each rollout thread and agent.
+                for i in range(self.n_rollout_threads):
+                    for agent_id in range(self.num_agents):
+                        buf = self.buffer[i][agent_id]
+                        
+                        cbuf.share_obs[cbuf.step:cbuf.step + buf.step] = buf.share_obs[:buf.step]
+                        cbuf.obs[cbuf.step:cbuf.step + buf.step] = buf.obs[:buf.step]
+                        cbuf.rnn_states[cbuf.step:cbuf.step + buf.step] = buf.rnn_states[:buf.step]
+                        cbuf.rnn_states_critic[cbuf.step:cbuf.step + buf.step] = buf.rnn_states_critic[:buf.step]
+                        cbuf.actions[cbuf.step:cbuf.step + buf.step] = buf.actions[:buf.step]
+                        cbuf.action_log_probs[cbuf.step:cbuf.step + buf.step] = buf.action_log_probs[:buf.step]
+                        cbuf.value_preds[cbuf.step:cbuf.step + buf.step] = buf.value_preds[:buf.step]
+                        cbuf.rewards[cbuf.step:cbuf.step + buf.step] = buf.rewards[:buf.step]
+                        cbuf.masks[cbuf.step:cbuf.step + buf.step] = buf.masks[:buf.step]
+                        cbuf.deltaSteps[cbuf.step:cbuf.step + buf.step] = buf.deltaSteps[:buf.step]
+
+                        # Set the mask for the first step to 0 (reset the RNN)
+                        cbuf.masks[cbuf.step] = np.zeros_like(cbuf.masks[cbuf.step])
+
+                        cbuf.step += buf.step
+
+                if cbuf.step != totalSteps:
+                    raise ValueError(f"Total step count is incorrect for critic buffer! Expected {totalSteps}, got {cbuf.step}")
+
+                # Update the critic buffer.
+                self.critic_buffer_series = cbuf
+            else:
+                cbuf = self.critic_buffer
 
             # Check that the total step count is correct.
-            if self.critic_buffer.step != self.all_args.episode_length:
-                raise RuntimeError(f"Total step count is incorrect for critic buffer! Expected {self.all_args.episode_length}, got {self.critic_buffer.step}")
-            # stepSum = np.sum(buf.deltaSteps[:buf.step], axis=0)
+            # if self.critic_buffer.step != self.all_args.episode_length:
+            #     raise RuntimeError(f"Total step count is incorrect for critic buffer! Expected {self.all_args.episode_length}, got {self.critic_buffer.step}")
+            # stepSum = np.sum(cbuf.deltaSteps[:cbuf.step], axis=0)
             # if not self.all_args.skip_steps_sync and np.any(stepSum != self.all_args.episode_length):
             #     raise RuntimeError(f"Total step count is incorrect for critic buffer! Expected {self.all_args.episode_length}, got {stepSum}")
 
-            next_value = self.trainer[0].policy.get_values(np.concatenate(buf.share_obs[buf.step - 1]), 
-                                                            np.concatenate(buf.rnn_states_critic[buf.step - 1]),
-                                                            np.concatenate(buf.masks[buf.step - 1]))
-            next_value = np.array(np.split(_t2n(next_value), self.n_rollout_threads))
-            self.critic_buffer.compute_returns(
+            next_value = self.trainer[0].policy.get_values(cbuf.share_obs[cbuf.step - 1], 
+                                                            cbuf.rnn_states_critic[cbuf.step - 1],
+                                                            cbuf.masks[cbuf.step - 1])
+            # next_value = np.array(np.split(_t2n(next_value), self.n_rollout_threads))
+            next_value = _t2n(next_value)
+            cbuf.compute_returns(
                 next_value,
                 self.trainer[0].value_normalizer,
-                last_step=buf.step
+                last_step=cbuf.step
             )
 
             # Copy returns to each agent's buffer.
             if self.all_args.skip_steps_async:
+                offset = 0
                 for i in range(self.n_rollout_threads):
                     for agent_id in range(self.num_agents):
                         for j in range(self.buffer[i][agent_id].step):
-                            s = self.buffer[i][agent_id].criticStep[j]
-                            self.buffer[i][agent_id].returns[j] = self.critic_buffer.returns[s, i, agent_id]
+                            self.buffer[i][agent_id].returns[j] = cbuf.returns[offset + j, 0, 0]
 
                         # Copy the last step to capture the final return and value.
-                        self.buffer[i][agent_id].returns[j + 1] = self.critic_buffer.returns[self.critic_buffer.step, i, agent_id]
-                        self.buffer[i][agent_id].value_preds[j + 1] = self.critic_buffer.value_preds[self.critic_buffer.step, i, agent_id]
+                        self.buffer[i][agent_id].returns[j + 1] = cbuf.returns[offset + j + 1, 0, 0]
+                        self.buffer[i][agent_id].value_preds[j + 1] = cbuf.value_preds[offset + j + 1, 0, 0]
+
+                        offset += self.buffer[i][agent_id].step
             else:
                 for agent_id in range(self.num_agents):
-                    self.buffer[agent_id].returns = self.critic_buffer.returns[:, :, agent_id]
-                    self.buffer[agent_id].value_preds[self.buffer[agent_id].step] = self.critic_buffer.value_preds[self.critic_buffer.step, :, agent_id]
+                    self.buffer[agent_id].returns = cbuf.returns[:, :, agent_id]
+                    self.buffer[agent_id].value_preds[self.buffer[agent_id].step] = cbuf.value_preds[cbuf.step, :, agent_id]
 
         # Compute returns for the decentralized critics.
         else:
@@ -753,7 +799,7 @@ class PatrollingRunner(Runner):
                 for i in range(self.n_rollout_threads):
                     for agent_id in range(self.num_agents):
                         self.trainer[agent_id].prep_rollout()
-                        buf = self.buffer[i][agent_id]
+                        cbuf = self.buffer[i][agent_id]
 
                         # # Check that the total step count is correct.
                         # stepSum = np.sum(buf.deltaSteps[:buf.step])
@@ -761,38 +807,38 @@ class PatrollingRunner(Runner):
                         #     raise RuntimeError(f"Total step count is incorrect for buffer {i}-{agent_id}! Expected {self.all_args.episode_length}, got {stepSum}")
 
                         next_value = self.trainer[agent_id].policy.get_values(
-                            buf.share_obs[buf.step - 1], 
-                            buf.rnn_states_critic[buf.step - 1],
-                            buf.masks[buf.step - 1]
+                            cbuf.share_obs[cbuf.step - 1], 
+                            cbuf.rnn_states_critic[cbuf.step - 1],
+                            cbuf.masks[cbuf.step - 1]
                         )
                         next_value = _t2n(next_value)
-                        buf.compute_returns(
+                        cbuf.compute_returns(
                             next_value,
                             self.trainer[agent_id].value_normalizer,
-                            last_step=buf.step
+                            last_step=cbuf.step
                         )
             
             # Otherwise, we compute returns for each agent's policy using a single buffer.
             else:
                 for agent_id in range(self.num_agents):
                     self.trainer[agent_id].prep_rollout()
-                    buf = self.buffer[agent_id]
+                    cbuf = self.buffer[agent_id]
 
                     # Check that the total step count is correct.
-                    stepSum = np.sum(buf.deltaSteps[:buf.step], axis=0)
+                    stepSum = np.sum(cbuf.deltaSteps[:cbuf.step], axis=0)
                     if not self.all_args.skip_steps_sync and np.any(stepSum != self.all_args.episode_length):
                         raise RuntimeError(f"Total step count is incorrect for buffer {agent_id}! Expected {self.all_args.episode_length}, got {stepSum}")
 
                     next_value = self.trainer[agent_id].policy.get_values(
-                        buf.share_obs[buf.step - 1],
-                        buf.rnn_states_critic[buf.step - 1],
-                        buf.masks[buf.step - 1]
+                        cbuf.share_obs[cbuf.step - 1],
+                        cbuf.rnn_states_critic[cbuf.step - 1],
+                        cbuf.masks[cbuf.step - 1]
                     )
                     next_value = _t2n(next_value)
-                    buf.compute_returns(
+                    cbuf.compute_returns(
                         next_value,
                         self.trainer[agent_id].value_normalizer,
-                        last_step=buf.step
+                        last_step=cbuf.step
                     )
 
     def train(self):
@@ -803,24 +849,50 @@ class PatrollingRunner(Runner):
 
         # Update the centralized critic.
         if self.use_centralized_V:
+            if self.all_args.skip_steps_async:
+                cbuf = self.critic_buffer_series
+            else:
+                cbuf = self.critic_buffer
+
             self.trainer[0].prep_training()
             train_info = self.trainer[0].train(
-                self.critic_buffer,
+                cbuf,
                 update_actor=False,
                 update_critic=True,
-                last_step=self.critic_buffer.step
+                last_step=cbuf.step
             )
             train_infos["critic"].append(train_info)
-            self.critic_buffer.after_update(
-                last_step = self.critic_buffer.step
+            cbuf.after_update(
+                last_step = cbuf.step
             )
 
         # Update the actors (and critics in case of per-agent critics).
         if self.all_args.skip_steps_async:
-            # In case of asynchronous skipping, we update each agent's policy using buffers from each rollout thread.
-            for i in range(self.n_rollout_threads):
-                for agent_id in range(self.num_agents):
-                    self.trainer[agent_id].prep_training()
+            for agent_id in range(self.num_agents):
+                self.trainer[agent_id].prep_training()
+
+                # In case of asynchronous skipping, we update each agent's policy using buffers from each rollout thread.
+                for i in range(self.n_rollout_threads):
+                    # # Print the entire actor buffer.
+                    # # buf = self.critic_buffer
+                    # # buf = self.buffer[0]
+                    # np.set_printoptions(threshold=np.inf)
+                    # buf = self.buffer[i][agent_id]
+                    # with open(f"buffer_actor_{i}_{agent_id}.txt", "w") as f:
+                    #     f.write(f"======= BUFFER: {i} =======\n")
+                    #     for at in ["obs", "share_obs", "actions", "value_preds", "returns", "masks", "rnn_states", "rnn_states_critic", "deltaSteps"]:
+                    #         f.write(f"======= ATTRIBUTE: {at} =======\n")
+                    #         f.write(f"{buf.__dict__[at][:buf.step]}\n")
+                    #         f.write("\n")
+                    # buf = self.critic_buffer_series
+                    # with open(f"buffer_critic_{i}.txt", "w") as f:
+                    #     f.write(f"======= CRITIC: {i} =======\n")
+                    #     for at in ["obs", "share_obs", "actions", "value_preds", "returns", "masks", "rnn_states", "rnn_states_critic", "deltaSteps"]:
+                    #         f.write(f"======= ATTRIBUTE: {at} =======\n")
+                    #         f.write(f"{buf.__dict__[at][:buf.step]}\n")
+                    #         f.write("\n")
+                    # # raise Exception("Done printing buffer.")
+
                     train_info = self.trainer[agent_id].train(
                         self.buffer[i][agent_id],
                         update_actor=True,
