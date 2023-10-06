@@ -169,7 +169,7 @@ class parallel_env(ParallelEnv):
             }) # type: ignore
         
         # Add bitmap observation.
-        if observe_method in ["bitmap"]:
+        if observe_method in ["bitmap", "bitmap2"]:
             state_space = spaces.Box(
                 low=-2.0,
                 high=np.inf,
@@ -448,6 +448,46 @@ class parallel_env(ParallelEnv):
                 pos = _normPosition(self.pg.getNodePosition(v))
                 if pos[0] < 0 or pos[0] >= self.observe_bitmap_dims[0] or pos[1] < 0 or pos[1] >= self.observe_bitmap_dims[1]:
                     continue
+                bitmap[int(pos[0]), int(pos[1]), self.OBSERVATION_CHANNELS.GRAPH] = v
+
+            obs = bitmap
+
+        # Add bitmap2 observation. This variant uses -1 to indicate unobserved nodes and agents, rather than cropping the bitmap.
+        if observe_method in ["bitmap2"]:
+            # Create an image which defaults to -1.
+            bitmap = -1.0 * np.ones(self.observation_space(agent).shape, dtype=np.float32)
+
+            # Set the observing agent's ID in the (0, 0) position. This is a bit hacky.
+            bitmap[0, 0, self.OBSERVATION_CHANNELS.AGENT_ID] = agent.id
+
+            def _normPosition(pos):
+                x = self._minMaxNormalize(pos[0], a=0.0, b=self.observe_bitmap_dims[0], minimum=0.0, maximum=self.pg.widthPixels, eps=0.01)
+                y = self._minMaxNormalize(pos[1], a=0.0, b=self.observe_bitmap_dims[1], minimum=0.0, maximum=self.pg.heightPixels, eps=0.01)
+                return x, y
+
+            # Add agents to the observation.
+            for a in agents:
+                pos = _normPosition(a.position)
+                bitmap[int(pos[0]), int(pos[1]), self.OBSERVATION_CHANNELS.AGENT_ID] = a.id
+            
+            # Add vertex idleness times to the observation.
+            for v in vertices:
+                pos = _normPosition(self.pg.getNodePosition(v))
+                bitmap[int(pos[0]), int(pos[1]), self.OBSERVATION_CHANNELS.IDLENESS] = self.pg.getNodeIdlenessTime(v, self.step_count)
+            
+            # Add edges to the graph channel.
+            for edge in self.pg.graph.edges:
+                pos1 = _normPosition(self.pg.getNodePosition(edge[0]))
+                pos2 = _normPosition(self.pg.getNodePosition(edge[1]))
+                dist = self._dist(pos1, pos2)
+                if dist > 0.0:
+                    for i in range(int(dist)):
+                        pos = (int(pos1[0] + (pos2[0] - pos1[0]) * i / dist), int(pos1[1] + (pos2[1] - pos1[1]) * i / dist))
+                        bitmap[pos[0], pos[1], self.OBSERVATION_CHANNELS.GRAPH] = -2.0
+
+            # Add vertices to the graph channel.
+            for v in self.pg.graph.nodes:
+                pos = _normPosition(self.pg.getNodePosition(v))
                 bitmap[int(pos[0]), int(pos[1]), self.OBSERVATION_CHANNELS.GRAPH] = v
 
             obs = bitmap
