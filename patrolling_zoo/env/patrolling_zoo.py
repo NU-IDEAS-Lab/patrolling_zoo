@@ -663,6 +663,7 @@ class parallel_env(ParallelEnv):
         info_dict["avg_idleness"] = self.pg.getAverageIdlenessTime(self.step_count)
         info_dict["stddev_idleness"] = self.pg.getStdDevIdlenessTime(self.step_count)
         info_dict["worst_idleness"] = self.pg.getWorstIdlenessTime(self.step_count)
+        info_dict["agent_count"] = len(self.agents)
 
         # Check truncation conditions.
         if lastStep or (self.max_cycles >= 0 and self.step_count >= self.max_cycles):
