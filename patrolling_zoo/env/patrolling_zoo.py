@@ -648,7 +648,13 @@ class parallel_env(ParallelEnv):
         
         # for agent in self.agents:
         #     reward_dict[agent] += self.beta * self.step_count / (self.pg.getAverageIdlenessTime(self.step_count) + 1e-8)
-
+        
+        if self.step_count == 10:
+            random_index = random.randrange(len(self.agents))
+            attrition_agent = self.agents.pop(random_index)
+            self.dones[attrition_agent] = True
+            done_dict[agent] = True
+        print("???")
         # Perform observations.
         for agent in self.agents:
 
