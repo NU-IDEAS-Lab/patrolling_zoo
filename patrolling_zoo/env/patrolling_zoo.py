@@ -366,8 +366,11 @@ class parallel_env(ParallelEnv):
 
         # Add vertex idleness time (raw).
         if observe_method in ["raw", "old", "idlenessOnly", "adjacency"]:
-            nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in vertices}
-            obs["vertex_state"] = {v: nodes_idless[v] for v in vertices}
+            # Create dictionary with default value of -1.0.
+            obs["vertex_state"] = {v: -1.0 for v in range(self.pg.graph.number_of_nodes())}
+
+            for node in vertices:
+                obs["vertex_state"][node] = self.pg.getNodeIdlenessTime(node, self.step_count)
 
         # Add vertex distances from each agent (raw).
         if observe_method in ["old"]:
