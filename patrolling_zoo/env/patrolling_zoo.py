@@ -562,7 +562,7 @@ class parallel_env(ParallelEnv):
         truncated_dict = {agent: False for agent in self.possible_agents}
         info_dict = {
             agent: {
-                "ready": False
+                "ready": self.dones[agent], #if done, set ready to true. Otherwise we will have buffer size problems in MAPPO due to lack of insertion.
             } for agent in self.possible_agents
         }
 
