@@ -557,13 +557,13 @@ class parallel_env(ParallelEnv):
         '''
         self.step_count += 1
         obs_dict = {}
-        reward_dict = {agent: 0.0 for agent in self.agents}
+        reward_dict = {agent: 0.0 for agent in self.possible_agents}
         done_dict = {}
-        truncated_dict = {agent: False for agent in self.agents}
+        truncated_dict = {agent: False for agent in self.possible_agents}
         info_dict = {
             agent: {
                 "ready": False
-            } for agent in self.agents
+            } for agent in self.possible_agents
         }
 
         # Perform actions.
@@ -649,14 +649,14 @@ class parallel_env(ParallelEnv):
         # for agent in self.agents:
         #     reward_dict[agent] += self.beta * self.step_count / (self.pg.getAverageIdlenessTime(self.step_count) + 1e-8)
         
-        if self.step_count == 10:
+        if self.step_count == 3:
             random_index = random.randrange(len(self.agents))
             attrition_agent = self.agents.pop(random_index)
             self.dones[attrition_agent] = True
             done_dict[agent] = True
-        print("???")
+        
         # Perform observations.
-        for agent in self.agents:
+        for agent in self.possible_agents:
 
             # 3 communicaiton models here
             # agent_observation = self.observe_with_communication(agent)
@@ -694,7 +694,7 @@ class parallel_env(ParallelEnv):
 
                 info_dict[agent]["ready"] = True
             
-            truncated_dict = {a: True for a in self.agents}
+                truncated_dict[agent] = True
             self.agents = []
         
         # Provide a reward at a fixed interval.

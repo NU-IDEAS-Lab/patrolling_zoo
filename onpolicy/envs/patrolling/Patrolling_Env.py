@@ -132,7 +132,7 @@ class PatrollingEnv(object):
 
         rewards = np.zeros((self.num_agents, 1), dtype=np.float32)
 
-        while not ready and not any(done):
+        while not ready and (not all(done) or done == []):
             # We want to determine if this is the last step when using syncronized step skipping.
             lastStep = last_step or (self.args.skip_steps_sync and self.ppoSteps >= self.args.episode_length - 1)
             
@@ -144,7 +144,7 @@ class PatrollingEnv(object):
             # Convert the trunc dict to a list.
             trunc = [trunc[a] for a in self.env.possible_agents]
 
-            # Consider the episode done if any agent is done OR truncated.
+            # Consider the agent done if done OR truncated flags set.
             done = [d or t for d, t in zip(done, trunc)]
 
             combined_obs = {
