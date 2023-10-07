@@ -264,13 +264,14 @@ class parallel_env(ParallelEnv):
         # Draw the graph.
         pos = nx.get_node_attributes(self.pg.graph, 'pos')
         idleness = [self.pg.getNodeIdlenessTime(i, self.step_count) for i in self.pg.graph.nodes]
+        nodeColors = [self._minMaxNormalize(idleness[i], a=0.0, b=100, minimum=0.0, maximum=self.step_count) for i in self.pg.graph.nodes]
         nx.draw_networkx(self.pg.graph,
                          pos,
                          with_labels=True,
                          node_color=idleness,
                          edgecolors='black',
                          vmin=0,
-                         vmax=50,
+                         vmax=100,
                          cmap='Purples',
                          node_size=600,
                          font_size=10,
@@ -286,7 +287,7 @@ class parallel_env(ParallelEnv):
             plt.scatter(*agent.position, color=color, marker=marker, zorder=10, alpha=0.3, s=300)
             plt.plot([], [], color=color, marker=marker, linestyle='None', label=agent.name, alpha=0.5)
 
-        plt.legend()
+        plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
         plt.gcf().text(0,0,f'Current step: {self.step_count}, Average idleness time: {self.pg.getAverageIdlenessTime(self.step_count):.2f}')
         plt.show()
 
