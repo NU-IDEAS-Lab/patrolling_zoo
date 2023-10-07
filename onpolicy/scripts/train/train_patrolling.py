@@ -98,6 +98,8 @@ def parse_args(args, parser):
                         help="the random attrition probability")
     parser.add_argument("--attrition_min_agents", type=int, default=2,
                         help="the minimum number of agents that must be present for attrition to occur")
+    parser.add_argument("--communication_model", type=str, default="none", 
+                        help="the model name to use for communication. The \"none\" model indicates no comms allowed")
     parser.add_argument("--smm_width", type=int, default=96,
                         help="width of super minimap.")
     parser.add_argument("--smm_height", type=int, default=72,

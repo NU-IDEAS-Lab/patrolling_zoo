@@ -2,7 +2,7 @@ import math
 import random 
 
 class CommunicationModel():
-    def __init__(self, model, p=0.7, alpha=0.3, beta=0.7, gamma=3, pt = 30.0, ps=-65.0):
+    def __init__(self, model, p=0.1, alpha=0.3, beta=0.7, gamma=3, pt = 30.0, ps=-65.0):
         self.model = model
         self.p = p
         self.alpha =alpha
@@ -19,6 +19,10 @@ class CommunicationModel():
             return self.bernoulli_model()
         elif self.model == "gilbert_elliot":
             return self.Gil_el_model(agentB)
+        elif self.model == "none":
+            return False
+        elif self.model == "all":
+            return True
         else:
             return self.path_loss_model(agentA, agentB)
 

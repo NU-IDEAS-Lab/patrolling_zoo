@@ -43,7 +43,7 @@ class parallel_env(ParallelEnv):
         GRAPH = 2
 
     def __init__(self, patrol_graph, num_agents,
-                 comms_model = CommunicationModel(model = "bernoulli"),
+                 comms_model = CommunicationModel(model = "none"),
                  require_explicit_visit = True,
                  speed = 1.0,
                  alpha = 10.0,
@@ -316,6 +316,7 @@ class parallel_env(ParallelEnv):
             state[agent] = self._populateStateSpace(self.observe_method_global, agent, radius=np.inf, allow_done_agents=True)
         return state
 
+
     def observe(self, agent, radius=None, allow_done_agents=False):
         ''' Returns the observation for the given agent.'''
 
@@ -333,8 +334,18 @@ class parallel_env(ParallelEnv):
         else:
             agentList = self.agents
 
-        agents = [a for a in agentList if self._dist(a.position, agent.position) <= radius]
+        # Calculate the list of visible agents and vertices.
         vertices = [v for v in self.pg.graph.nodes if self._dist(self.pg.getNodePosition(v), agent.position) <= radius]
+        agents = [a for a in agentList if self._dist(a.position, agent.position) <= radius]
+        for a in agentList:
+            if a != agent and a not in agents and self.comms_model.canReceive(a, agent):
+                agents.append(a)
+                for v in self.pg.graph.nodes:
+                    if v not in vertices and self._dist(self.pg.getNodePosition(v), a.position) <= radius:
+                        vertices.append(v)
+        agents = sorted(agents, key=lambda a: a.id)
+        vertices = sorted(vertices)
+        
         obs = {}
 
         # Add agent ID.
