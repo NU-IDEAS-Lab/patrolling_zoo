@@ -2,6 +2,7 @@ import random
 
 from patrolling_zoo.env.patrolling_zoo import parallel_env
 from patrolling_zoo.env.patrol_graph import PatrolGraph
+from patrolling_zoo.env.communication_model import CommunicationModel
 from gymnasium.spaces.utils import flatten, flatten_space
 from gymnasium.spaces import Dict
 import numpy as np
@@ -49,7 +50,7 @@ class PatrollingEnv(object):
         self.env = parallel_env(
             patrol_graph = pg,
             num_agents = args.num_agents,
-            # comms_model = args.comms_model,
+            comms_model = CommunicationModel(model = args.communication_model),
             # require_explicit_visit = args.require_explicit_visit,
             speed = args.agent_speed,
             alpha = args.alpha,

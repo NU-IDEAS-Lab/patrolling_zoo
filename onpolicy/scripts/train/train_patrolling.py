@@ -92,6 +92,8 @@ def parse_args(args, parser):
                         help="the size (squared) to which the bitmap should be scaled for observation")
     parser.add_argument("--observation_radius", type=float, default=np.Inf, 
                         help="the observable radius for each agent")
+    parser.add_argument("--communication_model", type=str, default="none", 
+                        help="the model name to use for communication. The \"none\" model indicates no comms allowed")
     parser.add_argument("--smm_width", type=int, default=96,
                         help="width of super minimap.")
     parser.add_argument("--smm_height", type=int, default=72,

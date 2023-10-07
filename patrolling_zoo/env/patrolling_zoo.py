@@ -43,7 +43,7 @@ class parallel_env(ParallelEnv):
         GRAPH = 2
 
     def __init__(self, patrol_graph, num_agents,
-                 comms_model = CommunicationModel(model = "bernoulli"),
+                 comms_model = CommunicationModel(model = "none"),
                  require_explicit_visit = True,
                  speed = 1.0,
                  alpha = 10.0,
