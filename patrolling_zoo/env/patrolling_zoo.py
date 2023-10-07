@@ -326,19 +326,18 @@ class parallel_env(ParallelEnv):
         else:
             agentList = self.agents
 
-
+        # Calculate the list of visible agents and vertices.
         vertices = [v for v in self.pg.graph.nodes if self._dist(self.pg.getNodePosition(v), agent.position) <= radius]
         agents = [a for a in agentList if self._dist(a.position, agent.position) <= radius]
         for a in agentList:
-            if a != agent:
-                if self.comms_model.canReceive(a, agent) and a not in agents:
-                    # print("here is the test")
-                    agents.append(a)
-                    vertices_update = [v for v in self.pg.graph.nodes if self._dist(self.pg.getNodePosition(v), a.position) <= radius]
-                    for v in vertices_update:
-                        if v not in vertices:
-                            vertices.append(v)
-        # vertices = [v for v in self.pg.graph.nodes if self._dist(self.pg.getNodePosition(v), agent.position) <= radius]
+            if a != agent and a not in agents and self.comms_model.canReceive(a, agent):
+                agents.append(a)
+                for v in self.pg.graph.nodes:
+                    if v not in vertices and self._dist(self.pg.getNodePosition(v), a.position) <= radius:
+                        vertices.append(v)
+        agents = sorted(agents, key=lambda a: a.id)
+        vertices = sorted(vertices)
+        
         obs = {}
 
         # Add agent ID.
