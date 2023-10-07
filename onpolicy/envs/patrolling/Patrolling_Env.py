@@ -59,6 +59,9 @@ class PatrollingEnv(object):
             observe_method = args.observe_method,
             observe_method_global = args.observe_method_global,
             observe_bitmap_dims = (args.observe_bitmap_size, args.observe_bitmap_size),
+            attrition_method = args.attrition_method,
+            attrition_random_probability = args.attrition_random_probability,
+            attrition_min_agents = args.attrition_min_agents,
             reward_method_terminal = args.reward_method_terminal,
             max_cycles = -1 if self.args.skip_steps_sync or self.args.skip_steps_async else args.episode_length
         )
@@ -132,7 +135,7 @@ class PatrollingEnv(object):
 
         rewards = np.zeros((self.num_agents, 1), dtype=np.float32)
 
-        while not ready and not any(done):
+        while not ready and (not all(done) or done == []):
             # We want to determine if this is the last step when using syncronized step skipping.
             lastStep = last_step or (self.args.skip_steps_sync and self.ppoSteps >= self.args.episode_length - 1)
             
@@ -144,7 +147,7 @@ class PatrollingEnv(object):
             # Convert the trunc dict to a list.
             trunc = [trunc[a] for a in self.env.possible_agents]
 
-            # Consider the episode done if any agent is done OR truncated.
+            # Consider the agent done if done OR truncated flags set.
             done = [d or t for d, t in zip(done, trunc)]
 
             combined_obs = {

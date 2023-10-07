@@ -365,6 +365,7 @@ class PatrollingRunner(Runner):
         self.env_infos["avg_idleness"] = [i["avg_idleness"] for i in infos]
         self.env_infos["stddev_idleness"] = [i["stddev_idleness"] for i in infos]
         self.env_infos["worst_idleness"] = [i["worst_idleness"] for i in infos]
+        self.env_infos["agent_count"] = [i["agent_count"] for i in infos]
 
         # Add the number of nodes visited to env infos.
         for n in range(len(infos[0]["node_visits"])):
@@ -935,6 +936,12 @@ class PatrollingRunner(Runner):
         ''' Determine whether this step is the last step of the episode. '''
 
         if self.all_args.skip_steps_async:
+            # Check that all agent buffers have enough data.
+            for i in range(self.n_rollout_threads):
+                for agent_id in range(self.num_agents):
+                    if self.buffer[i][agent_id].step < self.all_args.data_chunk_length:
+                        return False
+
             if self.use_centralized_V:
                 bufferStep = self.critic_buffer.step
             else:
