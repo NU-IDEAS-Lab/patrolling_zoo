@@ -50,7 +50,10 @@ class PatrollingEnv(object):
         self.env = parallel_env(
             patrol_graph = pg,
             num_agents = args.num_agents,
-            comms_model = CommunicationModel(model = args.communication_model),
+            comms_model = CommunicationModel(
+                model = args.communication_model,
+                p = args.communication_probability
+            ),
             # require_explicit_visit = args.require_explicit_visit,
             speed = args.agent_speed,
             alpha = args.alpha,
