@@ -631,6 +631,10 @@ class parallel_env(ParallelEnv):
                 
                 else:
                     raise ValueError(f"Invalid action method {self.action_method}")
+                
+                # Provide penalty for visiting the same node twice in a row.
+                if dstNode == agent.lastNodeVisited:
+                    reward_dict[agent] -= 1.0
 
                 # Calculate the shortest path.
                 path = self._getPathToNode(agent, dstNode)
