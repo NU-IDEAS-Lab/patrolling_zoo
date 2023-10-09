@@ -29,7 +29,7 @@ all_args.reward_method_terminal = "average"
 all_args.share_reward = False
 
 all_args.graph_name = "cumberland"
-all_args.graph_file = f"./patrolling_zoo/patrolling_zoo/env/{all_args.graph_name}.graph"
+all_args.graph_file = f"./patrolling_zoo/env/{all_args.graph_name}.graph"
 all_args.num_env_steps = 10e5 * 1 #total number of steps
 all_args.episode_length = 400 #number of steps in a training episode
 all_args.max_cycles = all_args.episode_length #number of steps in an environment episode
