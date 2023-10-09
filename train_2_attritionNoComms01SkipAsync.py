@@ -8,7 +8,7 @@ all_args = parse_args([], parser)
 
 
 
-all_args.experiment_name = "2SPattritionNoComms01SkipAsyncAdjacency"
+all_args.experiment_name = "2SpAttritionNoComms01SkipAsyncAdjacency"
 all_args.env_name = "Patrolling"
 all_args.user_name = "ideas-mas"
 
