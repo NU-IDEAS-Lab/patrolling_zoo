@@ -388,7 +388,7 @@ class PatrollingRunner(Runner):
                     if self.ready[i, agent_id]:
                         if self.use_centralized_V:
                             s_obs = share_obs[i]
-                            # c_insert_required = True
+                            c_insert_required = True
                         else:
                             s_obs = np.array(list(obs[i, agent_id]))
 
@@ -942,15 +942,15 @@ class PatrollingRunner(Runner):
                     if self.buffer[i][agent_id].step < self.all_args.data_chunk_length:
                         return False
 
-            # if self.use_centralized_V:
-            #     bufferStep = self.critic_buffer.step
-            # else:
-            maxBufferStep = 0
-            for i in range(self.n_rollout_threads):
-                for agent_id in range(self.num_agents):
-                    maxBufferStep = max(maxBufferStep, self.buffer[i][agent_id].step)
-            bufferStep = maxBufferStep
-            last_step = bufferStep >= self.episode_length - 2
+            if self.use_centralized_V:
+                bufferStep = self.critic_buffer.step
+            else:
+                maxBufferStep = 0
+                for i in range(self.n_rollout_threads):
+                    for agent_id in range(self.num_agents):
+                        maxBufferStep = max(maxBufferStep, self.buffer[i][agent_id].step)
+                bufferStep = maxBufferStep
+            last_step = bufferStep >= self.episode_length - 1
         else:
             last_step = step >= self.episode_length - 2
         return last_step
