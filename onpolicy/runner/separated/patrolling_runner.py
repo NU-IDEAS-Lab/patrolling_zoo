@@ -764,11 +764,16 @@ class PatrollingRunner(Runner):
             # if not self.all_args.skip_steps_sync and np.any(stepSum != self.all_args.episode_length):
             #     raise RuntimeError(f"Total step count is incorrect for critic buffer! Expected {self.all_args.episode_length}, got {stepSum}")
 
-            next_value = self.trainer[0].policy.get_values(cbuf.share_obs[cbuf.step - 1], 
-                                                            cbuf.rnn_states_critic[cbuf.step - 1],
-                                                            cbuf.masks[cbuf.step - 1])
-            # next_value = np.array(np.split(_t2n(next_value), self.n_rollout_threads))
-            next_value = _t2n(next_value)
+            if self.all_args.skip_steps_async:
+                next_value = self.trainer[0].policy.get_values(cbuf.share_obs[cbuf.step - 1], 
+                                                                cbuf.rnn_states_critic[cbuf.step - 1],
+                                                                cbuf.masks[cbuf.step - 1])
+                next_value = _t2n(next_value)
+            else:
+                next_value = self.trainer[0].policy.get_values(np.concatenate(cbuf.share_obs[cbuf.step - 1]), 
+                                                                np.concatenate(cbuf.rnn_states_critic[cbuf.step - 1]),
+                                                                np.concatenate(cbuf.masks[cbuf.step - 1]))
+                next_value = np.array(np.split(_t2n(next_value), self.n_rollout_threads))
             cbuf.compute_returns(
                 next_value,
                 self.trainer[0].value_normalizer,
@@ -952,7 +957,7 @@ class PatrollingRunner(Runner):
                 bufferStep = maxBufferStep
             last_step = bufferStep >= self.episode_length - 1
         else:
-            last_step = step >= self.episode_length - 2
+            last_step = step >= self.episode_length - 1
         return last_step
 
     def _process_combined_obs(self, combined_obs):
