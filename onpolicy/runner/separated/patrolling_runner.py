@@ -67,6 +67,12 @@ class PatrollingRunner(Runner):
                         self.envs.action_space[agent_id]
                     )
                     self.buffer[i].append(bu)
+
+                    # Use same actor for all.
+                    for po in self.policy:
+                        po.actor = self.policy[0].actor
+                        po.actor_optimizer = self.policy[0].actor_optimizer
+
         
         # Perform restoration.
         config['all_args'].model_dir = model_dir
