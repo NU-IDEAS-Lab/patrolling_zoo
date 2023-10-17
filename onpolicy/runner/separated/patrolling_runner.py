@@ -71,9 +71,10 @@ class PatrollingRunner(Runner):
                     self.buffer[i].append(bu)
 
                     # Use same actor for all.
-                    for po in self.policy:
-                        po.actor = self.policy[0].actor
-                        po.actor_optimizer = self.policy[0].actor_optimizer
+                    if self.all_args.sep_share_policy:
+                        for po in self.policy:
+                            po.actor = self.policy[0].actor
+                            po.actor_optimizer = self.policy[0].actor_optimizer
 
         
         # Perform restoration.
