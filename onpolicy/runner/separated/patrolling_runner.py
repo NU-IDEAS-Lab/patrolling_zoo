@@ -258,7 +258,7 @@ class PatrollingRunner(Runner):
         if self.all_args.skip_steps_async:
             for i in range(self.n_rollout_threads):
                 for agent_id in range(self.num_agents):
-                    self.buffer[i][agent_id].share_obs[0] = share_obs[i].copy()
+                    self.buffer[i][agent_id].share_obs[0] = share_obs[i][agent_id].copy()
                     self.buffer[i][agent_id].obs[0] = np.array(list(obs[i, agent_id])).copy()
         
         # Otherwise, warm-start the buffer for each agent.
@@ -398,7 +398,7 @@ class PatrollingRunner(Runner):
                     # Only insert if the agent is ready for a new action.
                     if self.ready[i, agent_id]:
                         if self.use_centralized_V:
-                            s_obs = share_obs[i]
+                            s_obs = share_obs[i][agent_id]
                             c_insert_required = True
                         else:
                             s_obs = np.array(list(obs[i, agent_id]))
