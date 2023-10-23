@@ -406,19 +406,17 @@ class parallel_env(ParallelEnv):
         # Add vertex distances from each agent (normalized).
         if observe_method in ["ajg_new", "ajg_newer"]:
             # Calculate the shortest path distances from each agent to each node.
-            vDists = np.zeros((len(agents), self.pg.graph.number_of_nodes()))
+            vDists = np.ones((len(self.possible_agents), self.pg.graph.number_of_nodes()))
             for a in agents:
                 for v in self.pg.graph.nodes:
                     path = self._getPathToNode(a, v)
-                    vDists[a.id, v] = self._getAgentPathLength(a, path)
+                    dist = self._getAgentPathLength(a, path)
+                    dist = self._minMaxNormalize(dist, minimum=0.0, maximum=self.pg.longestPathLength)
+                    vDists[a.id, v] = dist
             
-            # Normalize.
-            if np.size(vDists) > 0:
-                vDists = self._minMaxNormalize(vDists, minimum=0.0, maximum=self.pg.longestPathLength)
-
             # Convert to dictionary.
             vertexDistances = {}
-            for a in agents:
+            for a in self.possible_agents:
                 vertexDistances[a] = vDists[a.id]
             
             obs["vertex_distances"] = vertexDistances
