@@ -222,9 +222,9 @@ class PatrollingRunner(Runner):
                                 int(total_num_steps / (end - start))))
                 
                 if self.all_args.skip_steps_async:
-                    avgEpRewards = np.mean([self.buffer[i][a].rewards for a in range(self.num_agents) for j in range(self.n_rollout_threads)]) * self.episode_length
+                    avgEpRewards = np.mean([np.sum(self.buffer[i][a].rewards[:self.buffer[i][a].step]) for a in range(self.num_agents) for j in range(self.n_rollout_threads)])
                 else:
-                    avgEpRewards = np.mean([self.buffer[a].rewards for a in range(self.num_agents)]) * self.episode_length
+                    avgEpRewards = np.mean([np.sum(self.buffer[a].rewards[:self.buffer[a].step]) for a in range(self.num_agents)])
                 if self.use_wandb:
                     wandb.log({"average_episode_rewards": avgEpRewards}, step=total_num_steps)
                 else:
