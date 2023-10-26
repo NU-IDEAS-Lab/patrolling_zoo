@@ -41,8 +41,10 @@ class PatrollingRunner(Runner):
                     ta.value_normalizer = self.critic.v_out
             
             # Set up a shared replay buffer for the critic.
+            args = copy.deepcopy(self.all_args)
+            args.episode_length = self.all_args.episode_length * self.n_rollout_threads
             self.critic_buffer = SharedReplayBuffer(
-                self.all_args,
+                args,
                 self.num_agents,
                 self.envs.observation_space[0],
                 self.envs.share_observation_space[0],
@@ -60,8 +62,8 @@ class PatrollingRunner(Runner):
                     # make a copy of all_args but with n_rollout_threads = 1, since we are hacking this to use a separate buffer per rollout thread per agent.
                     args = copy.deepcopy(self.all_args)
                     args.n_rollout_threads = 1
-                    # Set the episode length larger in case this agent must take many more actions than others.
-                    args.episode_length = self.all_args.episode_length * self.n_rollout_threads
+                    # Account for potentially all agents adding to critic buffer in last step...
+                    args.episode_length += self.num_agents * self.n_rollout_threads
                     bu = SeparatedReplayBuffer(
                         args,
                         self.envs.observation_space[agent_id],
@@ -960,8 +962,8 @@ class PatrollingRunner(Runner):
 
             if self.use_centralized_V:
                 # Since we will concatenate the actor buffers, check the sum.
-                bufferStep = stepSum
-                # bufferStep = self.critic_buffer.step
+                # bufferStep = stepSum
+                bufferStep = self.critic_buffer.step
             else:
                 maxBufferStep = 0
                 for i in range(self.n_rollout_threads):
