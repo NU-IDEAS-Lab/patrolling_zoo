@@ -249,9 +249,10 @@ class PatrollingRunner(Runner):
         obs, share_obs = self._process_combined_obs(combined_obs)
 
         if self.use_centralized_V:
-            c_share_obs = np.repeat(share_obs, self.num_agents, axis=1)
-            c_share_obs = np.reshape(c_share_obs, self.critic_buffer.share_obs[0].shape)
-            self.critic_buffer.share_obs[0] = c_share_obs.copy()
+            # c_share_obs = np.repeat(share_obs, self.num_agents, axis=1)
+            # c_share_obs = np.reshape(c_share_obs, self.critic_buffer.share_obs[0].shape)
+            # self.critic_buffer.share_obs[0] = c_share_obs.copy()
+            self.critic_buffer.share_obs[0] = share_obs.copy()
             self.critic_buffer.obs[0] = obs.copy()
 
         # If using asynchronous skipping, warm-start the buffer for each rollout thread for each agent.
@@ -370,7 +371,8 @@ class PatrollingRunner(Runner):
             c_obs, c_share_obs, c_rewards, c_dones, c_infos, c_values, c_actions, c_action_log_probs, c_rnn_states, c_rnn_states_critic, c_delta_steps = data_critic
 
             # Set up the critic shared observation.
-            c_share_obs = np.repeat(share_obs[:, np.newaxis, :], self.num_agents, axis=1)
+            # c_share_obs = np.repeat(share_obs[:, np.newaxis, :], self.num_agents, axis=1)
+            c_share_obs = share_obs.copy()
         
         # Add the average idleness time to env infos.
         self.env_infos["avg_idleness"] = [i["avg_idleness"] for i in infos]
@@ -423,7 +425,8 @@ class PatrollingRunner(Runner):
                     if self.use_centralized_V:
                         # Update these regardless of whether the agent was skipped.
                         c_obs[i, agent_id] = obs[i, agent_id]
-                        c_share_obs[i, agent_id] = share_obs[i]
+                        # c_share_obs[i, agent_id] = share_obs[i]
+                        c_share_obs[i, agent_id] = share_obs[i, agent_id]
                         c_rewards[i, agent_id] = rewards[i, agent_id]
                         c_values[i][agent_id] = values[i][agent_id]
                         c_rnn_states_critic[i][agent_id] = rnn_states_critic[i][agent_id]
@@ -480,7 +483,8 @@ class PatrollingRunner(Runner):
                 # If we are using a shared critic, update the critic data.
                 if self.use_centralized_V:
                     c_obs[:, agent_id] = obs[:, agent_id]
-                    c_share_obs[:, agent_id] = share_obs[:]
+                    # c_share_obs[:, agent_id] = share_obs[:]
+                    c_share_obs[:, agent_id] = share_obs[:, agent_id]
                     c_rnn_states[:, agent_id] = rnn_states[:, agent_id]
                     c_rnn_states_critic[:, agent_id] = rnn_states_critic[:, agent_id]
                     c_actions[:, agent_id] = actions[:, agent_id]
