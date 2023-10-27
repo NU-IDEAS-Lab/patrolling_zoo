@@ -60,6 +60,8 @@ class PatrollingRunner(Runner):
                     # make a copy of all_args but with n_rollout_threads = 1, since we are hacking this to use a separate buffer per rollout thread per agent.
                     args = copy.deepcopy(self.all_args)
                     args.n_rollout_threads = 1
+                    # Set the episode length larger in case this agent must take many more actions than others.
+                    args.episode_length = self.all_args.episode_length * self.n_rollout_threads
                     bu = SeparatedReplayBuffer(
                         args,
                         self.envs.observation_space[agent_id],
@@ -947,14 +949,18 @@ class PatrollingRunner(Runner):
         ''' Determine whether this step is the last step of the episode. '''
 
         if self.all_args.skip_steps_async:
+            stepSum = 0
             # Check that all agent buffers have enough data.
             for i in range(self.n_rollout_threads):
                 for agent_id in range(self.num_agents):
-                    if self.buffer[i][agent_id].step < self.all_args.data_chunk_length:
+                    stepSum += self.buffer[i][agent_id].step
+                    if self.buffer[i][agent_id].step // self.all_args.data_chunk_length < 2:
                         return False
 
             if self.use_centralized_V:
-                bufferStep = self.critic_buffer.step
+                # Since we will concatenate the actor buffers, check the sum.
+                bufferStep = stepSum
+                # bufferStep = self.critic_buffer.step
             else:
                 maxBufferStep = 0
                 for i in range(self.n_rollout_threads):
