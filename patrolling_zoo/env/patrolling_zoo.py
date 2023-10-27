@@ -651,7 +651,7 @@ class parallel_env(ParallelEnv):
                             # The agent has reached its destination, visiting the node.
                             # The agent receives a reward for visiting the node.
                             r = self.onNodeVisit(nextNode, self.step_count)
-                            reward_dict[agent] += self.alpha * r
+                            reward_dict[agent] += r
 
                             agent.lastNodeVisited = nextNode
                             if nextNode == dstNode:
@@ -731,6 +731,7 @@ class parallel_env(ParallelEnv):
         idleness = self.pg.getNodeIdlenessTime(node, timeStamp)
         avgIdleness = self.pg.getAverageIdlenessTime(timeStamp)
         reward = self._minMaxNormalize(idleness, minimum=0.0, maximum=avgIdleness)
+        reward = self.alpha * reward
 
         # Update the node visit time.
         self.pg.setNodeVisitTime(node, timeStamp)
