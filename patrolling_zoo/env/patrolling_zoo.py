@@ -639,7 +639,7 @@ class parallel_env(ParallelEnv):
                 pathLen = self._getAgentPathLength(agent, path)
                 
                 # Take a step towards the next node.
-                stepSize = np.max(np.random.normal(loc=agent.speed, scale=1.0), agent.speed)
+                stepSize = np.random.normal(loc=agent.speed, scale=1.0)
                 for nextNode in path:
                     reached, stepSize = self._moveTowardsNode(agent, nextNode, stepSize)
 
