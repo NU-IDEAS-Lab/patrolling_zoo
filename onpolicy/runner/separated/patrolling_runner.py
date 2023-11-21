@@ -637,7 +637,7 @@ class PatrollingRunner(Runner):
             combined_obs = render_env.reset()
             render_actions = np.zeros((self.n_render_rollout_threads, self.num_agents), dtype=np.int32)
             render_rnn_states = np.zeros((self.n_render_rollout_threads, self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
-            render_masks = np.ones((self.n_render_rollout_threads, self.num_agents, 1), dtype=np.float32)
+            render_masks = np.ones((self.all_args.data_chunk_length, self.n_render_rollout_threads, self.num_agents, 1), dtype=np.float32)
 
             # Split the combined observations into obs and share_obs, then combine across environments.
             obs = []
@@ -650,6 +650,10 @@ class PatrollingRunner(Runner):
 
             # Record the readiness of each agent for a new action. All agents ready by default.
             ready = np.ones((self.n_render_rollout_threads, self.num_agents, 1), dtype=bool)
+
+            # Set up observation buffer.
+            obsBuffer = np.zeros((self.all_args.data_chunk_length, *(obs.shape[1:])), dtype=np.float32)
+            obsBuffer[-1] = obs
 
 
             if self.all_args.save_gifs:        
@@ -670,9 +674,9 @@ class PatrollingRunner(Runner):
                             print('hello')
 
                         self.trainer[agent_id].prep_rollout()
-                        render_action, render_rnn_state = self.trainer[agent_id].policy.act(obs[:, agent_id],
+                        render_action, render_rnn_state = self.trainer[agent_id].policy.act(np.concatenate(obsBuffer[:, agent_id]),
                                                                             render_rnn_states[:, agent_id],
-                                                                            render_masks[:, agent_id],
+                                                                            np.concatenate(render_masks[:, :, agent_id]),
                                                                             deterministic=True)
 
                         # [n_envs*n_agents, ...] -> [n_envs, n_agents, ...]
@@ -694,6 +698,10 @@ class PatrollingRunner(Runner):
                     share_obs.append(o["share_obs"][0])
                 obs = np.array(obs)
                 share_obs = np.array(share_obs)
+
+                # Shift observation buffer and add new obs. to end.
+                obsBuffer[:-1] = obsBuffer[1:]
+                obsBuffer[-1] = obs
 
                 # Pull agent ready state from the info message.
                 for i in range(self.n_render_rollout_threads):
