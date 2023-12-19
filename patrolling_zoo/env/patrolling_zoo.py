@@ -406,19 +406,17 @@ class parallel_env(ParallelEnv):
         # Add vertex distances from each agent (normalized).
         if observe_method in ["ajg_new", "ajg_newer"]:
             # Calculate the shortest path distances from each agent to each node.
-            vDists = np.zeros((len(agents), self.pg.graph.number_of_nodes()))
+            vDists = np.ones((len(self.possible_agents), self.pg.graph.number_of_nodes()))
             for a in agents:
                 for v in self.pg.graph.nodes:
                     path = self._getPathToNode(a, v)
-                    vDists[a.id, v] = self._getAgentPathLength(a, path)
+                    dist = self._getAgentPathLength(a, path)
+                    dist = self._minMaxNormalize(dist, minimum=0.0, maximum=self.pg.longestPathLength)
+                    vDists[a.id, v] = dist
             
-            # Normalize.
-            if np.size(vDists) > 0:
-                vDists = self._minMaxNormalize(vDists, minimum=0.0, maximum=self.pg.longestPathLength)
-
             # Convert to dictionary.
             vertexDistances = {}
-            for a in agents:
+            for a in self.possible_agents:
                 vertexDistances[a] = vDists[a.id]
             
             obs["vertex_distances"] = vertexDistances
@@ -641,7 +639,7 @@ class parallel_env(ParallelEnv):
                 pathLen = self._getAgentPathLength(agent, path)
                 
                 # Take a step towards the next node.
-                stepSize = agent.speed
+                stepSize = np.random.normal(loc=agent.speed, scale=1.0)
                 for nextNode in path:
                     reached, stepSize = self._moveTowardsNode(agent, nextNode, stepSize)
 
@@ -651,7 +649,7 @@ class parallel_env(ParallelEnv):
                             # The agent has reached its destination, visiting the node.
                             # The agent receives a reward for visiting the node.
                             r = self.onNodeVisit(nextNode, self.step_count)
-                            reward_dict[agent] += self.alpha * r
+                            reward_dict[agent] += r
 
                             agent.lastNodeVisited = nextNode
                             if nextNode == dstNode:
@@ -731,6 +729,7 @@ class parallel_env(ParallelEnv):
         idleness = self.pg.getNodeIdlenessTime(node, timeStamp)
         avgIdleness = self.pg.getAverageIdlenessTime(timeStamp)
         reward = self._minMaxNormalize(idleness, minimum=0.0, maximum=avgIdleness)
+        reward = self.alpha * reward
 
         # Update the node visit time.
         self.pg.setNodeVisitTime(node, timeStamp)

@@ -100,11 +100,10 @@ class PatrollingEnv(object):
         self.prevAction = {a: None for a in self.env.possible_agents}
         self.deltaSteps = {a: 0 for a in self.env.possible_agents}
         obs, _ = self.env.reset()
-        obs = self._obs_wrapper(obs)
 
         combined_obs = {
-            "obs": obs,
-            "share_obs": self._share_obs_wrapper(self.env.state())
+            "obs": self._obs_wrapper(obs),
+            "share_obs": self._share_obs_wrapper(self.env.state_all())
         }
 
         return combined_obs
@@ -156,7 +155,7 @@ class PatrollingEnv(object):
 
             combined_obs = {
                 "obs": self._obs_wrapper(obs),
-                "share_obs": self._share_obs_wrapper(self.env.state())
+                "share_obs": self._share_obs_wrapper(self.env.state_all())
             }
 
             # Increase reward.
@@ -217,19 +216,26 @@ class PatrollingEnv(object):
 
         # Flatten the PZ observation.
         if self.flatten_observations_global:
-            # res = []
-            # for a in self.env.possible_agents:
-            #     res.append(flatten(self.env.state_space, obs[a]))
-            # res = np.array(res)
-            # res = np.reshape(res, (self.num_agents, -1))
-            # return res
+            res = []
+            for a in self.env.possible_agents:
+                res.append(flatten(self.env.state_space, obs[a]))
+            res = np.array(res)
+            res = np.reshape(res, (self.num_agents, -1))
+            return res
 
             #This older code below is for use with the state() method. Above code is for the state_all() method.
             # Flatten the PZ observation.
             obs = flatten(self.env.state_space, obs)
         else:
-            obs = obs
+            res = []
+            for a in self.env.possible_agents:
+                res.append(obs[a])
+            res = np.array(res)
+            return res
         
+            #This older code below is for use with the state() method. Above code is for the state_all() method.
+            # obs = obs
+
         return obs
 
     def _info_wrapper(self, info):

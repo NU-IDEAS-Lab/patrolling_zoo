@@ -41,8 +41,10 @@ class PatrollingRunner(Runner):
                     ta.value_normalizer = self.critic.v_out
             
             # Set up a shared replay buffer for the critic.
+            args = copy.deepcopy(self.all_args)
+            args.episode_length = self.all_args.episode_length * self.n_rollout_threads
             self.critic_buffer = SharedReplayBuffer(
-                self.all_args,
+                args,
                 self.num_agents,
                 self.envs.observation_space[0],
                 self.envs.share_observation_space[0],
@@ -60,6 +62,8 @@ class PatrollingRunner(Runner):
                     # make a copy of all_args but with n_rollout_threads = 1, since we are hacking this to use a separate buffer per rollout thread per agent.
                     args = copy.deepcopy(self.all_args)
                     args.n_rollout_threads = 1
+                    # Account for potentially all agents adding to critic buffer in last step...
+                    args.episode_length += self.num_agents * self.n_rollout_threads
                     bu = SeparatedReplayBuffer(
                         args,
                         self.envs.observation_space[agent_id],
@@ -67,6 +71,13 @@ class PatrollingRunner(Runner):
                         self.envs.action_space[agent_id]
                     )
                     self.buffer[i].append(bu)
+
+                    # Use same actor for all.
+                    if self.all_args.sep_share_policy:
+                        for po in self.policy:
+                            po.actor = self.policy[0].actor
+                            po.actor_optimizer = self.policy[0].actor_optimizer
+
         
         # Perform restoration.
         config['all_args'].model_dir = model_dir
@@ -211,9 +222,9 @@ class PatrollingRunner(Runner):
                                 int(total_num_steps / (end - start))))
                 
                 if self.all_args.skip_steps_async:
-                    avgEpRewards = np.mean([self.buffer[i][a].rewards for a in range(self.num_agents) for j in range(self.n_rollout_threads)]) * self.episode_length
+                    avgEpRewards = np.mean([np.sum(self.buffer[i][a].rewards[:self.buffer[i][a].step]) for a in range(self.num_agents) for j in range(self.n_rollout_threads)])
                 else:
-                    avgEpRewards = np.mean([self.buffer[a].rewards for a in range(self.num_agents)]) * self.episode_length
+                    avgEpRewards = np.mean([np.sum(self.buffer[a].rewards[:self.buffer[a].step]) for a in range(self.num_agents)])
                 if self.use_wandb:
                     wandb.log({"average_episode_rewards": avgEpRewards}, step=total_num_steps)
                 else:
@@ -238,16 +249,17 @@ class PatrollingRunner(Runner):
         obs, share_obs = self._process_combined_obs(combined_obs)
 
         if self.use_centralized_V:
-            c_share_obs = np.repeat(share_obs, self.num_agents, axis=1)
-            c_share_obs = np.reshape(c_share_obs, self.critic_buffer.share_obs[0].shape)
-            self.critic_buffer.share_obs[0] = c_share_obs.copy()
+            # c_share_obs = np.repeat(share_obs, self.num_agents, axis=1)
+            # c_share_obs = np.reshape(c_share_obs, self.critic_buffer.share_obs[0].shape)
+            # self.critic_buffer.share_obs[0] = c_share_obs.copy()
+            self.critic_buffer.share_obs[0] = share_obs.copy()
             self.critic_buffer.obs[0] = obs.copy()
 
         # If using asynchronous skipping, warm-start the buffer for each rollout thread for each agent.
         if self.all_args.skip_steps_async:
             for i in range(self.n_rollout_threads):
                 for agent_id in range(self.num_agents):
-                    self.buffer[i][agent_id].share_obs[0] = share_obs[i].copy()
+                    self.buffer[i][agent_id].share_obs[0] = share_obs[i][agent_id].copy()
                     self.buffer[i][agent_id].obs[0] = np.array(list(obs[i, agent_id])).copy()
         
         # Otherwise, warm-start the buffer for each agent.
@@ -359,7 +371,8 @@ class PatrollingRunner(Runner):
             c_obs, c_share_obs, c_rewards, c_dones, c_infos, c_values, c_actions, c_action_log_probs, c_rnn_states, c_rnn_states_critic, c_delta_steps = data_critic
 
             # Set up the critic shared observation.
-            c_share_obs = np.repeat(share_obs[:, np.newaxis, :], self.num_agents, axis=1)
+            # c_share_obs = np.repeat(share_obs[:, np.newaxis, :], self.num_agents, axis=1)
+            c_share_obs = share_obs.copy()
         
         # Add the average idleness time to env infos.
         self.env_infos["avg_idleness"] = [i["avg_idleness"] for i in infos]
@@ -387,7 +400,7 @@ class PatrollingRunner(Runner):
                     # Only insert if the agent is ready for a new action.
                     if self.ready[i, agent_id]:
                         if self.use_centralized_V:
-                            s_obs = share_obs[i]
+                            s_obs = share_obs[i][agent_id]
                             c_insert_required = True
                         else:
                             s_obs = np.array(list(obs[i, agent_id]))
@@ -412,7 +425,8 @@ class PatrollingRunner(Runner):
                     if self.use_centralized_V:
                         # Update these regardless of whether the agent was skipped.
                         c_obs[i, agent_id] = obs[i, agent_id]
-                        c_share_obs[i, agent_id] = share_obs[i]
+                        # c_share_obs[i, agent_id] = share_obs[i]
+                        c_share_obs[i, agent_id] = share_obs[i, agent_id]
                         c_rewards[i, agent_id] = rewards[i, agent_id]
                         c_values[i][agent_id] = values[i][agent_id]
                         c_rnn_states_critic[i][agent_id] = rnn_states_critic[i][agent_id]
@@ -469,7 +483,8 @@ class PatrollingRunner(Runner):
                 # If we are using a shared critic, update the critic data.
                 if self.use_centralized_V:
                     c_obs[:, agent_id] = obs[:, agent_id]
-                    c_share_obs[:, agent_id] = share_obs[:]
+                    # c_share_obs[:, agent_id] = share_obs[:]
+                    c_share_obs[:, agent_id] = share_obs[:, agent_id]
                     c_rnn_states[:, agent_id] = rnn_states[:, agent_id]
                     c_rnn_states_critic[:, agent_id] = rnn_states_critic[:, agent_id]
                     c_actions[:, agent_id] = actions[:, agent_id]
@@ -622,7 +637,7 @@ class PatrollingRunner(Runner):
             combined_obs = render_env.reset()
             render_actions = np.zeros((self.n_render_rollout_threads, self.num_agents), dtype=np.int32)
             render_rnn_states = np.zeros((self.n_render_rollout_threads, self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
-            render_masks = np.ones((self.n_render_rollout_threads, self.num_agents, 1), dtype=np.float32)
+            render_masks = np.ones((self.all_args.data_chunk_length, self.n_render_rollout_threads, self.num_agents, 1), dtype=np.float32)
 
             # Split the combined observations into obs and share_obs, then combine across environments.
             obs = []
@@ -635,6 +650,10 @@ class PatrollingRunner(Runner):
 
             # Record the readiness of each agent for a new action. All agents ready by default.
             ready = np.ones((self.n_render_rollout_threads, self.num_agents, 1), dtype=bool)
+
+            # Set up observation buffer.
+            obsBuffer = np.zeros((self.all_args.data_chunk_length, *(obs.shape[1:])), dtype=np.float32)
+            obsBuffer[-1] = obs
 
 
             if self.all_args.save_gifs:        
@@ -655,9 +674,9 @@ class PatrollingRunner(Runner):
                             print('hello')
 
                         self.trainer[agent_id].prep_rollout()
-                        render_action, render_rnn_state = self.trainer[agent_id].policy.act(obs[:, agent_id],
+                        render_action, render_rnn_state = self.trainer[agent_id].policy.act(np.concatenate(obsBuffer[:, agent_id]),
                                                                             render_rnn_states[:, agent_id],
-                                                                            render_masks[:, agent_id],
+                                                                            np.concatenate(render_masks[:, :, agent_id]),
                                                                             deterministic=True)
 
                         # [n_envs*n_agents, ...] -> [n_envs, n_agents, ...]
@@ -679,6 +698,10 @@ class PatrollingRunner(Runner):
                     share_obs.append(o["share_obs"][0])
                 obs = np.array(obs)
                 share_obs = np.array(share_obs)
+
+                # Shift observation buffer and add new obs. to end.
+                obsBuffer[:-1] = obsBuffer[1:]
+                obsBuffer[-1] = obs
 
                 # Pull agent ready state from the info message.
                 for i in range(self.n_render_rollout_threads):
@@ -941,13 +964,17 @@ class PatrollingRunner(Runner):
         ''' Determine whether this step is the last step of the episode. '''
 
         if self.all_args.skip_steps_async:
+            stepSum = 0
             # Check that all agent buffers have enough data.
             for i in range(self.n_rollout_threads):
                 for agent_id in range(self.num_agents):
-                    if self.buffer[i][agent_id].step < self.all_args.data_chunk_length:
+                    stepSum += self.buffer[i][agent_id].step
+                    if self.buffer[i][agent_id].step // self.all_args.data_chunk_length < 2:
                         return False
 
             if self.use_centralized_V:
+                # Since we will concatenate the actor buffers, check the sum.
+                # bufferStep = stepSum
                 bufferStep = self.critic_buffer.step
             else:
                 maxBufferStep = 0

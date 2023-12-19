@@ -102,6 +102,8 @@ def parse_args(args, parser):
                         help="the model name to use for communication. The \"none\" model indicates no comms allowed")
     parser.add_argument("--communication_probability", type=float, default=0.1, 
                         help="the probability of successful communication")
+    parser.add_argument("--sep_share_policy", type=bool, default=True, 
+                        help="Whether to share the policy amongst agents (even though using the separated runner)")
     parser.add_argument("--smm_width", type=int, default=96,
                         help="width of super minimap.")
     parser.add_argument("--smm_height", type=int, default=72,
