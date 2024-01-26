@@ -144,3 +144,9 @@ class PatrolGraph():
         ''' Calculates the Euclidean distance between two points. '''
 
         return np.sqrt(np.power(pos1[0] - pos2[0], 2) + np.power(pos1[1] - pos2[1], 2))
+
+    def getPyTorchGeometricGraph(self):
+        ''' Returns a torch_geometric (PyG) graph object. '''
+
+        from torch_geometric.utils.convert import from_networkx
+        return from_networkx(self.graph)
