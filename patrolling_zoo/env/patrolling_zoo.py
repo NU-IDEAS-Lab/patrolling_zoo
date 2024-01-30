@@ -216,7 +216,7 @@ class parallel_env(ParallelEnv):
             random.seed(seed)
 
         # Reset the graph.
-        self.pg.reset()
+        self.pg.reset(seed)
 
         # Reset the information about idleness over time.
         self.avgIdlenessTimes = []
