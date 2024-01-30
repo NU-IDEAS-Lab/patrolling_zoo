@@ -64,8 +64,6 @@ class PatrolGraph():
     def generateRandomGraph(self, numNodes, radius=35, sizeX=200.0, sizeY=200.0, seed=None):
         ''' Generates a random graph with the given parameters. '''
 
-        print(f"Generating new random graph with {numNodes} nodes, radius {radius}, size ({sizeX}, {sizeY}) using seed {seed}.")
-
         connected = False
         while not connected:
             pos = {i: (random.uniform(0.0, sizeX), random.uniform(0.0, sizeY)) for i in range(numNodes)}
@@ -89,8 +87,6 @@ class PatrolGraph():
             for j in i[1]:
                 if i[1][j] > self.longestPathLength:
                     self.longestPathLength = i[1][j]
-        
-        print(f"Generation completed. Longest path length is {self.longestPathLength}.")
 
 
     def reset(self, seed=None):

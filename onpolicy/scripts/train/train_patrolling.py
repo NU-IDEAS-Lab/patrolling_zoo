@@ -142,6 +142,9 @@ def parse_args(args, parser):
 
 
 def validateArgs(all_args):
+    if all_args.graph_random:
+        all_args.graph_name = f"random{all_args.graph_random_nodes}"
+
     if all_args.algorithm_name == "rmappo":
         print("u are choosing to use rmappo, we set use_recurrent_policy to be True")
         all_args.use_recurrent_policy = True

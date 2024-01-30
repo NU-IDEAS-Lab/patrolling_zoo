@@ -47,7 +47,6 @@ class PatrollingEnv(object):
 
         if args.graph_random:
             pg = PatrolGraph(numNodes=args.graph_random_nodes, regenerateUponReset=True)
-            args.graph_name = f"random{args.graph_random_nodes}"
         else:
             pg = PatrolGraph(args.graph_file)
 
