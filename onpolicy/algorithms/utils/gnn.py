@@ -1,80 +1,33 @@
 import torch
+from torch_geometric.nn import MessagePassing
+from torch_geometric.nn import AttentionalAggregation
 import torch.nn as nn
+
+from onpolicy.algorithms.utils.mlp import MLPLayer
 
 """GNN modules."""
 
 
-class GNNLayer(nn.Module):
-    def __init__(self, inputs_dim, outputs_dim, recurrent_N, use_orthogonal):
-        super(GNNLayer, self).__init__()
-        self._recurrent_N = recurrent_N
-        self._use_orthogonal = use_orthogonal
+class GnnLayer(MessagePassing):
+    ''' GNN layer with attentional aggregation.
+        This class is based on two sources:
+            * https://medium.com/the-modern-scientist/graph-neural-networks-series-part-4-the-gnns-message-passing-over-smoothing-e77ffee523cc
+            * https://github.com/MIT-REALM/gcbf-pytorch/blob/main/gcbf/nn/gnn.py (Primarily)
+    '''
 
-        self.rnn = nn.GRU(inputs_dim, outputs_dim, num_layers=self._recurrent_N)
-        for name, param in self.rnn.named_parameters():
-            if 'bias' in name:
-                nn.init.constant_(param, 0)
-            elif 'weight' in name:
-                if self._use_orthogonal:
-                    nn.init.orthogonal_(param)
-                else:
-                    nn.init.xavier_uniform_(param)
-        self.norm = nn.LayerNorm(outputs_dim)
+    def __init__(self, node_dim: int, edge_dim: int, output_dim: int, phi_dim: int):
+        super(GnnLayer, self).__init__(aggr=AttentionalAggregation(
+            gate_nn=MLPLayer(input_dim=phi_dim, hidden_size=128, layer_N=2)))
+        self.phi = MLPLayer(input_dim=2 * node_dim + edge_dim, hidden_size=2048, layer_N=2)
+        self.gamma = MLPLayer(input_dim=phi_dim + node_dim, hidden_size=2048, layer_N=2)
 
-    def forward(self, x, hxs, masks):
-        if x.size(0) == hxs.size(0):
-            x, hxs = self.rnn(x.unsqueeze(0),
-                              (hxs * masks.repeat(1, self._recurrent_N).unsqueeze(-1)).transpose(0, 1).contiguous())
-            x = x.squeeze(0)
-            hxs = hxs.transpose(0, 1)
-        else:
-            # x is a (T, N, -1) tensor that has been flatten to (T * N, -1)
-            N = hxs.size(0)
-            T = int(x.size(0) / N)
+    def forward(self, x: torch.Tensor, edge_attr: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
+        return self.propagate(edge_index, x=x, edge_attr=edge_attr)
 
-            # unflatten
-            x = x.view(T, N, x.size(1))
+    def message(self, x_j: torch.Tensor, x_i: torch.Tensor = None, edge_attr: torch.Tensor = None) -> torch.Tensor:
+        info_ij = torch.cat([x_i, x_j, edge_attr], dim=1)
+        return self.phi(info_ij)
 
-            # Same deal with masks
-            masks = masks.view(T, N)
-
-            # Let's figure out which steps in the sequence have a zero for any agent
-            # We will always assume t=0 has a zero in it as that makes the logic cleaner
-            has_zeros = ((masks[1:] == 0.0)
-                         .any(dim=-1)
-                         .nonzero()
-                         .squeeze()
-                         .cpu())
-
-            # +1 to correct the masks[1:]
-            if has_zeros.dim() == 0:
-                # Deal with scalar
-                has_zeros = [has_zeros.item() + 1]
-            else:
-                has_zeros = (has_zeros + 1).numpy().tolist()
-
-            # add t=0 and t=T to the list
-            has_zeros = [0] + has_zeros + [T]
-
-            hxs = hxs.transpose(0, 1)
-
-            outputs = []
-            for i in range(len(has_zeros) - 1):
-                # We can now process steps that don't have any zeros in masks together!
-                # This is much faster
-                start_idx = has_zeros[i]
-                end_idx = has_zeros[i + 1]
-                temp = (hxs * masks[start_idx].view(1, -1, 1).repeat(self._recurrent_N, 1, 1)).contiguous()
-                rnn_scores, hxs = self.rnn(x[start_idx:end_idx], temp)
-                outputs.append(rnn_scores)
-
-            # assert len(outputs) == T
-            # x is a (T, N, -1) tensor
-            x = torch.cat(outputs, dim=0)
-
-            # flatten
-            x = x.reshape(T * N, -1)
-            hxs = hxs.transpose(0, 1)
-
-        x = self.norm(x)
-        return x, hxs
+    def update(self, aggr_out: torch.Tensor, x: torch.Tensor = None) -> torch.Tensor:
+        gamma_input = torch.cat([aggr_out, x], dim=1)
+        return self.gamma(gamma_input)
