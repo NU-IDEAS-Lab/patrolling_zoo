@@ -211,6 +211,12 @@ def get_config():
     parser.add_argument("--gain", type=float, default=0.01,
                         help="The gain # of last action layer")
 
+    # graph neural network parameters
+    parser.add_argument("--use_gnn_policy", action='store_true',
+                        default=False, help='Whether to use a GNN-based policy')
+    parser.add_argument("--use_gnn_critic", action='store_true',
+                        default=False, help='Whether to use a GNN-based critic')
+
     # recurrent parameters
     parser.add_argument("--use_naive_recurrent_policy", action='store_true',
                         default=False, help='Whether to use a naive recurrent policy')

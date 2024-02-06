@@ -26,12 +26,16 @@ class R_Actor(nn.Module):
         self._use_policy_active_masks = args.use_policy_active_masks
         self._use_naive_recurrent_policy = args.use_naive_recurrent_policy
         self._use_recurrent_policy = args.use_recurrent_policy
+        self._use_gnn = args.use_gnn_policy
         self._recurrent_N = args.recurrent_N
         self.tpdv = dict(dtype=torch.float32, device=device)
 
-        obs_shape = get_shape_from_obs_space(obs_space)
-        base = CNNBase if len(obs_shape) == 3 else MLPBase
-        self.base = base(args, obs_shape)
+        if self._use_gnn:
+            raise NotImplementedError("GNN not implemented for R_Actor")
+        else:
+            obs_shape = get_shape_from_obs_space(obs_space)
+            base = CNNBase if len(obs_shape) == 3 else MLPBase
+            self.base = base(args, obs_shape)
 
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
             self.rnn = RNNLayer(self.hidden_size, self.hidden_size, self._recurrent_N, self._use_orthogonal)
@@ -122,13 +126,17 @@ class R_Critic(nn.Module):
         self._use_naive_recurrent_policy = args.use_naive_recurrent_policy
         self._use_recurrent_policy = args.use_recurrent_policy
         self._recurrent_N = args.recurrent_N
+        self._use_gnn = args.use_gnn_critic
         self._use_popart = args.use_popart
         self.tpdv = dict(dtype=torch.float32, device=device)
         init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][self._use_orthogonal]
 
-        cent_obs_shape = get_shape_from_obs_space(cent_obs_space)
-        base = CNNBase if len(cent_obs_shape) == 3 else MLPBase
-        self.base = base(args, cent_obs_shape)
+        if self._use_gnn:
+            raise NotImplementedError("GNN not implemented for R_Critic")
+        else:
+            cent_obs_shape = get_shape_from_obs_space(cent_obs_space)
+            base = CNNBase if len(cent_obs_shape) == 3 else MLPBase
+            self.base = base(args, cent_obs_shape)
 
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
             self.rnn = RNNLayer(self.hidden_size, self.hidden_size, self._recurrent_N, self._use_orthogonal)
