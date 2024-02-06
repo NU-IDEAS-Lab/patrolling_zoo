@@ -3,6 +3,8 @@ import torch.nn as nn
 from onpolicy.algorithms.utils.util import init, check
 from onpolicy.algorithms.utils.cnn import CNNBase
 from onpolicy.algorithms.utils.mlp import MLPBase
+from onpolicy.algorithms.utils.gnn import GNNBase
+from onpolicy.algorithms.utils.rnn import RNNLayer
 from onpolicy.algorithms.utils.rnn import RNNLayer
 from onpolicy.algorithms.utils.act import ACTLayer
 from onpolicy.algorithms.utils.popart import PopArt
@@ -31,7 +33,9 @@ class R_Actor(nn.Module):
         self.tpdv = dict(dtype=torch.float32, device=device)
 
         if self._use_gnn:
-            raise NotImplementedError("GNN not implemented for R_Actor")
+            self.base = GNNBase(node_dim=get_shape_from_obs_space(obs_space)[0],
+                                edge_dim=0, output_dim=self.hidden_size, phi_dim=self.hidden_size,
+                                args=args)
         else:
             obs_shape = get_shape_from_obs_space(obs_space)
             base = CNNBase if len(obs_shape) == 3 else MLPBase

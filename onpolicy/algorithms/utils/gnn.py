@@ -8,18 +8,21 @@ from onpolicy.algorithms.utils.mlp import MLPLayer
 """GNN modules."""
 
 
-class GnnLayer(MessagePassing):
+class GNNBase(MessagePassing):
     ''' GNN layer with attentional aggregation.
         This class is based on two sources:
             * https://medium.com/the-modern-scientist/graph-neural-networks-series-part-4-the-gnns-message-passing-over-smoothing-e77ffee523cc
             * https://github.com/MIT-REALM/gcbf-pytorch/blob/main/gcbf/nn/gnn.py (Primarily)
     '''
 
-    def __init__(self, node_dim: int, edge_dim: int, output_dim: int, phi_dim: int):
-        super(GnnLayer, self).__init__(aggr=AttentionalAggregation(
-            gate_nn=MLPLayer(input_dim=phi_dim, hidden_size=128, layer_N=2)))
-        self.phi = MLPLayer(input_dim=2 * node_dim + edge_dim, hidden_size=2048, layer_N=2)
-        self.gamma = MLPLayer(input_dim=phi_dim + node_dim, hidden_size=2048, layer_N=2)
+    def __init__(self, node_dim: int, edge_dim: int, output_dim: int, phi_dim: int, args):
+
+        print(f"Initialize GNNBase with node_dim={node_dim}, edge_dim={edge_dim}, output_dim={output_dim}, phi_dim={phi_dim}")
+
+        super(GNNBase, self).__init__(aggr=AttentionalAggregation(
+            gate_nn=MLPLayer(input_dim=phi_dim, output_dim=1, hidden_size=128, layer_N=3, use_orthogonal=args.use_orthogonal, use_ReLU=args.use_ReLU),))
+        self.phi = MLPLayer(input_dim=2 * node_dim + edge_dim, output_dim=phi_dim, hidden_size=2048, layer_N=3, use_orthogonal=args.use_orthogonal, use_ReLU=args.use_ReLU)
+        self.gamma = MLPLayer(input_dim=phi_dim + node_dim, output_dim=output_dim, hidden_size=2048, layer_N=3, use_orthogonal=args.use_orthogonal, use_ReLU=args.use_ReLU)
 
     def forward(self, x: torch.Tensor, edge_attr: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
         return self.propagate(edge_index, x=x, edge_attr=edge_attr)
