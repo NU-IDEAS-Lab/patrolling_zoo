@@ -4,6 +4,7 @@ from gymnasium import spaces
 import random
 import numpy as np
 import math
+from copy import deepcopy
 from matplotlib import pyplot as plt
 import networkx as nx
 from copy import copy
@@ -351,7 +352,7 @@ class parallel_env(ParallelEnv):
         obs = {}
 
         # Add agent ID.
-        if observe_method in ["ajg_new", "ajg_newer", "adjacency"]:
+        if observe_method in ["ajg_new", "ajg_newer", "adjacency", "pyg"]:
             obs["agent_id"] = agent.id
 
         # Add agent position.
@@ -556,9 +557,9 @@ class parallel_env(ParallelEnv):
                 graphPos[a] = vec
             obs["agent_graph_position"] = graphPos
 
-        if observe_method in ["adjacency"]:
+        if observe_method in ["pyg"]:
             # Copy pg map to g
-            g = nx.deepcopy(self.pg.graph)
+            g = deepcopy(self.pg.graph)
             # Traverse through all agents and add their positions as new nodes to g
             for a in self.possible_agents:
                 # To avoid node ID conflicts, generate a unique node ID

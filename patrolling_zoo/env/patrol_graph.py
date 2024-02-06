@@ -149,4 +149,4 @@ class PatrolGraph():
         ''' Returns a torch_geometric (PyG) graph object. '''
 
         from torch_geometric.utils.convert import from_networkx
-        return from_networkx(self.graph)
+        return from_networkx(self.graph, group_node_attrs=["pos", "visitTime"], group_edge_attrs=["weight"])
