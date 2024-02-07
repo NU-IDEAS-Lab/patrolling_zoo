@@ -592,7 +592,8 @@ class parallel_env(ParallelEnv):
             #         g.add_edge(agent_node_id, node2_id, weight=weight_to_node2)
 
             PyG = from_networkx(g)
-            obs = PyG
+            obs = np.empty((1,), dtype=object)
+            obs[0] = PyG
         
         if (type(obs) == dict and obs == {}) or (type(obs) != dict and len(obs) < 1):
             raise ValueError(f"Invalid observation method {self.observe_method}")

@@ -33,6 +33,8 @@ def get_shape_from_obs_space(obs_space):
         obs_shape = obs_space.shape
     elif obs_space.__class__.__name__ == 'list':
         obs_shape = obs_space
+    elif obs_space.__class__.__name__ == 'Graph':
+        obs_shape = (1, ) # the observation is a single PyG data object
     else:
         raise NotImplementedError(f"Not implemented for obs_space type {obs_space.__class__.__name__}")
     return obs_shape

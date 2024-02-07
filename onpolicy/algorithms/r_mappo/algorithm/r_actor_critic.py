@@ -30,7 +30,10 @@ class R_Actor(nn.Module):
         self._use_recurrent_policy = args.use_recurrent_policy
         self._use_gnn = args.use_gnn_policy
         self._recurrent_N = args.recurrent_N
-        self.tpdv = dict(dtype=torch.float32, device=device)
+        if obs_space.__class__.__name__ == 'Graph':
+            self.tpdv = dict(device=device)
+        else:
+            self.tpdv = dict(dtype=torch.float32, device=device)
 
         if self._use_gnn:
             self.base = GNNBase(

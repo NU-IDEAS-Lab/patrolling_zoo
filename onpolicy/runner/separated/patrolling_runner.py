@@ -260,13 +260,13 @@ class PatrollingRunner(Runner):
             for i in range(self.n_rollout_threads):
                 for agent_id in range(self.num_agents):
                     self.buffer[i][agent_id].share_obs[0] = share_obs[i][agent_id].copy()
-                    self.buffer[i][agent_id].obs[0] = np.array(list(obs[i, agent_id])).copy()
+                    self.buffer[i][agent_id].obs[0] = obs[i, agent_id].copy()
         
         # Otherwise, warm-start the buffer for each agent.
         else:
             for agent_id in range(self.num_agents):
                 self.buffer[agent_id].share_obs[0] = share_obs.copy()
-                self.buffer[agent_id].obs[0] = np.array(list(obs[:, agent_id])).copy()
+                self.buffer[agent_id].obs[0] = obs[:, agent_id].copy()
 
     @torch.no_grad()
     def collect(self, step):
@@ -994,4 +994,5 @@ class PatrollingRunner(Runner):
         for o in combined_obs:
             obs.append(o["obs"])
             share_obs.append(o["share_obs"])
+        print(f"GOT OBSERVATION: {obs}")
         return np.array(obs), np.array(share_obs)
