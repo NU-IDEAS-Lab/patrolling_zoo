@@ -23,7 +23,7 @@ class MLPLayer(nn.Module):
         if output_dim is not None:
             self.fc2 = get_clones(self.fc_h, self._layer_N - 1)
             self.fc3 = nn.Sequential(init_(
-                nn.Linear(hidden_size, output_dim)), active_func, nn.LayerNorm(hidden_size))
+                nn.Linear(hidden_size, output_dim)), active_func, nn.LayerNorm(output_dim))
         else:
             self.fc2 = get_clones(self.fc_h, self._layer_N)
             self.fc3 = None
