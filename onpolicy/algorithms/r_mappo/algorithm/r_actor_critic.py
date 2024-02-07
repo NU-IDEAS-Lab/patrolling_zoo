@@ -33,9 +33,13 @@ class R_Actor(nn.Module):
         self.tpdv = dict(dtype=torch.float32, device=device)
 
         if self._use_gnn:
-            self.base = GNNBase(node_dim=get_shape_from_obs_space(obs_space)[0],
-                                edge_dim=0, output_dim=self.hidden_size, phi_dim=self.hidden_size,
-                                args=args)
+            self.base = GNNBase(
+                node_dim=get_shape_from_obs_space(obs_space.node_space)[0],
+                edge_dim=get_shape_from_obs_space(obs_space.edge_space)[0],
+                output_dim=self.hidden_size,
+                phi_dim=self.hidden_size,
+                args=args
+            )
         else:
             obs_shape = get_shape_from_obs_space(obs_space)
             base = CNNBase if len(obs_shape) == 3 else MLPBase

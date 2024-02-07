@@ -205,6 +205,20 @@ class parallel_env(ParallelEnv):
                 ) for a in self.possible_agents
             }) # type: ignore
         
+        if observe_method in ["pyg"]:
+            state_space = spaces.Graph(
+                node_space = spaces.Box(
+                    # posX, posY, visitTime
+                    low = np.array([0.0, 0.0, 0.0], dtype=np.float32),
+                    high = np.array([self.pg.widthPixels, self.pg.heightPixels, np.inf], dtype=np.float32),
+                ),
+                edge_space = spaces.Box(
+                    # TODO: This is a placeholder. We need to figure out what the edge space should be.
+                    low = np.array([0.0], dtype=np.float32),
+                    high = np.array([np.inf], dtype=np.float32),
+                )
+            )
+        
         if type(state_space) == dict:
             state_space = spaces.Dict(state_space)
         
@@ -352,7 +366,7 @@ class parallel_env(ParallelEnv):
         obs = {}
 
         # Add agent ID.
-        if observe_method in ["ajg_new", "ajg_newer", "adjacency", "pyg"]:
+        if observe_method in ["ajg_new", "ajg_newer", "adjacency"]:
             obs["agent_id"] = agent.id
 
         # Add agent position.
@@ -561,24 +575,24 @@ class parallel_env(ParallelEnv):
             # Copy pg map to g
             g = deepcopy(self.pg.graph)
             # Traverse through all agents and add their positions as new nodes to g
-            for a in self.possible_agents:
-                # To avoid node ID conflicts, generate a unique node ID
-                agent_node_id = f"agent_{a.id}_pos"
-                g.add_node(agent_node_id, pos=a.position, type='agent')
+            # for a in self.possible_agents:
+            #     # To avoid node ID conflicts, generate a unique node ID
+            #     agent_node_id = f"agent_{a.id}_pos"
+            #     g.add_node(agent_node_id, pos=a.position, type='agent')
 
-                # Check if the agent has an edge that it is currently on
-                if a.edge is not None:
-                    node1_id, node2_id = a.edge
+            #     # Check if the agent has an edge that it is currently on
+            #     if a.edge is not None:
+            #         node1_id, node2_id = a.edge
 
-                    # Calculate weights or set them on a case-by-case basis
-                    weight_to_node1 = self._calculateEdgeWeight(a.position, g.nodes[node1_id]['pos'])
-                    weight_to_node2 = self._calculateEdgeWeight(a.position, g.nodes[node2_id]['pos'])
+            #         # Calculate weights or set them on a case-by-case basis
+            #         weight_to_node1 = self._calculateEdgeWeight(a.position, g.nodes[node1_id]['pos'])
+            #         weight_to_node2 = self._calculateEdgeWeight(a.position, g.nodes[node2_id]['pos'])
 
-                    g.add_edge(agent_node_id, node1_id, weight=weight_to_node1)
-                    g.add_edge(agent_node_id, node2_id, weight=weight_to_node2)
+            #         g.add_edge(agent_node_id, node1_id, weight=weight_to_node1)
+            #         g.add_edge(agent_node_id, node2_id, weight=weight_to_node2)
 
             PyG = from_networkx(g)
-            obs["graph"] = PyG
+            obs = PyG
         
         if (type(obs) == dict and obs == {}) or (type(obs) != dict and len(obs) < 1):
             raise ValueError(f"Invalid observation method {self.observe_method}")
