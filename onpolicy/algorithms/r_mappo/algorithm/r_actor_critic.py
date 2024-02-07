@@ -69,6 +69,7 @@ class R_Actor(nn.Module):
         :return action_log_probs: (torch.Tensor) log probabilities of taken actions.
         :return rnn_states: (torch.Tensor) updated RNN hidden states.
         """
+        print("OBS SHAPE: ", obs.shape)
         obs = check(obs).to(**self.tpdv)
         rnn_states = check(rnn_states).to(**self.tpdv)
         masks = check(masks).to(**self.tpdv)
@@ -76,6 +77,9 @@ class R_Actor(nn.Module):
             available_actions = check(available_actions).to(**self.tpdv)
 
         if self._use_gnn:
+            # actor_features = torch.zeros((obs.x.shape[0], self.hidden_size))
+            # for i in range(obs.edge_index.shape[1]):
+            #     actor_features[i] = self.base(obs[i].x, obs[i].edge_attr, obs[i].edge_index[:, i])
             actor_features = self.base(obs.x, obs.edge_attr, obs.edge_index)
         else:
             actor_features = self.base(obs)

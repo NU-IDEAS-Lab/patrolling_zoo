@@ -19,13 +19,25 @@ class GNNBase(MessagePassing):
 
         print(f"Initialize GNNBase with node_dim={node_dim}, edge_dim={edge_dim}, output_dim={output_dim}, phi_dim={phi_dim}")
 
-        super(GNNBase, self).__init__(aggr=AttentionalAggregation(
-            gate_nn=MLPLayer(input_dim=phi_dim, output_dim=1, hidden_size=128, layer_N=3, use_orthogonal=args.use_orthogonal, use_ReLU=args.use_ReLU),))
+        super(GNNBase, self).__init__(
+            aggr=AttentionalAggregation(
+                gate_nn=MLPLayer(
+                    input_dim=phi_dim,
+                    output_dim=1,
+                    hidden_size=128,
+                    layer_N=3,
+                    use_orthogonal=args.use_orthogonal,
+                    use_ReLU=args.use_ReLU
+                ),
+            )
+            # aggr="sum"
+        )
         self.phi = MLPLayer(input_dim=2 * node_dim + edge_dim, output_dim=phi_dim, hidden_size=2048, layer_N=3, use_orthogonal=args.use_orthogonal, use_ReLU=args.use_ReLU)
         self.gamma = MLPLayer(input_dim=phi_dim + node_dim, output_dim=output_dim, hidden_size=2048, layer_N=3, use_orthogonal=args.use_orthogonal, use_ReLU=args.use_ReLU)
 
     def forward(self, x: torch.Tensor, edge_attr: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
-        return self.propagate(edge_index, x=x, edge_attr=edge_attr)
+        res = self.propagate(edge_index, x=x, edge_attr=edge_attr)
+        return res
 
     def message(self, x_j: torch.Tensor, x_i: torch.Tensor = None, edge_attr: torch.Tensor = None) -> torch.Tensor:
         info_ij = torch.cat([x_i, x_j, edge_attr], dim=1)
