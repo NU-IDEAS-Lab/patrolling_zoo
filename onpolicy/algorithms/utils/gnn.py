@@ -17,8 +17,6 @@ class GNNBase(MessagePassing):
 
     def __init__(self, node_dim: int, edge_dim: int, output_dim: int, phi_dim: int, args):
 
-        print(f"Initialize GNNBase with node_dim={node_dim}, edge_dim={edge_dim}, output_dim={output_dim}, phi_dim={phi_dim}")
-
         super(GNNBase, self).__init__(
             aggr=AttentionalAggregation(
                 gate_nn=MLPLayer(
