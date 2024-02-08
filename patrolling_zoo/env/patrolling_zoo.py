@@ -591,7 +591,7 @@ class parallel_env(ParallelEnv):
                     g.add_edge(agent_node_id, node1_id, weight=weight_to_node1)
                     g.add_edge(agent_node_id, node2_id, weight=weight_to_node2)
 
-            PyG = from_networkx(g, group_node_attrs=["pos", "visitTime"], group_edge_attrs=["weight"])
+            PyG = from_networkx(g, group_node_attrs=["id", "pos", "visitTime"], group_edge_attrs=["weight"])
             PyG.x = PyG.x.float()
             PyG.edge_attr = PyG.edge_attr.float()
             obs = np.empty((1,), dtype=object)
