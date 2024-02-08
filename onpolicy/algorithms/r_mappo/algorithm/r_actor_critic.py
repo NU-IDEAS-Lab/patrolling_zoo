@@ -69,19 +69,23 @@ class R_Actor(nn.Module):
         :return action_log_probs: (torch.Tensor) log probabilities of taken actions.
         :return rnn_states: (torch.Tensor) updated RNN hidden states.
         """
-        print("OBS SHAPE: ", obs.shape)
-        obs = check(obs).to(**self.tpdv)
+        # print("OBS SHAPE: ", obs.shape)
         rnn_states = check(rnn_states).to(**self.tpdv)
         masks = check(masks).to(**self.tpdv)
         if available_actions is not None:
             available_actions = check(available_actions).to(**self.tpdv)
 
         if self._use_gnn:
-            # actor_features = torch.zeros((obs.x.shape[0], self.hidden_size))
+            actor_features = torch.zeros(obs.shape[0], self.hidden_size).to(**self.tpdv)
             # for i in range(obs.edge_index.shape[1]):
             #     actor_features[i] = self.base(obs[i].x, obs[i].edge_attr, obs[i].edge_index[:, i])
-            actor_features = self.base(obs.x, obs.edge_attr, obs.edge_index)
+            obs = obs.reshape(-1)
+            for i in range(obs.shape[0]):
+                obs[i] = check(obs[i]).to(**self.tpdv)
+                actor_features[i] = self.base(obs[i].x, obs[i].edge_attr, obs[i].edge_index)[0]
+            # actor_features = self.base(obs.x, obs.edge_attr, obs.edge_index)
         else:
+            obs = check(obs).to(**self.tpdv)
             actor_features = self.base(obs)
 
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
@@ -105,7 +109,6 @@ class R_Actor(nn.Module):
         :return action_log_probs: (torch.Tensor) log probabilities of the input actions.
         :return dist_entropy: (torch.Tensor) action distribution entropy for the given inputs.
         """
-        obs = check(obs).to(**self.tpdv)
         rnn_states = check(rnn_states).to(**self.tpdv)
         action = check(action).to(**self.tpdv)
         masks = check(masks).to(**self.tpdv)
@@ -115,7 +118,18 @@ class R_Actor(nn.Module):
         if active_masks is not None:
             active_masks = check(active_masks).to(**self.tpdv)
 
-        actor_features = self.base(obs)
+        if self._use_gnn:
+            actor_features = torch.empty_like(obs).to(**self.tpdv)
+            for i in range(obs.shape[0]):
+                # obs = check(obs).to(**self.tpdv)
+                actor_features[i] = self.base(obs[i].x, obs[i].edge_attr, obs[i].edge_index[:, i])
+            actor_features = self.base(obs.x, obs.edge_attr, obs.edge_index)
+
+            #temp
+            # actor_features = actor_features[0].unsqueeze(0)
+        else:
+            obs = check(obs).to(**self.tpdv)
+            actor_features = self.base(obs)
 
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
             actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)

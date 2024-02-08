@@ -408,7 +408,7 @@ class PatrollingRunner(Runner):
                         # Insert the data into the agent's buffer.
                         self.buffer[i][agent_id].insert(
                             share_obs = s_obs,
-                            obs = np.array(list(obs[i, agent_id])),
+                            obs = obs[i, agent_id],
                             rnn_states = rnn_states[i][agent_id],
                             rnn_states_critic = rnn_states_critic[i][agent_id],
                             actions = actions[i][agent_id],
@@ -994,5 +994,4 @@ class PatrollingRunner(Runner):
         for o in combined_obs:
             obs.append(o["obs"])
             share_obs.append(o["share_obs"])
-        print(f"GOT OBSERVATION: {obs}")
         return np.array(obs), np.array(share_obs)

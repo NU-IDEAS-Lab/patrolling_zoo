@@ -14,11 +14,7 @@ def get_clones(module, N):
 
 def check(input):
     if type(input) == np.ndarray:
-        if input.dtype == object and input.shape == (1, 1):
-            # Handle PyG data object
-            output = input[0, 0]
-        else:
-            output = torch.from_numpy(input)
+        output = torch.from_numpy(input)
     else:
         output = input
     return output
