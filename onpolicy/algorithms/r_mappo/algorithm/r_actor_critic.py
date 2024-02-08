@@ -77,13 +77,13 @@ class R_Actor(nn.Module):
 
         if self._use_gnn:
             actor_features = torch.zeros(obs.shape[0], self.hidden_size).to(**self.tpdv)
-            # for i in range(obs.edge_index.shape[1]):
-            #     actor_features[i] = self.base(obs[i].x, obs[i].edge_attr, obs[i].edge_index[:, i])
             obs = obs.reshape(-1)
             for i in range(obs.shape[0]):
                 obs[i] = check(obs[i]).to(**self.tpdv)
-                actor_features[i] = self.base(obs[i].x, obs[i].edge_attr, obs[i].edge_index)[0]
-            # actor_features = self.base(obs.x, obs.edge_attr, obs.edge_index)
+                af = self.base(obs[i].x, obs[i].edge_attr, obs[i].edge_index)
+                if hasattr(obs[i], "agent_mask"):
+                    af = af[obs[i].agent_mask]
+                actor_features[i] = af
         else:
             obs = check(obs).to(**self.tpdv)
             actor_features = self.base(obs)
@@ -119,14 +119,14 @@ class R_Actor(nn.Module):
             active_masks = check(active_masks).to(**self.tpdv)
 
         if self._use_gnn:
-            actor_features = torch.empty_like(obs).to(**self.tpdv)
+            actor_features = torch.zeros(obs.shape[0], self.hidden_size).to(**self.tpdv)
+            obs = obs.reshape(-1)
             for i in range(obs.shape[0]):
-                # obs = check(obs).to(**self.tpdv)
-                actor_features[i] = self.base(obs[i].x, obs[i].edge_attr, obs[i].edge_index[:, i])
-            actor_features = self.base(obs.x, obs.edge_attr, obs.edge_index)
-
-            #temp
-            # actor_features = actor_features[0].unsqueeze(0)
+                obs[i] = check(obs[i]).to(**self.tpdv)
+                af = self.base(obs[i].x, obs[i].edge_attr, obs[i].edge_index)
+                if hasattr(obs[i], "agent_mask"):
+                    af = af[obs[i].agent_mask]
+                actor_features[i] = af
         else:
             obs = check(obs).to(**self.tpdv)
             actor_features = self.base(obs)

@@ -209,8 +209,8 @@ class parallel_env(ParallelEnv):
             state_space = spaces.Graph(
                 node_space = spaces.Box(
                     # posX, posY, visitTime
-                    low = np.array([0.0, 0.0, 0.0], dtype=np.float32),
-                    high = np.array([self.pg.widthPixels, self.pg.heightPixels, np.inf], dtype=np.float32),
+                    low = np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32),
+                    high = np.array([np.inf, self.pg.widthPixels, self.pg.heightPixels, np.inf], dtype=np.float32),
                 ),
                 edge_space = spaces.Box(
                     # TODO: This is a placeholder. We need to figure out what the edge space should be.
@@ -591,11 +591,24 @@ class parallel_env(ParallelEnv):
                     g.add_edge(agent_node_id, node1_id, weight=weight_to_node1)
                     g.add_edge(agent_node_id, node2_id, weight=weight_to_node2)
 
-            PyG = from_networkx(g, group_node_attrs=["id", "pos", "visitTime"], group_edge_attrs=["weight"])
-            PyG.x = PyG.x.float()
-            PyG.edge_attr = PyG.edge_attr.float()
+
+            # Trim the graph to only include the nodes and edges that are visible to the agent.
+            subgraphNodes = vertices + [f"agent_{a.id}_pos" for a in self.possible_agents]
+            subgraph = nx.subgraph(g, subgraphNodes)
+
+            # Convert g to PyG
+            data = from_networkx(subgraph, group_node_attrs=["id", "pos", "visitTime"], group_edge_attrs=["weight"])
+            data.x = data.x.float()
+            data.edge_attr = data.edge_attr.float()
+
+            # Calculate the agent_mask based on the graph node ID assigned to this agent.
+            agent_mask = np.zeros(data.num_nodes, dtype=bool)
+            agent_mask[self.pg.graph.number_of_nodes() + agent.id] = True
+            data.agent_mask = agent_mask
+
+            # Set up a numpy array to hold the observation.
             obs = np.empty((1,), dtype=object)
-            obs[0] = PyG
+            obs[0] = data
         
         if (type(obs) == dict and obs == {}) or (type(obs) != dict and len(obs) < 1):
             raise ValueError(f"Invalid observation method {self.observe_method}")
