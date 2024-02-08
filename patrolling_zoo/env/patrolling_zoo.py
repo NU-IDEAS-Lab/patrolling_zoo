@@ -592,7 +592,7 @@ class parallel_env(ParallelEnv):
                     g.add_edge(agent_node_id, node2_id, weight=weight_to_node2)
 
             # Trim the graph to only include the nodes and edges that are visible to the agent.
-            subgraphNodes = vertices + [f"agent_{a.id}_pos" for a in self.possible_agents]
+            subgraphNodes = vertices + [f"agent_{a.id}_pos" for a in agents]
             subgraph = nx.subgraph(g, subgraphNodes)
 
             # Convert g to PyG
@@ -601,8 +601,9 @@ class parallel_env(ParallelEnv):
             data.edge_attr = data.edge_attr.float()
 
             # Calculate the agent_mask based on the graph node ID assigned to this agent.
+            idx = subgraphNodes.index(f"agent_{agent.id}_pos")
             agent_mask = np.zeros(data.num_nodes, dtype=bool)
-            agent_mask[self.pg.graph.number_of_nodes() + agent.id] = True
+            agent_mask[idx] = True
             data.agent_mask = agent_mask
 
             # Set up a numpy array to hold the observation.
