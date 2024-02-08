@@ -575,21 +575,21 @@ class parallel_env(ParallelEnv):
             # Copy pg map to g
             g = deepcopy(self.pg.graph)
             # Traverse through all agents and add their positions as new nodes to g
-            # for a in self.possible_agents:
-            #     # To avoid node ID conflicts, generate a unique node ID
-            #     agent_node_id = f"agent_{a.id}_pos"
-            #     g.add_node(agent_node_id, pos=a.position, type='agent')
+            for a in self.possible_agents:
+                # To avoid node ID conflicts, generate a unique node ID
+                agent_node_id = f"agent_{a.id}_pos"
+                g.add_node(agent_node_id, pos=a.position, id=-1, visitTime=0.0)
 
-            #     # Check if the agent has an edge that it is currently on
-            #     if a.edge is not None:
-            #         node1_id, node2_id = a.edge
+                # Check if the agent has an edge that it is currently on
+                if a.edge is not None:
+                    node1_id, node2_id = a.edge
 
-            #         # Calculate weights or set them on a case-by-case basis
-            #         weight_to_node1 = self._calculateEdgeWeight(a.position, g.nodes[node1_id]['pos'])
-            #         weight_to_node2 = self._calculateEdgeWeight(a.position, g.nodes[node2_id]['pos'])
+                    # Calculate weights or set them on a case-by-case basis
+                    weight_to_node1 = self._calculateEdgeWeight(a.position, g.nodes[node1_id]['pos'])
+                    weight_to_node2 = self._calculateEdgeWeight(a.position, g.nodes[node2_id]['pos'])
 
-            #         g.add_edge(agent_node_id, node1_id, weight=weight_to_node1)
-            #         g.add_edge(agent_node_id, node2_id, weight=weight_to_node2)
+                    g.add_edge(agent_node_id, node1_id, weight=weight_to_node1)
+                    g.add_edge(agent_node_id, node2_id, weight=weight_to_node2)
 
             PyG = from_networkx(g, group_node_attrs=["pos", "visitTime"], group_edge_attrs=["weight"])
             PyG.x = PyG.x.float()

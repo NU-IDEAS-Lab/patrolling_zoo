@@ -31,7 +31,8 @@ class PatrolGraph():
                 self.graph.add_node(i,
                     pos = (int(file.readline()) * self.resolution + self.offsetX,
                         int(file.readline()) * self.resolution + self.offsetY),
-                    visitTime = 0.0
+                    visitTime = 0.0,
+                    id = i
                 )
                 
                 # Create edges.
