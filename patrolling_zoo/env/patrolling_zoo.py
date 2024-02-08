@@ -591,7 +591,6 @@ class parallel_env(ParallelEnv):
                     g.add_edge(agent_node_id, node1_id, weight=weight_to_node1)
                     g.add_edge(agent_node_id, node2_id, weight=weight_to_node2)
 
-
             # Trim the graph to only include the nodes and edges that are visible to the agent.
             subgraphNodes = vertices + [f"agent_{a.id}_pos" for a in self.possible_agents]
             subgraph = nx.subgraph(g, subgraphNodes)
