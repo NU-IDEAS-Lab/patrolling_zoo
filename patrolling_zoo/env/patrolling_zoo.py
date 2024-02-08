@@ -591,7 +591,11 @@ class parallel_env(ParallelEnv):
                     g.add_edge(agent_node_id, node1_id, weight=weight_to_node1)
                     g.add_edge(agent_node_id, node2_id, weight=weight_to_node2)
 
-            PyG = from_networkx(g, group_node_attrs=["id", "pos", "visitTime"], group_edge_attrs=["weight"])
+            # Trim the graph to only include the nodes and edges that are visible to the agent.
+            subgraphNodes = vertices + [f"agent_{a.id}_pos" for a in self.possible_agents]
+            subgraph = nx.subgraph(g, subgraphNodes)
+
+            PyG = from_networkx(subgraph, group_node_attrs=["id", "pos", "visitTime"], group_edge_attrs=["weight"])
             PyG.x = PyG.x.float()
             PyG.edge_attr = PyG.edge_attr.float()
             obs = np.empty((1,), dtype=object)
