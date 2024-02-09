@@ -574,6 +574,7 @@ class parallel_env(ParallelEnv):
         if observe_method in ["pyg"]:
             # Copy pg map to g
             g = deepcopy(self.pg.graph)
+            
             # Traverse through all agents and add their positions as new nodes to g
             for a in self.possible_agents:
                 # To avoid node ID conflicts, generate a unique node ID
@@ -581,7 +582,10 @@ class parallel_env(ParallelEnv):
                 g.add_node(agent_node_id, pos=a.position, id=-1, visitTime=0.0)
 
                 # Check if the agent has an edge that it is currently on
-                if a.edge is not None:
+                if a.edge is None:
+                    # If the agent is not on an edge, add an edge from the agent's node to the node it is currently on
+                    g.add_edge(agent_node_id, a.lastNode, weight=0.0)
+                else:
                     node1_id, node2_id = a.edge
 
                     # Calculate weights or set them on a case-by-case basis
@@ -592,8 +596,10 @@ class parallel_env(ParallelEnv):
                     g.add_edge(agent_node_id, node2_id, weight=weight_to_node2)
 
             # Trim the graph to only include the nodes and edges that are visible to the agent.
-            subgraphNodes = vertices + [f"agent_{a.id}_pos" for a in agents]
-            subgraph = nx.subgraph(g, subgraphNodes)
+            # subgraphNodes = vertices + [f"agent_{a.id}_pos" for a in agents]
+            # subgraph = nx.subgraph(g, subgraphNodes)
+            subgraph = g
+            subgraphNodes = list(g.nodes)
 
             # Convert g to PyG
             data = from_networkx(subgraph, group_node_attrs=["id", "pos", "visitTime"], group_edge_attrs=["weight"])
@@ -690,8 +696,8 @@ class parallel_env(ParallelEnv):
                     raise ValueError(f"Invalid action method {self.action_method}")
                 
                 # Provide penalty for visiting the same node twice in a row.
-                if dstNode == agent.lastNodeVisited:
-                    reward_dict[agent] -= 1.0
+                # if dstNode == agent.lastNodeVisited:
+                #     reward_dict[agent] -= 1.0
 
                 # Calculate the shortest path.
                 path = self._getPathToNode(agent, dstNode)
