@@ -43,6 +43,8 @@ class PatrollingRunner(Runner):
             # Set up a shared replay buffer for the critic.
             args = copy.deepcopy(self.all_args)
             args.episode_length = self.all_args.episode_length * self.n_rollout_threads
+            if self.all_args.skip_steps_async:
+                args.episode_length *= self.num_agents
             self.critic_buffer = SharedReplayBuffer(
                 args,
                 self.num_agents,
@@ -63,7 +65,7 @@ class PatrollingRunner(Runner):
                     args = copy.deepcopy(self.all_args)
                     args.n_rollout_threads = 1
                     # Account for potentially all agents adding to critic buffer in last step...
-                    args.episode_length += self.num_agents * self.n_rollout_threads
+                    args.episode_length *= self.num_agents * self.n_rollout_threads
                     bu = SeparatedReplayBuffer(
                         args,
                         self.envs.observation_space[agent_id],
