@@ -769,7 +769,7 @@ class parallel_env(ParallelEnv):
                     reward_dict[agent] += self.beta * self.step_count / (avg + 1e-8)
                 elif self.reward_method_terminal == "divNormalizedWorst":
                     reward_dict[agent] /= self._minMaxNormalize(self.pg.getWorstIdlenessTime(self.step_count), minimum=0.0, maximum=self.max_cycles)
-                else:
+                elif self.reward_method_terminal != "none":
                     raise ValueError(f"Invalid terminal reward method {self.reward_method_terminal}")
 
                 info_dict[agent]["ready"] = True
@@ -781,7 +781,7 @@ class parallel_env(ParallelEnv):
         elif self.reward_interval >= 0 and self.step_count % self.reward_interval == 0:
             for agent in self.agents:
                 # reward_dict[agent] += self.beta * self.step_count / (self.pg.getAverageIdlenessTime(self.step_count) + 1e-8)
-                reward_dict[agent] += self.beta / self._minMaxNormalize(self.pg.getAverageIdlenessTime(self.step_count), minimum=0.0, maximum=self.max_cycles)
+                reward_dict[agent] -= self.beta * self._minMaxNormalize(self.pg.getAverageIdlenessTime(self.step_count), minimum=0.0, maximum=self.step_count)
 
         done_dict = {agent: self.dones[agent] for agent in self.possible_agents}
         return obs_dict, reward_dict, done_dict, truncated_dict, info_dict

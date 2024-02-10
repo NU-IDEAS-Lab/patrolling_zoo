@@ -72,6 +72,8 @@ def parse_args(args, parser):
     parser.add_argument("--reward_method_terminal", type=str,
                         default="average", 
                         help="the method to use for terminal reward.")
+    parser.add_argument("--reward_interval", type=int, default=-1,
+                        help="number of steps between the periodic reward. -1 disables periodic reward")
     parser.add_argument("--num_agents", type=int, default=3,
                         help="number of controlled players.")
     parser.add_argument("--agent_speed", type=float, default=10.0,
