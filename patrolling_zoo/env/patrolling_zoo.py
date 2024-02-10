@@ -574,6 +574,10 @@ class parallel_env(ParallelEnv):
             # Copy pg map to g
             g = deepcopy(self.pg.graph)
             
+            # Add node idleness times as attributes in g.
+            for node in g.nodes:
+                g.nodes[node]["idlenessTime"] = self.pg.getNodeIdlenessTime(node, self.step_count)
+
             # Traverse through all agents and add their positions as new nodes to g
             for a in self.agents:
                 # To avoid node ID conflicts, generate a unique node ID
@@ -583,7 +587,8 @@ class parallel_env(ParallelEnv):
                     pos = a.position,
                     # id = -1 - a.id,
                     id = -1.0 if a == agent else -2.0,
-                    visitTime = 0.0
+                    visitTime = 0.0,
+                    idlenessTime = 0.0
                 )
 
                 # Check if the agent has an edge that it is currently on
@@ -607,7 +612,7 @@ class parallel_env(ParallelEnv):
             subgraphNodes = list(g.nodes)
 
             # Convert g to PyG
-            data = from_networkx(subgraph, group_node_attrs=["id", "visitTime"], group_edge_attrs=["weight"])
+            data = from_networkx(subgraph, group_node_attrs=["id", "idlenessTime"], group_edge_attrs=["weight"])
             data.x = data.x.float()
             data.edge_attr = data.edge_attr.float()
 
