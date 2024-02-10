@@ -208,12 +208,11 @@ class parallel_env(ParallelEnv):
         if observe_method in ["pyg"]:
             state_space = spaces.Graph(
                 node_space = spaces.Box(
-                    # posX, posY, visitTime
-                    low = np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32),
-                    high = np.array([np.inf, self.pg.widthPixels, self.pg.heightPixels, np.inf], dtype=np.float32),
+                    # ID, visitTime
+                    low = np.array([-np.inf, 0.0], dtype=np.float32),
+                    high = np.array([np.inf, np.inf], dtype=np.float32),
                 ),
                 edge_space = spaces.Box(
-                    # TODO: This is a placeholder. We need to figure out what the edge space should be.
                     low = np.array([0.0], dtype=np.float32),
                     high = np.array([np.inf], dtype=np.float32),
                 )
@@ -576,10 +575,16 @@ class parallel_env(ParallelEnv):
             g = deepcopy(self.pg.graph)
             
             # Traverse through all agents and add their positions as new nodes to g
-            for a in self.possible_agents:
+            for a in self.agents:
                 # To avoid node ID conflicts, generate a unique node ID
                 agent_node_id = f"agent_{a.id}_pos"
-                g.add_node(agent_node_id, pos=a.position, id=-1, visitTime=0.0)
+                g.add_node(
+                    agent_node_id,
+                    pos = a.position,
+                    # id = -1 - a.id,
+                    id = -1.0 if a == agent else -2.0,
+                    visitTime = 0.0
+                )
 
                 # Check if the agent has an edge that it is currently on
                 if a.edge is None:
@@ -602,7 +607,7 @@ class parallel_env(ParallelEnv):
             subgraphNodes = list(g.nodes)
 
             # Convert g to PyG
-            data = from_networkx(subgraph, group_node_attrs=["id", "pos", "visitTime"], group_edge_attrs=["weight"])
+            data = from_networkx(subgraph, group_node_attrs=["id", "visitTime"], group_edge_attrs=["weight"])
             data.x = data.x.float()
             data.edge_attr = data.edge_attr.float()
 
