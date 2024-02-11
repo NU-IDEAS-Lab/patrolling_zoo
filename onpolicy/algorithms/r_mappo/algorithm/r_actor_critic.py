@@ -10,6 +10,8 @@ from onpolicy.algorithms.utils.act import ACTLayer
 from onpolicy.algorithms.utils.popart import PopArt
 from onpolicy.utils.util import get_shape_from_obs_space
 
+from torch_geometric.data import Batch
+
 
 class R_Actor(nn.Module):
     """
@@ -75,14 +77,11 @@ class R_Actor(nn.Module):
             available_actions = check(available_actions).to(**self.tpdv)
 
         if self._use_gnn:
-            actor_features = torch.zeros(obs.shape[0], self.hidden_size).to(**self.tpdv)
-            obs = obs.reshape(-1)
-            for i in range(obs.shape[0]):
-                obs[i] = check(obs[i]).to(**self.tpdv)
-                af = self.base(obs[i].x, obs[i].edge_attr, obs[i].edge_index)
-                if hasattr(obs[i], "agent_mask"):
-                    af = af[obs[i].agent_mask]
-                actor_features[i] = af
+            graphs = Batch.from_data_list(obs.squeeze(1)).to(**self.tpdv)
+            graphs.edge_attr.requires_grad = True
+            actor_features = self.base(graphs.x, graphs.edge_attr, graphs.edge_index)
+            if hasattr(graphs, "agent_index"):
+                actor_features = actor_features[graphs.agent_index]
         else:
             obs = check(obs).to(**self.tpdv)
             actor_features = self.base(obs)
@@ -118,14 +117,11 @@ class R_Actor(nn.Module):
             active_masks = check(active_masks).to(**self.tpdv)
 
         if self._use_gnn:
-            actor_features = torch.zeros(obs.shape[0], self.hidden_size).to(**self.tpdv)
-            obs = obs.reshape(-1)
-            for i in range(obs.shape[0]):
-                obs[i] = check(obs[i]).to(**self.tpdv)
-                af = self.base(obs[i].x, obs[i].edge_attr, obs[i].edge_index)
-                if hasattr(obs[i], "agent_mask"):
-                    af = af[obs[i].agent_mask]
-                actor_features[i] = af
+            graphs = Batch.from_data_list(obs.squeeze(1)).to(**self.tpdv)
+            graphs.edge_attr.requires_grad = True
+            actor_features = self.base(graphs.x, graphs.edge_attr, graphs.edge_index)
+            if hasattr(graphs, "agent_index"):
+                actor_features = actor_features[graphs.agent_index]
         else:
             obs = check(obs).to(**self.tpdv)
             actor_features = self.base(obs)
