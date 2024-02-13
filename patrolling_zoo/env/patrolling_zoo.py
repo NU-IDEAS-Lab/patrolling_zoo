@@ -574,9 +574,24 @@ class parallel_env(ParallelEnv):
             # Copy pg map to g
             g = deepcopy(self.pg.graph)
             
-            # Add node idleness times as attributes in g.
+            # Get a list of last visit times for each node.
+            lastVisits = nx.get_node_attributes(g, 'visitTime')
+            
+            # Get min and max idleness times for normalization.
+            maxIdleness = self.step_count - min(lastVisits.values())
+            minIdleness = self.step_count - max(lastVisits.values())
+            allSame = maxIdleness == minIdleness
+
+            # Add normalized node idleness times as attributes in g.
             for node in g.nodes:
-                g.nodes[node]["idlenessTime"] = self.pg.getNodeIdlenessTime(node, self.step_count)
+                if allSame:
+                    g.nodes[node]["idlenessTime"] = 1.0
+                else:
+                    g.nodes[node]["idlenessTime"] = self._minMaxNormalize(
+                        self.step_count - lastVisits[node],
+                        minimum = minIdleness,
+                        maximum = maxIdleness
+                    )
 
             # Traverse through all agents and add their positions as new nodes to g
             for a in self.agents:
@@ -604,6 +619,13 @@ class parallel_env(ParallelEnv):
 
                     g.add_edge(agent_node_id, node1_id, weight=weight_to_node1)
                     g.add_edge(agent_node_id, node2_id, weight=weight_to_node2)
+            
+            # Normalize the edge weights of g.
+            weights = nx.get_edge_attributes(g, 'weight')
+            maxWeight = max(weights.values())
+            minWeight = min(weights.values())
+            for edge in g.edges:
+                g.edges[edge]["weight"] = self._minMaxNormalize(weights[edge], minimum=minWeight, maximum=maxWeight)
 
             # Trim the graph to only include the nodes and edges that are visible to the agent.
             # subgraphNodes = vertices + [f"agent_{a.id}_pos" for a in agents]
@@ -679,6 +701,14 @@ class parallel_env(ParallelEnv):
             if agent in action_dict:
                 action = action_dict[agent]
 
+                # # TEMPORARY - GIVE REWARD BASED ON WORST IDLENESS ONLY
+                # idlenessTimes = [self.pg.getNodeIdlenessTime(v, self.step_count) for v in self.pg.graph.nodes]
+                # worstNode = np.argmax(idlenessTimes)
+                # if action == worstNode:
+                #     reward_dict[agent] = 1.0
+                # else:
+                #     reward_dict[agent] = 0.0
+
                 if not np.issubdtype(type(action), np.integer):
                     raise ValueError(f"Invalid action {action} of type {type(action)} provided.")
 
@@ -736,7 +766,8 @@ class parallel_env(ParallelEnv):
                         break
 
         # Record the average idleness time at this step.
-        self.avgIdlenessTimes.append(self.pg.getAverageIdlenessTime(self.step_count))        
+        avg = self._minMaxNormalize(self.pg.getAverageIdlenessTime(self.step_count), minimum=0.0, maximum=self.step_count)
+        self.avgIdlenessTimes.append(avg)        
 
         # Perform observations.
         for agent in self.possible_agents:
@@ -767,7 +798,8 @@ class parallel_env(ParallelEnv):
                     reward_dict[agent] += self.beta * self.step_count / (self.pg.getStdDevIdlenessTime(self.step_count) + 1e-8)
                 elif self.reward_method_terminal == "averageAverage":
                     avg = np.average(self.avgIdlenessTimes)
-                    reward_dict[agent] += self.beta * self.step_count / (avg + 1e-8)
+                    # reward_dict[agent] += self.beta * self.step_count / (avg + 1e-8)
+                    reward_dict[agent] -= self.beta * avg
                 elif self.reward_method_terminal == "divNormalizedWorst":
                     reward_dict[agent] /= self._minMaxNormalize(self.pg.getWorstIdlenessTime(self.step_count), minimum=0.0, maximum=self.max_cycles)
                 elif self.reward_method_terminal != "none":
@@ -785,6 +817,7 @@ class parallel_env(ParallelEnv):
                 reward_dict[agent] -= self.beta * self._minMaxNormalize(self.pg.getAverageIdlenessTime(self.step_count), minimum=0.0, maximum=self.step_count)
 
         done_dict = {agent: self.dones[agent] for agent in self.possible_agents}
+
         return obs_dict, reward_dict, done_dict, truncated_dict, info_dict
 
 
