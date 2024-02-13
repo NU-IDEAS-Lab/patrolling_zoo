@@ -4,7 +4,7 @@ from .util import init, get_clones
 """MLP modules."""
 
 class MLPLayer(nn.Module):
-    def __init__(self, input_dim, hidden_size, layer_N, use_orthogonal, use_ReLU, output_dim=None):
+    def __init__(self, input_dim, hidden_size, layer_N, use_orthogonal, use_ReLU, output_dim=None, use_layer_norm=True):
         super(MLPLayer, self).__init__()
         self._layer_N = layer_N
 
@@ -15,15 +15,25 @@ class MLPLayer(nn.Module):
         def init_(m):
             return init(m, init_method, lambda x: nn.init.constant_(x, 0), gain=gain)
 
-        self.fc1 = nn.Sequential(
-            init_(nn.Linear(input_dim, hidden_size)), active_func, nn.LayerNorm(hidden_size))
-        self.fc_h = nn.Sequential(init_(
-            nn.Linear(hidden_size, hidden_size)), active_func, nn.LayerNorm(hidden_size))
+        if use_layer_norm:
+            self.fc1 = nn.Sequential(
+                init_(nn.Linear(input_dim, hidden_size)), active_func, nn.LayerNorm(hidden_size))
+            self.fc_h = nn.Sequential(init_(
+                nn.Linear(hidden_size, hidden_size)), active_func, nn.LayerNorm(hidden_size))
+        else:
+            self.fc1 = nn.Sequential(init_(
+                nn.Linear(input_dim, hidden_size)), active_func)
+            self.fc_h = nn.Sequential(init_(
+                nn.Linear(hidden_size, hidden_size)), active_func)
         
         if output_dim is not None:
             self.fc2 = get_clones(self.fc_h, self._layer_N - 1)
-            self.fc3 = nn.Sequential(init_(
-                nn.Linear(hidden_size, output_dim)), active_func, nn.LayerNorm(output_dim))
+            if use_layer_norm:
+                self.fc3 = nn.Sequential(init_(
+                    nn.Linear(hidden_size, output_dim)), active_func, nn.LayerNorm(output_dim))
+            else:
+                self.fc3 = nn.Sequential(init_(
+                    nn.Linear(hidden_size, output_dim)), active_func)
         else:
             self.fc2 = get_clones(self.fc_h, self._layer_N)
             self.fc3 = None
