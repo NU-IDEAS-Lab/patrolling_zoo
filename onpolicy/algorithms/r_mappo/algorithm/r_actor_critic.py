@@ -32,10 +32,8 @@ class R_Actor(nn.Module):
         self._use_recurrent_policy = args.use_recurrent_policy
         self._use_gnn = args.use_gnn_policy
         self._recurrent_N = args.recurrent_N
-        if obs_space.__class__.__name__ == 'Graph':
-            self.tpdv = dict(device=device)
-        else:
-            self.tpdv = dict(dtype=torch.float32, device=device)
+        self.tpdv = dict(dtype=torch.float32, device=device)
+        self.device = device
 
         if self._use_gnn:
             self.base = GNNBase(
@@ -77,7 +75,7 @@ class R_Actor(nn.Module):
             available_actions = check(available_actions).to(**self.tpdv)
 
         if self._use_gnn:
-            graphs = Batch.from_data_list(obs.squeeze(1)).to(**self.tpdv)
+            graphs = Batch.from_data_list(obs.squeeze(1)).to(self.device, "x", "edge_attr", "edge_index")
             graphs.edge_attr.requires_grad = True
             actor_features = self.base(graphs.x, graphs.edge_attr, graphs.edge_index)
             if hasattr(graphs, "agent_index"):
@@ -107,7 +105,6 @@ class R_Actor(nn.Module):
         :return action_log_probs: (torch.Tensor) log probabilities of the input actions.
         :return dist_entropy: (torch.Tensor) action distribution entropy for the given inputs.
         """
-        obs = check(obs).to(**self.tpdv)
         rnn_states = check(rnn_states).to(**self.tpdv)
         action = check(action).to(**self.tpdv)
         masks = check(masks).to(**self.tpdv)
@@ -118,10 +115,12 @@ class R_Actor(nn.Module):
             active_masks = check(active_masks).to(**self.tpdv)
 
         if self._use_gnn:
+            obs = check(obs).to(self.device, "x", "edge_attr", "edge_index")
             actor_features = self.base(obs.x, obs.edge_attr, obs.edge_index)
             if hasattr(obs, "agent_index"):
                 actor_features = actor_features[obs.agent_index]
         else:
+            obs = check(obs).to(**self.tpdv)
             actor_features = self.base(obs)
 
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
