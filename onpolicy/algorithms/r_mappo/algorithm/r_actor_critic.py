@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from onpolicy.algorithms.utils.util import init, check
 from onpolicy.algorithms.utils.cnn import CNNBase
-from onpolicy.algorithms.utils.mlp import MLPBase
+from onpolicy.algorithms.utils.mlp import MLPBase, MLPLayer
 from onpolicy.algorithms.utils.gnn import GNNBase
 from onpolicy.algorithms.utils.rnn import RNNLayer
 from onpolicy.algorithms.utils.rnn import RNNLayer
@@ -31,6 +31,7 @@ class R_Actor(nn.Module):
         self._use_naive_recurrent_policy = args.use_naive_recurrent_policy
         self._use_recurrent_policy = args.use_recurrent_policy
         self._use_gnn = args.use_gnn_policy
+        self._use_gnn_mlp = args.use_gnn_mlp_policy
         self._recurrent_N = args.recurrent_N
         self.tpdv = dict(dtype=torch.float32, device=device)
         self.device = device
@@ -40,9 +41,11 @@ class R_Actor(nn.Module):
                 node_dim=get_shape_from_obs_space(obs_space.node_space)[0],
                 edge_dim=get_shape_from_obs_space(obs_space.edge_space)[0],
                 output_dim=self.hidden_size,
-                phi_dim=self.hidden_size,
+                phi_dim=256,
                 args=args
             )
+            if self._use_gnn_mlp:
+                self.mlp0 = MLPLayer(input_dim=self.hidden_size, output_dim=self.hidden_size, hidden_size=2048, layer_N=3, use_orthogonal=args.use_orthogonal, use_ReLU=args.use_ReLU)
         else:
             obs_shape = get_shape_from_obs_space(obs_space)
             base = CNNBase if len(obs_shape) == 3 else MLPBase
@@ -55,7 +58,7 @@ class R_Actor(nn.Module):
 
         self.to(device)
 
-    def forward(self, obs, rnn_states, masks, available_actions=None, deterministic=False):
+    def forward(self, obs, rnn_states, masks, available_actions=None, deterministic=True):
         """
         Compute actions from the given inputs.
         :param obs: (np.ndarray / torch.Tensor) observation inputs into network.
@@ -80,6 +83,8 @@ class R_Actor(nn.Module):
             actor_features = self.base(graphs.x, graphs.edge_attr, graphs.edge_index)
             if hasattr(graphs, "agent_index"):
                 actor_features = actor_features[graphs.agent_index]
+            if self._use_gnn_mlp:
+                actor_features = self.mlp0(actor_features)
         else:
             obs = check(obs).to(**self.tpdv)
             actor_features = self.base(obs)
@@ -119,6 +124,8 @@ class R_Actor(nn.Module):
             actor_features = self.base(obs.x, obs.edge_attr, obs.edge_index)
             if hasattr(obs, "agent_index"):
                 actor_features = actor_features[obs.agent_index]
+            if self._use_gnn_mlp:
+                actor_features = self.mlp0(actor_features)
         else:
             obs = check(obs).to(**self.tpdv)
             actor_features = self.base(obs)

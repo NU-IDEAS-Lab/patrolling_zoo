@@ -214,6 +214,8 @@ def get_config():
     # graph neural network parameters
     parser.add_argument("--use_gnn_policy", action='store_true',
                         default=False, help='Whether to use a GNN-based policy')
+    parser.add_argument("--use_gnn_mlp_policy", action='store_false',
+                        default=True, help='Whether to use an MLP to interpret the GNN output')    
     parser.add_argument("--use_gnn_critic", action='store_true',
                         default=False, help='Whether to use a GNN-based critic')
 
