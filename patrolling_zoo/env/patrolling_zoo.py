@@ -721,16 +721,10 @@ class parallel_env(ParallelEnv):
                 # Interpret the action using the "neighbors" method.
                 elif self.action_method == "neighbors":
                     if agent.edge == None:
-                        if action >= self.pg.graph.degree(agent.lastNode):
-                            # Provide a penalty for invalid actions.
-                            reward_dict[agent] -= 1.0
-                            continue
+                        action = action % (self.pg.graph.degree(agent.lastNode) - 1) #subtract 1 to deal with self-loops
                         dstNode = list(self.pg.graph.neighbors(agent.lastNode))[action]
                     else:
-                        if action >= 2: #only 2 actions are possible when on an edge
-                            # Provide a penalty for invalid actions.
-                            reward_dict[agent] -= 1.0
-                            continue
+                        action = action % 2 #only 2 actions are possible when on an edge
                         dstNode = agent.edge[action]
                 
                 else:
