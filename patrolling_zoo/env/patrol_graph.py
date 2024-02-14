@@ -35,6 +35,9 @@ class PatrolGraph():
                     id = i
                 )
                 
+                # Add a self-loop to the node.
+                self.graph.add_edge(i, i)
+
                 # Create edges.
                 numEdges = int(file.readline())
                 for _ in range(numEdges):
