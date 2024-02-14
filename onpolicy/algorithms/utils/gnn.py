@@ -18,19 +18,19 @@ class GNNBase(MessagePassing):
     def __init__(self, node_dim: int, edge_dim: int, output_dim: int, phi_dim: int, args):
 
         super(GNNBase, self).__init__(
-            aggr=AttentionalAggregation(
-                gate_nn=MLPLayer(
-                    input_dim=phi_dim,
-                    output_dim=1,
-                    hidden_size=128,
-                    layer_N=3,
-                    use_orthogonal=args.use_orthogonal,
-                    use_ReLU=args.use_ReLU,
-                    use_layer_norm=False,
-                    gain=1.0
-                ),
-            )
-            # aggr="sum"
+            # aggr=AttentionalAggregation(
+            #     gate_nn=MLPLayer(
+            #         input_dim=phi_dim,
+            #         output_dim=1,
+            #         hidden_size=128,
+            #         layer_N=3,
+            #         use_orthogonal=args.use_orthogonal,
+            #         use_ReLU=args.use_ReLU,
+            #         use_layer_norm=False,
+            #         gain=1.0
+            #     ),
+            # )
+            aggr="sum"
         )
         self.phi = MLPLayer(input_dim=2 * node_dim + edge_dim, output_dim=phi_dim, hidden_size=2048, layer_N=3, use_orthogonal=args.use_orthogonal, use_ReLU=args.use_ReLU, use_layer_norm=False, gain=1.0)
         self.gamma = MLPLayer(input_dim=phi_dim + node_dim, output_dim=output_dim, hidden_size=2048, layer_N=3, use_orthogonal=args.use_orthogonal, use_ReLU=args.use_ReLU, use_layer_norm=False, gain=1.0)
