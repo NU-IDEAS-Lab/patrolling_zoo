@@ -32,7 +32,8 @@ class PatrolGraph():
                     pos = (int(file.readline()) * self.resolution + self.offsetX,
                         int(file.readline()) * self.resolution + self.offsetY),
                     visitTime = 0.0,
-                    id = i
+                    id = i,
+                    nodeType = 0
                 )
                 
                 # Add a self-loop to the node.

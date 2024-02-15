@@ -113,7 +113,8 @@ class parallel_env(ParallelEnv):
         if self.action_method == "full":
             self.action_spaces = {agent: spaces.Discrete(len(self.pg.graph)) for agent in self.possible_agents}
         elif self.action_method == "neighbors":
-            maxDegree = max([self.pg.graph.degree(node) for node in self.pg.graph.nodes])
+            # we subtract 1 since for some reason the self-loop increases degree by 2
+            maxDegree = max([self.pg.graph.degree(node) - 1 for node in self.pg.graph.nodes])
             self.action_spaces = {agent: spaces.Discrete(maxDegree) for agent in self.possible_agents}
 
         # The state space is a complete observation of the environment.
@@ -208,9 +209,9 @@ class parallel_env(ParallelEnv):
         if observe_method in ["pyg"]:
             state_space = spaces.Graph(
                 node_space = spaces.Box(
-                    # ID, visitTime
-                    low = np.array([-np.inf, 0.0], dtype=np.float32),
-                    high = np.array([np.inf, np.inf], dtype=np.float32),
+                    # ID, nodeType,visitTime
+                    low = np.array([-np.inf, -np.inf, 0.0], dtype=np.float32),
+                    high = np.array([np.inf, np.inf, np.inf], dtype=np.float32),
                 ),
                 edge_space = spaces.Box(
                     low = np.array([0.0], dtype=np.float32),
@@ -602,6 +603,7 @@ class parallel_env(ParallelEnv):
                     pos = a.position,
                     # id = -1 - a.id,
                     id = -1.0 if a == agent else -2.0,
+                    nodeType = -1,
                     visitTime = 0.0,
                     idlenessTime = 0.0
                 )
@@ -610,6 +612,11 @@ class parallel_env(ParallelEnv):
                 if a.edge is None:
                     # If the agent is not on an edge, add an edge from the agent's node to the node it is currently on
                     g.add_edge(agent_node_id, a.lastNode, weight=0.0)
+
+                    # Add all of a.lastNode's neighbors as edges to the agent's node.
+                    for neighbor in g.neighbors(a.lastNode):
+                        if g.nodes[neighbor]["nodeType"] == 0:
+                            g.add_edge(agent_node_id, neighbor, weight=g.edges[(a.lastNode, neighbor)]["weight"])
                 else:
                     node1_id, node2_id = a.edge
 
@@ -634,7 +641,7 @@ class parallel_env(ParallelEnv):
             subgraphNodes = list(g.nodes)
 
             # Convert g to PyG
-            data = from_networkx(subgraph, group_node_attrs=["id", "idlenessTime"], group_edge_attrs=["weight"])
+            data = from_networkx(subgraph, group_node_attrs=["id", "nodeType", "idlenessTime"], group_edge_attrs=["weight"])
             data.x = data.x.float()
             data.edge_attr = data.edge_attr.float()
 
