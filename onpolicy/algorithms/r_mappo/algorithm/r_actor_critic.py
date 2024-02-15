@@ -78,7 +78,7 @@ class R_Actor(nn.Module):
             available_actions = check(available_actions).to(**self.tpdv)
 
         if self._use_gnn:
-            graphs = Batch.from_data_list(obs.squeeze(1)).to(self.device, "x", "edge_attr", "edge_index")
+            graphs = Batch.from_data_list(obs.flatten()).to(self.device, "x", "edge_attr", "edge_index")
             graphs.edge_attr.requires_grad = True
             actor_features = self.base(graphs.x, graphs.edge_attr, graphs.edge_index)
             if hasattr(graphs, "agent_index"):

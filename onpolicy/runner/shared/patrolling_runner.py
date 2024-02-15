@@ -17,8 +17,19 @@ def _t2n(x):
 
 class PatrollingRunner(Runner):
     def __init__(self, config):
+
+        # The default restore functionality is broken. Disable it and do it ourselves.
+        model_dir = config['all_args'].model_dir
+        config['all_args'].model_dir = None
+
         super(PatrollingRunner, self).__init__(config)
         self.env_infos = defaultdict(list)
+       
+        # Perform restoration.
+        config['all_args'].model_dir = model_dir
+        self.model_dir = config['all_args'].model_dir
+        if self.model_dir is not None:
+            self.restore()
        
     def run(self):
         self.warmup()   
@@ -30,8 +41,11 @@ class PatrollingRunner(Runner):
             if self.use_linear_lr_decay:
                 self.trainer.policy.lr_decay(episode, episodes)
 
+            # Set the delta steps to 1.
+            delta_steps = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.int32)
             for step in range(self.episode_length):
                 # Sample actions
+                # Sample actions, collect values and probabilities.
                 values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env = self.collect(step)
                     
                 # Obser reward and next obs
@@ -40,9 +54,8 @@ class PatrollingRunner(Runner):
                 # Split the combined observations into obs and share_obs, then combine across environments.
                 obs, share_obs = self._process_combined_obs(combined_obs)
 
-                # Get the delta steps from the environment info.
-                delta_steps = [info["deltaSteps"] for info in infos]
-                # delta_steps = np.array(delta_steps).reshape(-1, 1)
+                # Get the number of steps taken by each agent since the agent was last ready.
+                delta_steps = np.array([info["deltaSteps"] for info in infos])
 
                 data = obs, share_obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic, delta_steps
                 
@@ -98,23 +111,39 @@ class PatrollingRunner(Runner):
     def collect(self, step):
         self.trainer.prep_rollout()
 
-        # [n_envs, n_agents, ...] -> [n_envs*n_agents, ...]
-        values, actions, action_log_probs, rnn_states, rnn_states_critic = self.trainer.policy.get_actions(
-            np.concatenate(self.buffer.share_obs[step]),
-            np.concatenate(self.buffer.obs[step]),
-            np.concatenate(self.buffer.rnn_states[step]),
-            np.concatenate(self.buffer.rnn_states_critic[step]),
-            np.concatenate(self.buffer.masks[step])
-        )
+        values = [[None for a in range(self.num_agents)] for idx in range(self.n_rollout_threads)]
+        actions = [[None for a in range(self.num_agents)] for idx in range(self.n_rollout_threads)]
+        action_log_probs = [[None for a in range(self.num_agents)] for idx in range(self.n_rollout_threads)]
+        rnn_states = [[None for a in range(self.num_agents)] for idx in range(self.n_rollout_threads)]
+        rnn_states_critic = [[None for a in range(self.num_agents)] for idx in range(self.n_rollout_threads)]
+        actions_env = [[None for a in range(self.num_agents)] for idx in range(self.n_rollout_threads)]
 
-        # [n_envs*n_agents, ...] -> [n_envs, n_agents, ...]
-        values = np.array(np.split(_t2n(values), self.n_rollout_threads))
-        actions = np.array(np.split(_t2n(actions), self.n_rollout_threads))
-        action_log_probs = np.array(np.split(_t2n(action_log_probs), self.n_rollout_threads))
-        rnn_states = np.array(np.split(_t2n(rnn_states), self.n_rollout_threads))
-        rnn_states_critic = np.array(np.split(_t2n(rnn_states_critic), self.n_rollout_threads))
+        for agent_id in range(self.num_agents):
+            self.trainer.prep_rollout()
 
-        actions_env = [actions[idx, :, 0] for idx in range(self.n_rollout_threads)]
+            value, action, action_log_prob, rnn_state, rnn_state_critic = self.trainer.policy.get_actions(
+                self.buffer.share_obs[step],
+                self.buffer.obs[step, :, agent_id],
+                self.buffer.rnn_states[step],
+                self.buffer.rnn_states_critic[step],
+                self.buffer.masks[step]
+            )
+
+            for i in range(self.n_rollout_threads):
+                values[i][agent_id] = _t2n(value)[i]
+                a = _t2n(action)[i]
+                actions[i][agent_id] = a
+                actions_env[i][agent_id] = a[0]
+                action_log_probs[i][agent_id] = _t2n(action_log_prob)[i]
+                rnn_states[i][agent_id] = _t2n(rnn_state)[i]
+                rnn_states_critic[i][agent_id] = _t2n(rnn_state_critic)[i]
+        
+        values = np.array(values)
+        actions = np.array(actions)
+        action_log_probs = np.array(action_log_probs)
+        rnn_states = np.array(rnn_states)
+        rnn_states_critic = np.array(rnn_states_critic)
+        actions_env = np.array(actions_env)
 
         return values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env
 
@@ -134,11 +163,13 @@ class PatrollingRunner(Runner):
         for n in range(len(infos[0]["node_visits"])):
             self.env_infos[f"node_visits/node_{n}"] = [i["node_visits"][n] for i in infos]
 
-        # reset rnn and mask args for done envs
-        rnn_states[dones_env == True] = np.zeros(((dones_env == True).sum(), self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
-        rnn_states_critic[dones_env == True] = np.zeros(((dones_env == True).sum(), self.num_agents, self.recurrent_N, self.hidden_size), dtype=np.float32)
         masks = np.ones((self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
-        masks[dones_env == True] = np.zeros(((dones_env == True).sum(), self.num_agents, 1), dtype=np.float32)
+        for i in range(self.n_rollout_threads):
+            for agent_id in range(self.num_agents):
+                if dones[i, agent_id]:
+                    rnn_states[i][agent_id] = np.zeros((self.recurrent_N, self.hidden_size), dtype=np.float32)
+                    rnn_states_critic[i][agent_id] = np.zeros((self.recurrent_N, self.hidden_size), dtype=np.float32)
+                    masks[i, agent_id] = np.zeros(1, dtype=np.float32)
 
         self.buffer.insert(
             share_obs=share_obs,
@@ -313,11 +344,5 @@ class PatrollingRunner(Runner):
         for o in combined_obs:
             obs.append(o["obs"])
             share_obs.append(o["share_obs"])
-        
-        share_obs = np.array(share_obs)
-        if self.use_centralized_V:
-            # Make a copy of the share_obs for each agent.
-            share_obs = np.repeat(share_obs, self.num_agents, axis=1)
-            share_obs = np.reshape(share_obs, self.buffer.share_obs[0].shape)
 
-        return np.array(obs), share_obs
+        return np.array(obs), np.array(share_obs)
