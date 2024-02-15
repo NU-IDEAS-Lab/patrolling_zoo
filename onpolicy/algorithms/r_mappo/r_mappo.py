@@ -119,8 +119,6 @@ class R_MAPPO():
         # single disconnected graph and run the GNN on the entire batch.
         if self._use_gnn_policy:
             obs_batch = Batch.from_data_list(obs_batch.squeeze(1))
-            obs_batch.edge_attr.requires_grad = True
-            # obs_batch.x.requires_grad = True
 
         # Reshape to do in a single forward pass for all steps
         values, action_log_probs, dist_entropy = self.policy.evaluate_actions(share_obs_batch,
