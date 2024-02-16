@@ -38,6 +38,7 @@ class R_Actor(nn.Module):
 
         if self._use_gnn:
             self.base = GNNBase(
+                layers=3,
                 node_dim=get_shape_from_obs_space(obs_space.node_space)[0],
                 edge_dim=get_shape_from_obs_space(obs_space.edge_space)[0],
                 output_dim=self.hidden_size,
@@ -79,10 +80,7 @@ class R_Actor(nn.Module):
 
         if self._use_gnn:
             graphs = Batch.from_data_list(obs.flatten()).to(self.device, "x", "edge_attr", "edge_index")
-            graphs.edge_attr.requires_grad = True
-            actor_features = self.base(graphs.x, graphs.edge_attr, graphs.edge_index)
-            if hasattr(graphs, "agent_index"):
-                actor_features = actor_features[graphs.agent_index]
+            actor_features = self.base(graphs.x, graphs.edge_attr, graphs.edge_index, node_index=graphs.agent_index)
             if self._use_gnn_mlp:
                 actor_features = self.mlp0(actor_features)
         else:
