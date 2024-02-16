@@ -649,7 +649,7 @@ class parallel_env(ParallelEnv):
             idx = subgraphNodes.index(f"agent_{agent.id}_pos")
             agent_mask = np.zeros(data.num_nodes, dtype=bool)
             agent_mask[idx] = True
-            data.agent_index = idx
+            data.agent_idx = idx
             data.agent_mask = agent_mask
 
             # Set up a numpy array to hold the observation.
