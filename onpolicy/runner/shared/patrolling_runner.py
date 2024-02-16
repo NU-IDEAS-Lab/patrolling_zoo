@@ -111,39 +111,23 @@ class PatrollingRunner(Runner):
     def collect(self, step):
         self.trainer.prep_rollout()
 
-        values = [[None for a in range(self.num_agents)] for idx in range(self.n_rollout_threads)]
-        actions = [[None for a in range(self.num_agents)] for idx in range(self.n_rollout_threads)]
-        action_log_probs = [[None for a in range(self.num_agents)] for idx in range(self.n_rollout_threads)]
-        rnn_states = [[None for a in range(self.num_agents)] for idx in range(self.n_rollout_threads)]
-        rnn_states_critic = [[None for a in range(self.num_agents)] for idx in range(self.n_rollout_threads)]
-        actions_env = [[None for a in range(self.num_agents)] for idx in range(self.n_rollout_threads)]
+        self.trainer.prep_rollout()
 
-        for agent_id in range(self.num_agents):
-            self.trainer.prep_rollout()
+        value, action, action_log_prob, rnn_states, rnn_states_critic = self.trainer.policy.get_actions(
+            self.buffer.share_obs[step],
+            self.buffer.obs[step],
+            self.buffer.rnn_states[step],
+            self.buffer.rnn_states_critic[step],
+            self.buffer.masks[step]
+        )
 
-            value, action, action_log_prob, rnn_state, rnn_state_critic = self.trainer.policy.get_actions(
-                self.buffer.share_obs[step],
-                self.buffer.obs[step, :, agent_id],
-                self.buffer.rnn_states[step],
-                self.buffer.rnn_states_critic[step],
-                self.buffer.masks[step]
-            )
+        values = _t2n(value)
+        actions = _t2n(action)
+        action_log_probs = _t2n(action_log_prob)
+        rnn_states = _t2n(rnn_states)
+        rnn_states_critic = _t2n(rnn_states_critic)
 
-            for i in range(self.n_rollout_threads):
-                values[i][agent_id] = _t2n(value)[i]
-                a = _t2n(action)[i]
-                actions[i][agent_id] = a
-                actions_env[i][agent_id] = a[0]
-                action_log_probs[i][agent_id] = _t2n(action_log_prob)[i]
-                rnn_states[i][agent_id] = _t2n(rnn_state)[i]
-                rnn_states_critic[i][agent_id] = _t2n(rnn_state_critic)[i]
-        
-        values = np.array(values)
-        actions = np.array(actions)
-        action_log_probs = np.array(action_log_probs)
-        rnn_states = np.array(rnn_states)
-        rnn_states_critic = np.array(rnn_states_critic)
-        actions_env = np.array(actions_env)
+        actions_env = [actions[idx, :, 0] for idx in range(self.n_rollout_threads)]
 
         return values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env
 
