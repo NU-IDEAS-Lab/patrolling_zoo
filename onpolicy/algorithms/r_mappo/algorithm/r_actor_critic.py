@@ -92,11 +92,11 @@ class R_Actor(nn.Module):
                 agent_masks = np.array(graphs.agent_mask)
                 agent_masks = agent_masks.reshape(obs.shape[0], -1)
 
-                af = torch.zeros(obs.shape[0], obs.shape[1], actor_features.shape[-1])
+                af = torch.zeros(obs.shape[0], obs.shape[1], actor_features.shape[-1], **self.tpdv)
                 for i in range(obs.shape[0]):
                     af[i] = actor_features[i, agent_masks[i], :]
                 actor_features = af
-
+            
             if self._use_gnn_mlp:
                 actor_features = self.mlp0(actor_features)
         else:
@@ -134,10 +134,23 @@ class R_Actor(nn.Module):
             active_masks = check(active_masks).to(**self.tpdv)
 
         if self._use_gnn:
-            obs = check(obs).to(self.device, "x", "edge_attr", "edge_index")
-            actor_features = self.base(obs.x, obs.edge_attr, obs.edge_index)
-            if hasattr(obs, "agent_idx"):
-                actor_features = actor_features[obs.agent_idx]
+            obs_flat = obs.flatten()
+
+            graphs = Batch.from_data_list(obs_flat).to(self.device, "x", "edge_attr", "edge_index")
+            actor_features = self.base(graphs.x, graphs.edge_attr, graphs.edge_index)
+
+            # Restore the original shape.
+            actor_features = actor_features.reshape(obs.shape[0], -1, actor_features.shape[-1])
+        
+            if hasattr(graphs, "agent_mask"):
+                agent_masks = np.array(graphs.agent_mask)
+                agent_masks = agent_masks.reshape(obs.shape[0], -1)
+
+                af = torch.zeros(obs.shape[0], actor_features.shape[-1], **self.tpdv)
+                for i in range(obs.shape[0]):
+                    af[i] = actor_features[i, agent_masks[i], :]
+                actor_features = af
+
             if self._use_gnn_mlp:
                 actor_features = self.mlp0(actor_features)
         else:

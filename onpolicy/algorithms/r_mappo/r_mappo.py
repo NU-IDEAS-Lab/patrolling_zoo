@@ -115,10 +115,6 @@ class R_MAPPO():
         return_batch = check(return_batch).to(**self.tpdv)
         active_masks_batch = check(active_masks_batch).to(**self.tpdv)
 
-        # If a GNN, combine the entire batch of observations into a
-        # single disconnected graph and run the GNN on the entire batch.
-        if self._use_gnn_policy:
-            obs_batch = Batch.from_data_list(obs_batch.squeeze(1))
 
         # Reshape to do in a single forward pass for all steps
         values, action_log_probs, dist_entropy = self.policy.evaluate_actions(share_obs_batch,
