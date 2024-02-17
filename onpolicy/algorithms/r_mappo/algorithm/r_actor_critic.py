@@ -103,6 +103,9 @@ class R_Actor(nn.Module):
             obs = check(obs).to(**self.tpdv)
             actor_features = self.base(obs)
 
+        # The code was originally designed to take shape (threads*agents, -1) but we have (threads, agents, -1)
+        actor_features = actor_features.flatten(end_dim=1)
+
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
             actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
 

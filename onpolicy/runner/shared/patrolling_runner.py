@@ -121,11 +121,11 @@ class PatrollingRunner(Runner):
             self.buffer.masks[step]
         )
 
-        values = _t2n(value)
-        actions = _t2n(action)
-        action_log_probs = _t2n(action_log_prob)
-        rnn_states = _t2n(rnn_states)
-        rnn_states_critic = _t2n(rnn_states_critic)
+        values = np.array(np.split(_t2n(value), self.n_rollout_threads)).squeeze(1)
+        actions = np.array(np.split(_t2n(action), self.n_rollout_threads))
+        action_log_probs = np.array(np.split(_t2n(action_log_prob), self.n_rollout_threads))
+        rnn_states = np.array(np.split(_t2n(rnn_states), self.n_rollout_threads)).squeeze(1)
+        rnn_states_critic = np.array(np.split(_t2n(rnn_states_critic), self.n_rollout_threads)).squeeze(1)
 
         actions_env = [actions[idx, :, 0] for idx in range(self.n_rollout_threads)]
 
