@@ -40,6 +40,7 @@ class R_Actor(nn.Module):
 
         if self._use_gnn:
             self.base = GNNBase(
+                layers=3,
                 node_dim=get_shape_from_obs_space(obs_space.node_space)[0],
                 edge_dim=get_shape_from_obs_space(obs_space.edge_space)[0],
                 output_dim=self.hidden_size,
