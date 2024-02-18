@@ -98,14 +98,13 @@ class R_Actor(nn.Module):
                     af[i] = actor_features[i, agent_masks[i], :]
                 actor_features = af
             
+            actor_features = actor_features.flatten(end_dim=1)
+            
             if self._use_gnn_mlp:
                 actor_features = self.mlp0(actor_features)
         else:
             obs = check(obs).to(**self.tpdv)
             actor_features = self.base(obs)
-
-        # The code was originally designed to take shape (threads*agents, -1) but we have (threads, agents, -1)
-        actor_features = actor_features.flatten(end_dim=1)
 
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
             actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)

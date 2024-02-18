@@ -114,18 +114,18 @@ class PatrollingRunner(Runner):
         self.trainer.prep_rollout()
 
         value, action, action_log_prob, rnn_states, rnn_states_critic = self.trainer.policy.get_actions(
-            self.buffer.share_obs[step],
-            self.buffer.obs[step],
-            self.buffer.rnn_states[step],
-            self.buffer.rnn_states_critic[step],
-            self.buffer.masks[step]
+            np.concatenate(self.buffer.share_obs[step]),
+            np.concatenate(self.buffer.obs[step]),
+            np.concatenate(self.buffer.rnn_states[step]),
+            np.concatenate(self.buffer.rnn_states_critic[step]),
+            np.concatenate(self.buffer.masks[step])
         )
 
-        values = np.array(np.split(_t2n(value), self.n_rollout_threads)).squeeze(1)
+        values = np.array(np.split(_t2n(value), self.n_rollout_threads))
         actions = np.array(np.split(_t2n(action), self.n_rollout_threads))
         action_log_probs = np.array(np.split(_t2n(action_log_prob), self.n_rollout_threads))
-        rnn_states = np.array(np.split(_t2n(rnn_states), self.n_rollout_threads)).squeeze(1)
-        rnn_states_critic = np.array(np.split(_t2n(rnn_states_critic), self.n_rollout_threads)).squeeze(1)
+        rnn_states = np.array(np.split(_t2n(rnn_states), self.n_rollout_threads))
+        rnn_states_critic = np.array(np.split(_t2n(rnn_states_critic), self.n_rollout_threads))
 
         actions_env = [actions[idx, :, 0] for idx in range(self.n_rollout_threads)]
 
