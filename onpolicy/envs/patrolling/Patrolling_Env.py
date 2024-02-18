@@ -45,7 +45,10 @@ class PatrollingEnv(object):
         #         logdir=args.video_dir
         #     )
 
-        pg = PatrolGraph(args.graph_file)
+        if args.graph_random:
+            pg = PatrolGraph(numNodes=args.graph_random_nodes, regenerateUponReset=True)
+        else:
+            pg = PatrolGraph(args.graph_file)
 
         self.env = parallel_env(
             patrol_graph = pg,
