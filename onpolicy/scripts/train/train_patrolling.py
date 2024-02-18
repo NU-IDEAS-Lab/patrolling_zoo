@@ -64,9 +64,17 @@ def parse_args(args, parser):
                         help="Whether to skip steps with no action required (by any agent).")
     parser.add_argument("--skip_steps_sync", type=bool, default=False,
                         help="Whether to skip steps with no action required (by any agent).")
+    parser.add_argument("--graph_file", type=str,
+                        default="", 
+                        help="The path to the graph file.")
     parser.add_argument("--graph_name", type=str,
                         default="4nodes", 
                         help="which graph to run on.")
+    parser.add_argument("--graph_random", type=bool, default=False,
+                        help="Whether to use a random graph.")
+    parser.add_argument("--graph_random_nodes", type=int,
+                        default=40,
+                        help="The number of random nodes to generate.")
     parser.add_argument("--max_cycles", type=int, default=1000,
                         help="max number of cycles for the environment.")
     parser.add_argument("--reward_method_terminal", type=str,
@@ -134,6 +142,9 @@ def parse_args(args, parser):
 
 
 def validateArgs(all_args):
+    if all_args.graph_random:
+        all_args.graph_name = f"random{all_args.graph_random_nodes}"
+
     if all_args.algorithm_name == "rmappo":
         print("u are choosing to use rmappo, we set use_recurrent_policy to be True")
         all_args.use_recurrent_policy = True

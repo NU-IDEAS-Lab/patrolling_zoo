@@ -2,14 +2,19 @@ import numpy as np
 import networkx as nx
 import math
 import matplotlib.pyplot as plt
+import random
 
 class PatrolGraph():
     ''' This reads a graph file of the format provided by
         https://github.com/davidbsp/patrolling_sim '''
 
-    def __init__(self, filepath):
+    def __init__(self, filepath = None, numNodes = 40, regenerateUponReset = False):
         self.graph = nx.Graph()
-        self.loadFromFile(filepath)
+        self.regenerateUponReset = regenerateUponReset
+        if filepath is None:
+            self.generateRandomGraph(numNodes)
+        else:
+            self.loadFromFile(filepath)
 
 
     def loadFromFile(self, filepath: str):
@@ -56,8 +61,40 @@ class PatrolGraph():
                 self.longestPathLength = i[1][j]
 
 
-    def reset(self):
-        ''' Resets the graph to initial state. '''
+    def generateRandomGraph(self, numNodes, radius=35, sizeX=200.0, sizeY=200.0, seed=None):
+        ''' Generates a random graph with the given parameters. '''
+
+        connected = False
+        while not connected:
+            pos = {i: (random.uniform(0.0, sizeX), random.uniform(0.0, sizeY)) for i in range(numNodes)}
+            self.graph = nx.random_geometric_graph(numNodes, radius, pos=pos, seed=seed)
+            connected = nx.is_connected(self.graph)
+        
+        self.graphDimension = numNodes
+        self.widthPixels = sizeX
+        self.heightPixels = sizeY
+        self.resolution = 1.0
+        self.offsetX = 0.0
+        self.offsetY = 0.0
+
+        for node in self.graph.nodes:
+            self.graph.nodes[node]["visitTime"] = 0.0
+        for edge in self.graph.edges:
+            self.graph.edges[edge]["weight"] = self._dist(self.graph.nodes[edge[0]]["pos"], self.graph.nodes[edge[1]]["pos"])
+        self.longestPathLength = 0.0
+        all_pairs = nx.all_pairs_dijkstra_path_length(self.graph, weight="weight")
+        for i in all_pairs:
+            for j in i[1]:
+                if i[1][j] > self.longestPathLength:
+                    self.longestPathLength = i[1][j]
+
+
+    def reset(self, seed=None):
+        ''' Resets the graph to initial state.
+            If regenerateUponReset is True, a new random graph is generated. '''
+
+        if self.regenerateUponReset:
+            self.generateRandomGraph(self.graphDimension, sizeX=self.widthPixels, sizeY=self.heightPixels, seed=seed)
 
         for node in self.graph.nodes:
             self.graph.nodes[node]["visitTime"] = 0.0
