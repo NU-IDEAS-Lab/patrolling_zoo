@@ -84,6 +84,8 @@ class PatrolGraph():
 
         for node in self.graph.nodes:
             self.graph.nodes[node]["visitTime"] = 0.0
+            self.graph.nodes[node]["nodeType"] = 0
+            self.graph.nodes[node]["id"] = node
         for edge in self.graph.edges:
             self.graph.edges[edge]["weight"] = self._dist(self.graph.nodes[edge[0]]["pos"], self.graph.nodes[edge[1]]["pos"])
         self.longestPathLength = 0.0
