@@ -11,6 +11,7 @@ from onpolicy.algorithms.utils.popart import PopArt
 from onpolicy.utils.util import get_shape_from_obs_space
 
 from torch_geometric.data import Batch
+from torch_geometric.utils import to_dense_batch
 
 import numpy as np
 
@@ -86,8 +87,9 @@ class R_Actor(nn.Module):
             graphs = Batch.from_data_list(obs_flat).to(self.device, "x", "edge_attr", "edge_index")
             actor_features = self.base(graphs.x, graphs.edge_attr, graphs.edge_index)
 
-            # Restore the original shape.
-            actor_features = actor_features.reshape(obs.shape[0], -1, actor_features.shape[-1])
+            # Restore the original shape of [batch_size, num_agents, num_feats] from [batch_size*num_agents, num_feats]
+            actor_features, _ = to_dense_batch(actor_features, graphs.batch.to(self.device))
+            # actor_features = actor_features.reshape(obs.shape[0], -1, actor_features.shape[-1])
         
             if hasattr(graphs, "agent_idx"):
                 agent_idx = torch.from_numpy(np.array(graphs.agent_idx)).reshape(-1, 1).to(self.device)
