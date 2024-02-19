@@ -36,6 +36,44 @@ class GNNBase(nn.Module):
             x = layer(x, edge_index, edge_weight=edge_attr)
             x = self.activation(x)
         return x
+    
+
+    def gatherNodeFeats(self, x: torch.Tensor, idx: torch.Tensor):
+        """
+        This method is borrowed from InforMARL: https://github.com/nsidn98/InforMARL/blob/main/onpolicy/algorithms/utils/gnn.py#L346
+
+        The output obtained from the network is of shape
+        [batch_size, num_nodes, out_channels]. If we want to
+        pull the features according to particular nodes in the
+        graph as determined by the `idx`, use this
+        Refer below link for more info on `gather()` method for 3D tensors
+        https://medium.com/analytics-vidhya/understanding-indexing-with-pytorch-gather-33717a84ebc4
+
+        Args:
+            x (Tensor): Tensor of shape (batch_size, num_nodes, out_channels)
+            idx (Tensor): Tensor of shape (batch_size) or (batch_size, k)
+                indicating the indices of nodes to pull from the graph
+
+        Returns:
+            Tensor: Tensor of shape (batch_size, out_channels) which just
+                contains the features from the node of interest
+        """
+        out = []
+        batch_size, num_nodes, num_feats = x.shape
+        idx = idx.long()
+        for i in range(idx.shape[1]):
+            idx_tmp = idx[:, i].unsqueeze(-1)  # (batch_size, 1)
+            assert idx_tmp.shape == (batch_size, 1)
+            idx_tmp = idx_tmp.repeat(1, num_feats)  # (batch_size, out_channels)
+            idx_tmp = idx_tmp.unsqueeze(1)  # (batch_size, 1, out_channels)
+            gathered_node = x.gather(1, idx_tmp).squeeze(
+                1
+            )  # (batch_size, out_channels)
+            out.append(gathered_node)
+        out = torch.cat(out, dim=1)  # (batch_size, out_channels*k)
+        # out = out.squeeze(1)    # (batch_size, out_channels*k)
+
+        return out
 
 
 class GNNLayer(MessagePassing):

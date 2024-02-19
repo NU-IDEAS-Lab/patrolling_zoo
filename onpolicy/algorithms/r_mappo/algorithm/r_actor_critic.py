@@ -89,16 +89,19 @@ class R_Actor(nn.Module):
             # Restore the original shape.
             actor_features = actor_features.reshape(obs.shape[0], -1, actor_features.shape[-1])
         
-            if hasattr(graphs, "agent_mask"):
-                agent_masks = np.array(graphs.agent_mask)
-                agent_masks = agent_masks.reshape(obs.shape[0], -1)
+            if hasattr(graphs, "agent_idx"):
+                agent_idx = torch.from_numpy(np.array(graphs.agent_idx)).reshape(-1, 1).to(self.device)
+                actor_features = self.base.gatherNodeFeats(actor_features, agent_idx)
+            # if hasattr(graphs, "agent_mask"):
+            #     agent_masks = np.array(graphs.agent_mask)
+            #     agent_masks = agent_masks.reshape(obs.shape[0], -1)
 
-                af = torch.zeros(obs.shape[0], obs.shape[1], actor_features.shape[-1], **self.tpdv)
-                for i in range(obs.shape[0]):
-                    af[i] = actor_features[i, agent_masks[i], :]
-                actor_features = af
+            #     af = torch.zeros(obs.shape[0], obs.shape[1], actor_features.shape[-1], **self.tpdv)
+            #     for i in range(obs.shape[0]):
+            #         af[i] = actor_features[i, agent_masks[i], :]
+            #     actor_features = af
             
-            actor_features = actor_features.flatten(end_dim=1)
+            # actor_features = actor_features.flatten(end_dim=1)
             
             if self._use_gnn_mlp:
                 actor_features = self.mlp0(actor_features)
