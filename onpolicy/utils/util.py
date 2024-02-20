@@ -1,6 +1,7 @@
 import numpy as np
 import math
 import torch
+from copy import deepcopy
 
 def check(input):
     if type(input) == np.ndarray:
@@ -28,6 +29,50 @@ def huber_loss(e, d):
 def mse_loss(e):
     return e**2/2
 
+def has_graph_obs_space(obs_space):
+    ''' Returns True if the observation space contains a graph subspace. '''
+
+    if obs_space.__class__.__name__ == 'Dict':
+        for k, v in obs_space.spaces.items():
+            if v.__class__.__name__ == 'Graph':
+                return True
+    elif obs_space.__class__.__name__ == 'Graph':
+        return True
+    return False
+
+def get_graph_obs_space(obs_space):
+    ''' Returns the graph observation subspace from the observation space.
+        Only supports a single graph subspace.'''
+    if obs_space.__class__.__name__ == 'Dict':
+        for k, v in obs_space.spaces.items():
+            if v.__class__.__name__ == 'Graph':
+                return v
+    else:
+        raise NotImplementedError(f"Not implemented for obs_space type {obs_space.__class__.__name__}")
+
+def strip_graph_obs_space(obs_space):
+    ''' Returns a copy of the observation space with any graph subspaces removed. '''
+
+    if obs_space.__class__.__name__ == 'Dict':
+        res = deepcopy(obs_space)
+        for k, v in res.spaces.items():
+            if v.__class__.__name__ == 'Graph':
+                # remove the graph observation from the observation space
+                res.spaces.pop(k)
+        return res
+    else:
+        raise NotImplementedError(f"Not implemented for obs_space type {obs_space.__class__.__name__}")
+
+def get_graph_obs_space_idx(obs):
+    ''' Returns the index of the graph observation subspace from the observation space. '''
+    
+    if obs.__class__.__name__ == 'Dict':
+        for i, (k, v) in enumerate(obs.items()):
+            if v.__class__.__name__ == 'Graph':
+                return i
+    else:
+        raise NotImplementedError(f"Not implemented for obs type {obs.__class__.__name__}")
+
 def get_shape_from_obs_space(obs_space):
     if obs_space.__class__.__name__ == 'Box':
         obs_shape = obs_space.shape
@@ -35,6 +80,8 @@ def get_shape_from_obs_space(obs_space):
         obs_shape = obs_space
     elif obs_space.__class__.__name__ == 'Graph':
         obs_shape = (1, ) # the observation is a single PyG data object
+    elif obs_space.__class__.__name__ == 'Dict':
+        obs_shape = (len(obs_space.spaces), ) # the observation is a single dictionary data object
     else:
         raise NotImplementedError(f"Not implemented for obs_space type {obs_space.__class__.__name__}")
     return obs_shape

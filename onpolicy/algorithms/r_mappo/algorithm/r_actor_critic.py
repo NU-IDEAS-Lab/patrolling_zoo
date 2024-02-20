@@ -8,7 +8,7 @@ from onpolicy.algorithms.utils.rnn import RNNLayer
 from onpolicy.algorithms.utils.rnn import RNNLayer
 from onpolicy.algorithms.utils.act import ACTLayer
 from onpolicy.algorithms.utils.popart import PopArt
-from onpolicy.utils.util import get_shape_from_obs_space
+from onpolicy.utils.util import get_shape_from_obs_space, get_graph_obs_space, strip_graph_obs_space, get_graph_obs_space_idx
 
 from torch_geometric.data import Batch
 from torch_geometric.utils import to_dense_batch
@@ -39,17 +39,24 @@ class R_Actor(nn.Module):
         self.tpdv = dict(dtype=torch.float32, device=device)
         self.device = device
 
+
         if self._use_gnn:
+            # Split up the graph and non-graph space.
+            obs_space_graph = get_graph_obs_space(obs_space)
+            obs_space_nongraph = strip_graph_obs_space(obs_space)
+            self.obs_space_graph_idx = get_graph_obs_space_idx(obs_space)
+
             self.base = GNNBase(
                 layers=3,
-                node_dim=get_shape_from_obs_space(obs_space.node_space)[0],
-                edge_dim=get_shape_from_obs_space(obs_space.edge_space)[0],
+                node_dim=get_shape_from_obs_space(obs_space_graph.node_space)[0],
+                edge_dim=get_shape_from_obs_space(obs_space_graph.edge_space)[0],
                 output_dim=self.hidden_size,
                 phi_dim=256,
                 args=args
             )
             if self._use_gnn_mlp:
-                self.mlp0 = MLPLayer(input_dim=self.hidden_size, output_dim=self.hidden_size, hidden_size=2048, layer_N=3, use_orthogonal=args.use_orthogonal, use_ReLU=args.use_ReLU)
+                input_dim = self.hidden_size + get_shape_from_obs_space(obs_space_nongraph)[0]
+                self.mlp0 = MLPLayer(input_dim=input_dim, output_dim=self.hidden_size, hidden_size=2048, layer_N=3, use_orthogonal=args.use_orthogonal, use_ReLU=args.use_ReLU)
         else:
             obs_shape = get_shape_from_obs_space(obs_space)
             base = CNNBase if len(obs_shape) == 3 else MLPBase
@@ -82,9 +89,14 @@ class R_Actor(nn.Module):
             available_actions = check(available_actions).to(**self.tpdv)
 
         if self._use_gnn:
-            obs_flat = obs.flatten()
+            # Split observation into graph and non-graph components.
+            obs_graph = obs[:, self.obs_space_graph_idx]
+            nonGraphIdx = [i for i in range(obs.shape[1]) if i != self.obs_space_graph_idx]
+            obs_nongraph = obs[:, nonGraphIdx]
+            obs_nongraph = check(obs_nongraph.astype(np.float32)).to(**self.tpdv)
 
-            graphs = Batch.from_data_list(obs_flat).to(self.device, "x", "edge_attr", "edge_index")
+            # Batch the graphs and pass through GNN.
+            graphs = Batch.from_data_list(obs_graph).to(self.device, "x", "edge_attr", "edge_index")
             actor_features = self.base(graphs.x, graphs.edge_attr, graphs.edge_index)
 
             # Restore the original shape of [batch_size, num_agents, num_feats] from [batch_size*num_agents, num_feats]
@@ -104,7 +116,10 @@ class R_Actor(nn.Module):
             #     actor_features = af
             
             # actor_features = actor_features.flatten(end_dim=1)
-            
+                
+            # Concatenate the graph and non-graph features.
+            actor_features = torch.cat([actor_features, obs_nongraph], dim=-1)
+
             if self._use_gnn_mlp:
                 actor_features = self.mlp0(actor_features)
         else:
@@ -142,22 +157,36 @@ class R_Actor(nn.Module):
             active_masks = check(active_masks).to(**self.tpdv)
 
         if self._use_gnn:
-            obs_flat = obs.flatten()
+            # Split observation into graph and non-graph components.
+            obs_graph = obs[:, self.obs_space_graph_idx]
+            nonGraphIdx = [i for i in range(obs.shape[1]) if i != self.obs_space_graph_idx]
+            obs_nongraph = obs[:, nonGraphIdx]
+            obs_nongraph = check(obs_nongraph.astype(np.float32)).to(**self.tpdv)
 
-            graphs = Batch.from_data_list(obs_flat).to(self.device, "x", "edge_attr", "edge_index")
+            # Batch the graphs and pass through GNN.
+            graphs = Batch.from_data_list(obs_graph).to(self.device, "x", "edge_attr", "edge_index")
             actor_features = self.base(graphs.x, graphs.edge_attr, graphs.edge_index)
 
-            # Restore the original shape.
-            actor_features = actor_features.reshape(obs.shape[0], -1, actor_features.shape[-1])
+            # Restore the original shape of [batch_size, num_agents, num_feats] from [batch_size*num_agents, num_feats]
+            actor_features, _ = to_dense_batch(actor_features, graphs.batch.to(self.device))
+            # actor_features = actor_features.reshape(obs.shape[0], -1, actor_features.shape[-1])
         
-            if hasattr(graphs, "agent_mask"):
-                agent_masks = np.array(graphs.agent_mask)
-                agent_masks = agent_masks.reshape(obs.shape[0], -1)
+            if hasattr(graphs, "agent_idx"):
+                agent_idx = torch.from_numpy(np.array(graphs.agent_idx)).reshape(-1, 1).to(self.device)
+                actor_features = self.base.gatherNodeFeats(actor_features, agent_idx)
+            # if hasattr(graphs, "agent_mask"):
+            #     agent_masks = np.array(graphs.agent_mask)
+            #     agent_masks = agent_masks.reshape(obs.shape[0], -1)
 
-                af = torch.zeros(obs.shape[0], actor_features.shape[-1], **self.tpdv)
-                for i in range(obs.shape[0]):
-                    af[i] = actor_features[i, agent_masks[i], :]
-                actor_features = af
+            #     af = torch.zeros(obs.shape[0], obs.shape[1], actor_features.shape[-1], **self.tpdv)
+            #     for i in range(obs.shape[0]):
+            #         af[i] = actor_features[i, agent_masks[i], :]
+            #     actor_features = af
+            
+            # actor_features = actor_features.flatten(end_dim=1)
+                
+            # Concatenate the graph and non-graph features.
+            actor_features = torch.cat([actor_features, obs_nongraph], dim=-1)
 
             if self._use_gnn_mlp:
                 actor_features = self.mlp0(actor_features)

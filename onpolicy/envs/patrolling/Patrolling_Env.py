@@ -4,7 +4,7 @@ from patrolling_zoo.env.patrolling_zoo import parallel_env
 from patrolling_zoo.env.patrol_graph import PatrolGraph
 from patrolling_zoo.env.communication_model import CommunicationModel
 from gymnasium.spaces.utils import flatten, flatten_space
-from gymnasium.spaces import Dict
+from gymnasium.spaces import Dict, Graph
 import numpy as np
 
 
@@ -84,8 +84,16 @@ class PatrollingEnv(object):
         # Set up action space.
         self.action_space = [self.env.action_spaces[a] for a in self.env.possible_agents]
 
+        # Determine whether observations should be flattened.
+        ospace = self.env.observation_spaces[self.env.possible_agents[0]]
+        self.flatten_observations = type(ospace) == Dict
+        if self.flatten_observations:
+            for k, v in ospace.spaces.items():
+                if type(v) == Graph:
+                    self.flatten_observations = False
+                    break
+
         # Set up observation space.
-        self.flatten_observations = type(self.env.observation_spaces[self.env.possible_agents[0]]) == Dict
         if self.flatten_observations:
             self.observation_space = [flatten_space(self.env.observation_spaces[a]) for a in self.env.possible_agents]
         else:

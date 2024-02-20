@@ -2,7 +2,7 @@ import torch
 import numpy as np
 from collections import defaultdict
 
-from onpolicy.utils.util import check, get_shape_from_obs_space, get_shape_from_act_space
+from onpolicy.utils.util import check, get_shape_from_obs_space, get_shape_from_act_space, has_graph_obs_space
 
 def _flatten(T, N, x):
     return x.reshape(T * N, *x.shape[2:])
@@ -34,8 +34,8 @@ class SeparatedReplayBuffer(object):
             share_obs_shape = share_obs_shape[:1]
 
         self.share_obs = np.zeros((self.episode_length + 1, self.n_rollout_threads, *share_obs_shape), dtype=np.float32)
-        if obs_space.__class__.__name__ == 'Graph':
-            self.obs = np.empty((self.episode_length + 1, self.n_rollout_threads, 1), dtype=object)
+        if has_graph_obs_space(obs_space):
+            self.obs = np.empty((self.episode_length + 1, self.n_rollout_threads, *obs_shape), dtype=object)
         else:
             self.obs = np.zeros((self.episode_length + 1, self.n_rollout_threads, *obs_shape), dtype=np.float32)
 

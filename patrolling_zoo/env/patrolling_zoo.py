@@ -10,6 +10,7 @@ import networkx as nx
 from copy import copy
 from enum import IntEnum
 from torch_geometric.utils.convert import from_networkx
+from torch_geometric.data import Data
 
 
 class PatrolAgent():
@@ -138,7 +139,7 @@ class parallel_env(ParallelEnv):
         # Add to the dictionary depending on the observation method.
 
         # Add agent id.
-        if observe_method in ["ajg_new", "ajg_newer", "adjacency"]:
+        if observe_method in ["ajg_new", "ajg_newer", "adjacency", "pyg"]:
             state_space["agent_id"] = spaces.Box(
                 low = -1,
                 high = len(self.possible_agents),
@@ -207,7 +208,7 @@ class parallel_env(ParallelEnv):
             }) # type: ignore
         
         if observe_method in ["pyg"]:
-            state_space = spaces.Graph(
+            state_space["graph"] = spaces.Graph(
                 node_space = spaces.Box(
                     # ID, nodeType,visitTime
                     low = np.array([-np.inf, -np.inf, 0.0], dtype=np.float32),
@@ -366,7 +367,7 @@ class parallel_env(ParallelEnv):
         obs = {}
 
         # Add agent ID.
-        if observe_method in ["ajg_new", "ajg_newer", "adjacency"]:
+        if observe_method in ["ajg_new", "ajg_newer", "adjacency", "pyg"]:
             obs["agent_id"] = agent.id
 
         # Add agent position.
@@ -653,12 +654,21 @@ class parallel_env(ParallelEnv):
             data.agent_mask = agent_mask
 
             # Set up a numpy array to hold the observation.
-            obs = np.empty((1,), dtype=object)
-            obs[0] = data
+            # o = np.empty((1,), dtype=object)
+            # o[0] = data
+
+            obs["graph"] = data
         
         if (type(obs) == dict and obs == {}) or (type(obs) != dict and len(obs) < 1):
             raise ValueError(f"Invalid observation method {self.observe_method}")
         
+        # Check if type of any values in obs is a graph.
+        if type(obs) == dict:
+            typeSet = set([type(v) for v in obs.values()])
+            if Data in typeSet:
+                # If so, we want the observation to be a single-element array of objects.
+                obs = np.array(list(obs.values()), dtype=object)
+
         return obs
     
     def _calculateEdgeWeight(self, pos1, pos2):
