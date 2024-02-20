@@ -1,7 +1,7 @@
 import numpy as np
 import math
 import torch
-from copy import deepcopy
+from copy import copy
 
 def check(input):
     if type(input) == np.ndarray:
@@ -54,8 +54,9 @@ def strip_graph_obs_space(obs_space):
     ''' Returns a copy of the observation space with any graph subspaces removed. '''
 
     if obs_space.__class__.__name__ == 'Dict':
-        res = deepcopy(obs_space)
-        for k, v in res.spaces.items():
+        res = copy(obs_space)
+        res.spaces = copy(obs_space.spaces)
+        for k, v in obs_space.spaces.items():
             if v.__class__.__name__ == 'Graph':
                 # remove the graph observation from the observation space
                 res.spaces.pop(k)

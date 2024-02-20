@@ -31,6 +31,7 @@ class PatrolAgent():
         self.position = self.startingPosition
         self.speed = self.startingSpeed
         self.edge = None
+        self.lastAction = -1.0
         self.lastNode = self.startingNode
         self.lastNodeVisited = None
      
@@ -218,6 +219,17 @@ class parallel_env(ParallelEnv):
                     low = np.array([0.0], dtype=np.float32),
                     high = np.array([np.inf], dtype=np.float32),
                 )
+            )
+
+            state_space["lastNode"] = spaces.Box(
+                low = 0,
+                high = self.pg.graph.number_of_nodes(),
+                dtype=np.int32
+            )
+            state_space["lastAction"] = spaces.Box(
+                low = -1.0,
+                high = np.inf,
+                dtype=np.float32
             )
         
         if type(state_space) == dict:
@@ -658,6 +670,10 @@ class parallel_env(ParallelEnv):
             # o[0] = data
 
             obs["graph"] = data
+
+            # Additionally, add the last node and last action of the agent to the observation.
+            obs["lastNode"] = agent.lastNode
+            obs["lastAction"] = agent.lastAction
         
         if (type(obs) == dict and obs == {}) or (type(obs) != dict and len(obs) < 1):
             raise ValueError(f"Invalid observation method {self.observe_method}")
@@ -746,6 +762,9 @@ class parallel_env(ParallelEnv):
                 
                 else:
                     raise ValueError(f"Invalid action method {self.action_method}")
+                
+                # Store this as the agent's last action.
+                agent.lastAction = action
                 
                 # Provide penalty for visiting the same node twice in a row.
                 # if dstNode == agent.lastNodeVisited:
