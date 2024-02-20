@@ -52,12 +52,12 @@ class PatrollingRunner(Runner):
                 combined_obs, rewards, dones, infos = self.envs.step(actions_env)
 
                 # Split the combined observations into obs and share_obs, then combine across environments.
-                obs, share_obs = self._process_combined_obs(combined_obs)
+                obs, share_obs, available_actions = self._process_combined_obs(combined_obs)
 
                 # Get the number of steps taken by each agent since the agent was last ready.
                 delta_steps = np.array([info["deltaSteps"] for info in infos])
 
-                data = obs, share_obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic, delta_steps
+                data = obs, share_obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic, delta_steps, available_actions
                 
                 # insert data into buffer
                 self.insert(data)
@@ -101,11 +101,12 @@ class PatrollingRunner(Runner):
         combined_obs = self.envs.reset()
 
         # Split the combined observations into obs and share_obs, then combine across environments.
-        obs, share_obs = self._process_combined_obs(combined_obs)
+        obs, share_obs, available_actions = self._process_combined_obs(combined_obs)
 
         # insert obs to buffer
         self.buffer.share_obs[0] = share_obs.copy()
         self.buffer.obs[0] = obs.copy()
+        self.buffer.available_actions[0] = available_actions.copy()
 
     @torch.no_grad()
     def collect(self, step):
@@ -118,7 +119,8 @@ class PatrollingRunner(Runner):
             np.concatenate(self.buffer.obs[step]),
             np.concatenate(self.buffer.rnn_states[step]),
             np.concatenate(self.buffer.rnn_states_critic[step]),
-            np.concatenate(self.buffer.masks[step])
+            np.concatenate(self.buffer.masks[step]),
+            available_actions=np.concatenate(self.buffer.available_actions[step])
         )
 
         values = np.array(np.split(_t2n(value), self.n_rollout_threads))
@@ -132,7 +134,7 @@ class PatrollingRunner(Runner):
         return values, actions, action_log_probs, rnn_states, rnn_states_critic, actions_env
 
     def insert(self, data):
-        obs, share_obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic, delta_steps = data
+        obs, share_obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic, delta_steps, available_actions = data
         
         # update env_infos if done
         dones_env = np.all(dones, axis=-1)
@@ -165,7 +167,8 @@ class PatrollingRunner(Runner):
             value_preds=values,
             rewards=rewards,
             masks=masks,
-            deltaSteps=delta_steps
+            deltaSteps=delta_steps,
+            available_actions=available_actions
         )
 
     def log_env(self, env_infos, total_num_steps):
@@ -273,7 +276,7 @@ class PatrollingRunner(Runner):
             masks = np.ones((self.n_render_rollout_threads, self.num_agents, 1), dtype=np.float32)
 
             # Split the combined observations into obs and share_obs, then combine across environments.
-            obs, share_obs = self._process_combined_obs(combined_obs)
+            obs, share_obs, available_actions = self._process_combined_obs(combined_obs)
 
             if self.all_args.save_gifs:        
                 frames = []
@@ -300,7 +303,7 @@ class PatrollingRunner(Runner):
                 combined_obs, render_rewards, dones, infos = render_env.step(actions_env)
 
                 # Split the combined observations into obs and share_obs, then combine across environments.
-                obs, share_obs = self._process_combined_obs(combined_obs)
+                obs, share_obs, available_actions = self._process_combined_obs(combined_obs)
 
                 if not np.any(dones):
                     if ipython_clear_output:
@@ -325,8 +328,10 @@ class PatrollingRunner(Runner):
         ''' Process the combined observations into obs and share_obs. '''
         obs = []
         share_obs = []
+        available_actions = []
         for o in combined_obs:
             obs.append(o["obs"])
             share_obs.append(o["share_obs"])
+            available_actions.append(o["available_actions"])
 
-        return np.array(obs), np.array(share_obs)
+        return np.array(obs), np.array(share_obs), np.array(available_actions)

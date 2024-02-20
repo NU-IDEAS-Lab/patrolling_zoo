@@ -151,7 +151,7 @@ class PatrollingRunner(Runner):
                 combined_obs, rewards, dones, infos = self.envs.step(action_metadata)
 
                 # Process information after taking the step.
-                obs, share_obs = self._process_combined_obs(combined_obs)
+                obs, share_obs, available_actions = self._process_combined_obs(combined_obs)
                 for i in range(self.n_rollout_threads):
                     for a in range(self.num_agents):
                         # Pull agent ready state from the info message.
@@ -172,7 +172,7 @@ class PatrollingRunner(Runner):
                             tb_value_preds[i, a] = values[i][a]
 
                 # Combine into single data structure.
-                data = obs, share_obs, rewardSums, dones, infos, tb_value_preds, tb_actions, tb_action_log_probs, tb_rnn_states, tb_rnn_states_critic, delta_steps
+                data = obs, share_obs, rewardSums, dones, infos, tb_value_preds, tb_actions, tb_action_log_probs, tb_rnn_states, tb_rnn_states_critic, delta_steps, available_actions
                 
                 # Insert data into buffer
                 data_critic_prev = self.insert(data, data_critic_prev)
@@ -248,7 +248,7 @@ class PatrollingRunner(Runner):
         combined_obs = self.envs.reset()
 
         # Split the combined observations into obs and share_obs, then combine across environments.
-        obs, share_obs = self._process_combined_obs(combined_obs)
+        obs, share_obs, available_actions = self._process_combined_obs(combined_obs)
 
         if self.use_centralized_V:
             # c_share_obs = np.repeat(share_obs, self.num_agents, axis=1)
@@ -256,6 +256,7 @@ class PatrollingRunner(Runner):
             # self.critic_buffer.share_obs[0] = c_share_obs.copy()
             self.critic_buffer.share_obs[0] = share_obs.copy()
             self.critic_buffer.obs[0] = obs.copy()
+            self.critic_buffer.available_actions[0] = available_actions.copy()
 
         # If using asynchronous skipping, warm-start the buffer for each rollout thread for each agent.
         if self.all_args.skip_steps_async:
@@ -263,12 +264,14 @@ class PatrollingRunner(Runner):
                 for agent_id in range(self.num_agents):
                     self.buffer[i][agent_id].share_obs[0] = share_obs[i][agent_id].copy()
                     self.buffer[i][agent_id].obs[0] = obs[i, agent_id].copy()
+                    self.buffer[i][agent_id].available_actions[0] = available_actions[i, agent_id].copy()
         
         # Otherwise, warm-start the buffer for each agent.
         else:
             for agent_id in range(self.num_agents):
                 self.buffer[agent_id].share_obs[0] = share_obs.copy()
                 self.buffer[agent_id].obs[0] = obs[:, agent_id].copy()
+                self.buffer[agent_id].available_actions[0] = available_actions[:, agent_id].copy()
 
     @torch.no_grad()
     def collect(self, step):
@@ -358,7 +361,7 @@ class PatrollingRunner(Runner):
     def insert(self, data, data_critic):
 
         # Split data.
-        obs, share_obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic, delta_steps = data
+        obs, share_obs, rewards, dones, infos, values, actions, action_log_probs, rnn_states, rnn_states_critic, delta_steps, available_actions = data
 
         # Create a temporary data structure for the critic data.
         # By default, the critic will use the previous data for each agent,
@@ -370,7 +373,7 @@ class PatrollingRunner(Runner):
             c_insert_required = False
             
             # Split data.
-            c_obs, c_share_obs, c_rewards, c_dones, c_infos, c_values, c_actions, c_action_log_probs, c_rnn_states, c_rnn_states_critic, c_delta_steps = data_critic
+            c_obs, c_share_obs, c_rewards, c_dones, c_infos, c_values, c_actions, c_action_log_probs, c_rnn_states, c_rnn_states_critic, c_delta_steps, c_available_actions = data_critic
 
             # Set up the critic shared observation.
             # c_share_obs = np.repeat(share_obs[:, np.newaxis, :], self.num_agents, axis=1)
@@ -420,7 +423,8 @@ class PatrollingRunner(Runner):
                             masks = masks[i, agent_id],
                             deltaSteps = delta_steps[i, agent_id],
                             criticStep = np.array(self.critic_buffer.step) if self.use_centralized_V else np.array(self.buffer[i][agent_id].step),
-                            no_reset = True
+                            no_reset = True,
+                            available_actions = available_actions[i, agent_id]
                         )
                     
                     # If we are using a shared critic, update the critic data.
@@ -479,7 +483,8 @@ class PatrollingRunner(Runner):
                     value_preds = values[:, agent_id],
                     rewards = rewards[:, agent_id],
                     masks = masks[:, agent_id],
-                    deltaSteps = delta_steps[:, agent_id]
+                    deltaSteps = delta_steps[:, agent_id],
+                    available_actions = available_actions[:, agent_id]
                 )
                 
                 # If we are using a shared critic, update the critic data.
@@ -528,7 +533,7 @@ class PatrollingRunner(Runner):
                 c_delta_steps += 1
 
             # Update the previous data.
-            data_critic = c_obs, c_share_obs, c_rewards, c_dones, c_infos, c_values, c_actions, c_action_log_probs, c_rnn_states, c_rnn_states_critic, c_delta_steps
+            data_critic = c_obs, c_share_obs, c_rewards, c_dones, c_infos, c_values, c_actions, c_action_log_probs, c_rnn_states, c_rnn_states_critic, c_delta_steps, c_available_actions
         
         return data_critic
 
@@ -993,7 +998,9 @@ class PatrollingRunner(Runner):
         ''' Process the combined observations into obs and share_obs. '''
         obs = []
         share_obs = []
+        available_actions = []
         for o in combined_obs:
             obs.append(o["obs"])
             share_obs.append(o["share_obs"])
-        return np.array(obs), np.array(share_obs)
+            available_actions.append(o["available_actions"])
+        return np.array(obs), np.array(share_obs), np.array(available_actions)

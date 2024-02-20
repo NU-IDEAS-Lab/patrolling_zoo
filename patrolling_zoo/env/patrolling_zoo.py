@@ -113,11 +113,11 @@ class parallel_env(ParallelEnv):
 
         # Create the action space.
         if self.action_method == "full":
-            self.action_spaces = {agent: spaces.Discrete(len(self.pg.graph)) for agent in self.possible_agents}
+            self.action_spaces = spaces.Dict({agent: spaces.Discrete(len(self.pg.graph)) for agent in self.possible_agents})
         elif self.action_method == "neighbors":
             # we subtract 1 since for some reason the self-loop increases degree by 2
             maxDegree = max([self.pg.graph.degree(node) - 1 for node in self.pg.graph.nodes])
-            self.action_spaces = {agent: spaces.Discrete(maxDegree) for agent in self.possible_agents}
+            self.action_spaces = spaces.Dict({agent: spaces.Discrete(maxDegree) for agent in self.possible_agents})
 
         # The state space is a complete observation of the environment.
         # This is not part of the standard PettingZoo API, but is useful for centralized training.
@@ -273,7 +273,8 @@ class parallel_env(ParallelEnv):
                 "ready": True
             } for agent in self.agents
         }
-        return observation, info
+        availableActions = {agent: self._getAvailableActions(agent) for agent in self.agents}
+        return observation, info, availableActions
 
 
     def render(self, figsize=(12, 9)):
@@ -848,7 +849,9 @@ class parallel_env(ParallelEnv):
 
         done_dict = {agent: self.dones[agent] for agent in self.possible_agents}
 
-        return obs_dict, reward_dict, done_dict, truncated_dict, info_dict
+        available_action_dict = {agent: self._getAvailableActions(agent) for agent in self.possible_agents}
+
+        return obs_dict, reward_dict, done_dict, truncated_dict, info_dict, available_action_dict
 
 
     def onNodeVisit(self, node, timeStamp):
@@ -954,6 +957,20 @@ class parallel_env(ParallelEnv):
             minimum = np.min(x)
         return a + (x - minimum) * (b - a) / (maximum - minimum + eps)
 
+
+    def _getAvailableActions(self, agent):
+        ''' Returns the available actions for the given agent. '''
+
+        if agent.edge == None:
+            # All actions available.
+            actionMap = np.ones(self.action_space(agent).n, dtype=np.float32)
+            return actionMap
+        else:
+            # Only the last action available (as it is still incomplete).
+            actionMap = np.zeros(self.action_space(agent).n, dtype=np.float32)
+            actionMap[agent.lastAction] = 1.0
+            return actionMap
+        
 
     def observe_with_communication(self, agent):
         ''' Adds communicated states to the agent's observation. '''
