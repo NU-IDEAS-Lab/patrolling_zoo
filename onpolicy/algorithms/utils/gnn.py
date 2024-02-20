@@ -1,7 +1,7 @@
 import torch
 from torch_geometric.nn import MessagePassing
 from torch_geometric.nn import AttentionalAggregation
-from torch_geometric.nn import GCNConv
+from torch_geometric.nn import GCNConv, TransformerConv
 import torch.nn as nn
 
 from onpolicy.algorithms.utils.mlp import MLPLayer
@@ -24,17 +24,33 @@ class GNNBase(nn.Module):
         self.convLayer = nn.ModuleList()
 
         for i in range(layers):
-            self.convLayer.append(GCNConv(layerSizes[i], layerSizes[i + 1], add_self_loops=False))
+            self.convLayer.append(GCNConv(
+                layerSizes[i],
+                layerSizes[i + 1],
+                add_self_loops=False
+            ))
+            # self.convLayer.append(TransformerConv(
+            #     layerSizes[i],
+            #     layerSizes[i + 1],
+            #     heads=3,
+            #     concat=False,
+            #     beta=False,
+            #     dropout=0.0,
+            #     edge_dim=edge_dim,
+            #     bias=True,
+            #     root_weight=True
+            # ))
 
     def forward(self, x: torch.Tensor, edge_attr: torch.Tensor, edge_index: torch.Tensor, node_index=None) -> torch.Tensor:
         # Perform embedding
         x = self.embedLayer(x, edge_attr, edge_index)
-        # if node_index is not None:
-        #     x = x[node_index]
 
+        # Perform convolution.
         for layer in self.convLayer:
             x = layer(x, edge_index, edge_weight=edge_attr)
+            # x = layer(x, edge_index, edge_attr=edge_attr)
             x = self.activation(x)
+        
         return x
     
 

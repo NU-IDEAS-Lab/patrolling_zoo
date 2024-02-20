@@ -106,6 +106,9 @@ class R_Actor(nn.Module):
             if hasattr(graphs, "agent_idx"):
                 agent_idx = torch.from_numpy(np.array(graphs.agent_idx)).reshape(-1, 1).to(self.device)
                 actor_features = self.base.gatherNodeFeats(actor_features, agent_idx)
+
+            # actor_features = actor_features.sum(dim=1) #global pooling
+
             # if hasattr(graphs, "agent_mask"):
             #     agent_masks = np.array(graphs.agent_mask)
             #     agent_masks = agent_masks.reshape(obs.shape[0], -1)
@@ -174,6 +177,9 @@ class R_Actor(nn.Module):
             if hasattr(graphs, "agent_idx"):
                 agent_idx = torch.from_numpy(np.array(graphs.agent_idx)).reshape(-1, 1).to(self.device)
                 actor_features = self.base.gatherNodeFeats(actor_features, agent_idx)
+
+            # actor_features = actor_features.sum(dim=1) #global pooling
+
             # if hasattr(graphs, "agent_mask"):
             #     agent_masks = np.array(graphs.agent_mask)
             #     agent_masks = agent_masks.reshape(obs.shape[0], -1)
