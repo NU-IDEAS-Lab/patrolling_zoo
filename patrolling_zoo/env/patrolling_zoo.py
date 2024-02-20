@@ -211,7 +211,7 @@ class parallel_env(ParallelEnv):
             state_space["graph"] = spaces.Graph(
                 node_space = spaces.Box(
                     # ID, nodeType,visitTime
-                    low = np.array([-np.inf, -np.inf, 0.0], dtype=np.float32),
+                    low = np.array([0.0, -np.inf, 0.0], dtype=np.float32),
                     high = np.array([np.inf, np.inf, np.inf], dtype=np.float32),
                 ),
                 edge_space = spaces.Box(
@@ -604,7 +604,7 @@ class parallel_env(ParallelEnv):
                     pos = a.position,
                     id = -1 - a.id,
                     # id = -1.0 if a == agent else -2.0,
-                    nodeType = -1,
+                    nodeType = 1,
                     visitTime = 0.0,
                     idlenessTime = 0.0
                 )
