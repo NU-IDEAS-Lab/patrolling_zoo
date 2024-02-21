@@ -39,7 +39,8 @@ class R_Actor(nn.Module):
         self.tpdv = dict(dtype=torch.float32, device=device)
         self.device = device
 
-
+        post_base_dim = self.hidden_size
+        
         if self._use_gnn:
             # Split up the graph and non-graph space.
             obs_space_graph = get_graph_obs_space(obs_space)
@@ -54,16 +55,19 @@ class R_Actor(nn.Module):
                 phi_dim=256,
                 args=args
             )
+
+            input_dim = self.hidden_size + get_shape_from_obs_space(obs_space_nongraph)[0]
             if self._use_gnn_mlp:
-                input_dim = self.hidden_size + get_shape_from_obs_space(obs_space_nongraph)[0]
                 self.mlp0 = MLPLayer(input_dim=input_dim, output_dim=self.hidden_size, hidden_size=2048, layer_N=3, use_orthogonal=args.use_orthogonal, use_ReLU=args.use_ReLU)
+            else:
+                post_base_dim = input_dim
         else:
             obs_shape = get_shape_from_obs_space(obs_space)
             base = CNNBase if len(obs_shape) == 3 else MLPBase
             self.base = base(args, obs_shape)
 
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
-            self.rnn = RNNLayer(self.hidden_size, self.hidden_size, self._recurrent_N, self._use_orthogonal)
+            self.rnn = RNNLayer(post_base_dim, self.hidden_size, self._recurrent_N, self._use_orthogonal)
 
         self.act = ACTLayer(action_space, self.hidden_size, self._use_orthogonal, self._gain)
 
