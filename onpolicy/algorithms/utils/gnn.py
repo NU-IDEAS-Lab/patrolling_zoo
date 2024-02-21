@@ -236,7 +236,7 @@ class EmbedConv(MessagePassing):
         return self.propagate(edge_index=edge_index, x=x, edge_attr=edge_attr)
 
     def message(self, x_j: Tensor, edge_attr: OptTensor):
-        node_feat_idx = [0, 2]
+        node_feat_idx = [0, 2, 3, 4]
         node_feat_j = x_j[:, node_feat_idx]
         # dont forget to convert to torch.LongTensor
         entity_type_j = x_j[:, 1].long()

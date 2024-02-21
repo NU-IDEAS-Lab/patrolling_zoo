@@ -31,7 +31,7 @@ class PatrolAgent():
         self.position = self.startingPosition
         self.speed = self.startingSpeed
         self.edge = None
-        self.lastAction = -1.0
+        self.currentAction = -1.0
         self.lastNode = self.startingNode
         self.lastNodeVisited = None
      
@@ -211,9 +211,9 @@ class parallel_env(ParallelEnv):
         if observe_method in ["pyg"]:
             state_space["graph"] = spaces.Graph(
                 node_space = spaces.Box(
-                    # ID, nodeType,visitTime
-                    low = np.array([0.0, -np.inf, 0.0], dtype=np.float32),
-                    high = np.array([np.inf, np.inf, np.inf], dtype=np.float32),
+                    # ID, nodeType,visitTime, lastNode, currentAction
+                    low = np.array([0.0, -np.inf, 0.0, -1.0, -1.0], dtype=np.float32),
+                    high = np.array([np.inf, np.inf, np.inf, np.inf, np.inf], dtype=np.float32),
                 ),
                 edge_space = spaces.Box(
                     low = np.array([0.0], dtype=np.float32),
@@ -226,7 +226,7 @@ class parallel_env(ParallelEnv):
                 high = self.pg.graph.number_of_nodes(),
                 dtype=np.int32
             )
-            state_space["lastAction"] = spaces.Box(
+            state_space["currentAction"] = spaces.Box(
                 low = -1.0,
                 high = np.inf,
                 dtype=np.float32
@@ -600,8 +600,8 @@ class parallel_env(ParallelEnv):
             minIdleness = self.step_count - max(lastVisits.values())
             allSame = maxIdleness == minIdleness
 
-            # Add normalized node idleness times as attributes in g.
             for node in g.nodes:
+                # Add normalized node idleness times as attributes in g.
                 if allSame:
                     g.nodes[node]["idlenessTime"] = 1.0
                 else:
@@ -610,6 +610,10 @@ class parallel_env(ParallelEnv):
                         minimum = minIdleness,
                         maximum = maxIdleness
                     )
+                
+                # Add dummy lastNode and currentAction values as attributes in g.
+                g.nodes[node]["lastNode"] = -1.0
+                g.nodes[node]["currentAction"] = -1.0
 
             # Traverse through all agents and add their positions as new nodes to g
             for a in self.agents:
@@ -622,7 +626,9 @@ class parallel_env(ParallelEnv):
                     # id = -1.0 if a == agent else -2.0,
                     nodeType = 1,
                     visitTime = 0.0,
-                    idlenessTime = 0.0
+                    idlenessTime = 0.0,
+                    lastNode = a.lastNode,
+                    currentAction = a.currentAction
                 )
 
                 # Check if the agent has an edge that it is currently on
@@ -658,7 +664,11 @@ class parallel_env(ParallelEnv):
             subgraphNodes = list(g.nodes)
 
             # Convert g to PyG
-            data = from_networkx(subgraph, group_node_attrs=["id", "nodeType", "idlenessTime"], group_edge_attrs=["weight"])
+            data = from_networkx(
+                subgraph,
+                group_node_attrs=["id", "nodeType", "idlenessTime", "lastNode", "currentAction"],
+                group_edge_attrs=["weight"]
+            )
             data.x = data.x.float()
             data.edge_attr = data.edge_attr.float()
 
@@ -677,13 +687,17 @@ class parallel_env(ParallelEnv):
 
             # Additionally, add the last node and last action of the agent to the observation.
             obs["lastNode"] = agent.lastNode
-            obs["lastAction"] = agent.lastAction
+            obs["currentAction"] = agent.currentAction
         
         if (type(obs) == dict and obs == {}) or (type(obs) != dict and len(obs) < 1):
             raise ValueError(f"Invalid observation method {self.observe_method}")
         
+
         # Check if type of any values in obs is a graph.
         if type(obs) == dict:
+            # Ensure dictionary ordering.
+            obs = dict(sorted(obs.items()))
+
             typeSet = set([type(v) for v in obs.values()])
             if Data in typeSet:
                 # If so, we want the observation to be a single-element array of objects.
@@ -768,7 +782,7 @@ class parallel_env(ParallelEnv):
                     raise ValueError(f"Invalid action method {self.action_method}")
                 
                 # Store this as the agent's last action.
-                agent.lastAction = action
+                agent.currentAction = action
                 
                 # Provide penalty for visiting the same node twice in a row.
                 # if dstNode == agent.lastNodeVisited:
@@ -793,6 +807,7 @@ class parallel_env(ParallelEnv):
 
                             agent.lastNodeVisited = nextNode
                             if nextNode == dstNode:
+                                agent.currentAction = -1.0
                                 info_dict[agent]["ready"] = True
             
                     # The agent has exceeded its movement budget for this step.
@@ -970,9 +985,9 @@ class parallel_env(ParallelEnv):
             actionMap = np.ones(self.action_space(agent).n, dtype=np.float32)
             return actionMap
         else:
-            # Only the last action available (as it is still incomplete).
+            # Only the current action available (as it is still incomplete).
             actionMap = np.zeros(self.action_space(agent).n, dtype=np.float32)
-            actionMap[agent.lastAction] = 1.0
+            actionMap[agent.currentAction] = 1.0
             return actionMap
         
 
