@@ -111,12 +111,12 @@ class PatrollingEnv(object):
         self.ppoSteps = 0
         self.prevAction = {a: None for a in self.env.possible_agents}
         self.deltaSteps = {a: 0 for a in self.env.possible_agents}
-        obs, _, available_actions  = self.env.reset()
+        obs, _  = self.env.reset()
 
         combined_obs = {
             "obs": self._obs_wrapper(obs),
             "share_obs": self._share_obs_wrapper(self.env.state_all()),
-            "available_actions": self._available_actions_wrapper(available_actions)
+            "available_actions": self._available_actions_wrapper(self.env.available_actions)
         }
 
         return combined_obs
@@ -156,7 +156,7 @@ class PatrollingEnv(object):
             lastStep = last_step or (self.args.skip_steps_sync and self.ppoSteps >= self.args.episode_length - 1)
             
             # Take a step.
-            obs, reward, done, trunc, info, available_actions = self.env.step(actionPz, lastStep=lastStep)
+            obs, reward, done, trunc, info = self.env.step(actionPz, lastStep=lastStep)
 
             # Convert the done dict to a list.
             done = [done[a] for a in self.env.possible_agents]
@@ -169,7 +169,7 @@ class PatrollingEnv(object):
             combined_obs = {
                 "obs": self._obs_wrapper(obs),
                 "share_obs": self._share_obs_wrapper(self.env.state_all()),
-                "available_actions": self._available_actions_wrapper(available_actions)
+                "available_actions": self._available_actions_wrapper(self.env.available_actions)
             }
 
             # Increase reward.

@@ -266,6 +266,9 @@ class parallel_env(ParallelEnv):
         self.step_count = 0
         self.dones = dict.fromkeys(self.agents, False)
 
+        # Set available actions.
+        self.available_actions = {agent: self._getAvailableActions(agent) for agent in self.agents}
+
         # Return the initial observation.
         observation = {agent: self.observe(agent) for agent in self.agents}
         info = {
@@ -273,8 +276,8 @@ class parallel_env(ParallelEnv):
                 "ready": True
             } for agent in self.agents
         }
-        availableActions = {agent: self._getAvailableActions(agent) for agent in self.agents}
-        return observation, info, availableActions
+
+        return observation, info
 
 
     def render(self, figsize=(12, 9)):
@@ -849,9 +852,10 @@ class parallel_env(ParallelEnv):
 
         done_dict = {agent: self.dones[agent] for agent in self.possible_agents}
 
-        available_action_dict = {agent: self._getAvailableActions(agent) for agent in self.possible_agents}
+        # Set available actions.
+        self.available_actions = {agent: self._getAvailableActions(agent) for agent in self.possible_agents}
 
-        return obs_dict, reward_dict, done_dict, truncated_dict, info_dict, available_action_dict
+        return obs_dict, reward_dict, done_dict, truncated_dict, info_dict
 
 
     def onNodeVisit(self, node, timeStamp):
