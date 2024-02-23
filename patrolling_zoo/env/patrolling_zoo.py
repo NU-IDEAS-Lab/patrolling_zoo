@@ -642,8 +642,14 @@ class parallel_env(ParallelEnv):
                 g.nodes[node]["lastNode"] = -1.0
                 g.nodes[node]["currentAction"] = -1.0
 
+            # Ensure that we add a node for the current agent, even if it's dead.
+            if agent not in agents:
+                agentsPlusEgo = agents + [agent]
+            else:
+                agentsPlusEgo = agents
+
             # Traverse through all visible agents and add their positions as new nodes to g
-            for a in agents:
+            for a in agentsPlusEgo:
                 # To avoid node ID conflicts, generate a unique node ID
                 agent_node_id = f"agent_{a.id}_pos"
                 g.add_node(
@@ -655,7 +661,7 @@ class parallel_env(ParallelEnv):
                     visitTime = 0.0,
                     idlenessTime = 0.0,
                     lastNode = a.lastNode,
-                    currentAction = a.currentAction
+                    currentAction = a.currentAction if a in agents else -1.0
                 )
 
                 # Check if the agent has an edge that it is currently on
