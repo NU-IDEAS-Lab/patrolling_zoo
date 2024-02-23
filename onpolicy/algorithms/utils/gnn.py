@@ -64,9 +64,11 @@ class GNNBase(nn.Module):
         # x = self.embedLayer(x, edge_attr, edge_index)
         x = self.embedLayer(x, edge_index, edge_attr=edge_attr)
 
+        edge_weight = edge_attr[:, 0]
+
         # Perform convolution.
         for layer in self.convLayer:
-            x = layer(x, edge_index, edge_weight=edge_attr)
+            x = layer(x, edge_index, edge_weight=edge_weight)
             # x = layer(x, edge_index, edge_attr=edge_attr)
             x = self.activation(x)
         
