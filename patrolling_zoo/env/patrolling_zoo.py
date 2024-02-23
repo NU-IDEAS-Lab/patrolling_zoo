@@ -53,6 +53,7 @@ class parallel_env(ParallelEnv):
                  alpha = 10.0,
                  beta = 100.0,
                  action_method = "full",
+                 action_full_max_nodes = 40,
                  action_neighbors_max_degree = 15,
                  reward_method_terminal = "average",
                  observation_radius = np.inf,
@@ -87,6 +88,7 @@ class parallel_env(ParallelEnv):
         self.max_cycles = max_cycles
         self.comms_model = comms_model
         self.action_method = action_method
+        self.action_full_max_nodes = action_full_max_nodes
         self.action_neighbors_max_degree = action_neighbors_max_degree
         self.reward_method_terminal = reward_method_terminal
         self.observe_method = observe_method
@@ -131,10 +133,13 @@ class parallel_env(ParallelEnv):
     def _buildActionSpace(self, action_method):
         ''' Creates a gym.spaces.* object representing the action space. '''
 
-        if self.action_method == "full":
-            return spaces.Discrete(len(self.pg.graph))
+        if action_method == "full":
+            if self.action_full_max_nodes < len(self.pg.graph):
+                raise ValueError("The action space is smaller than the graph size.")
+            maxNodes = self.action_full_max_nodes if self.action_full_max_nodes > 0 else len(self.pg.graph)
+            return spaces.Discrete(maxNodes)
         
-        elif self.action_method == "neighbors":
+        elif action_method == "neighbors":
             # we subtract 1 since for some reason the self-loop increases degree by 2
             # maxDegree = max([self.pg.graph.degree(node) - 1 for node in self.pg.graph.nodes])
             # maxDegree = max([self.pg.graph.degree(node) for node in self.pg.graph.nodes])
@@ -1018,13 +1023,15 @@ class parallel_env(ParallelEnv):
         if self.action_method == "full":
             if agent.edge == None:
                 # All actions available.
-                actionMap = np.ones(self.action_space(agent).n, dtype=np.float32)
+                actionMap = np.zeros(self.action_space(agent).n, dtype=np.float32)
+                actionMap[:self.pg.graph.number_of_nodes()] = 1.0
                 return actionMap
             else:
                 # Only the current action available (as it is still incomplete).
                 actionMap = np.zeros(self.action_space(agent).n, dtype=np.float32)
                 actionMap[agent.currentAction] = 1.0
                 return actionMap
+        
         elif self.action_method == "neighbors":
             if agent.edge == None:
                 # All neighbors of the current node are available.
