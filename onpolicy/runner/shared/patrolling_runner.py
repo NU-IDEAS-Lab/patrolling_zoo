@@ -290,7 +290,8 @@ class PatrollingRunner(Runner):
                     np.concatenate(obs),
                     np.concatenate(rnn_states),
                     np.concatenate(masks),
-                    deterministic=True
+                    deterministic=True,
+                    available_actions=np.concatenate(available_actions)
                 )
 
                 # [n_envs*n_agents, ...] -> [n_envs, n_agents, ...]
