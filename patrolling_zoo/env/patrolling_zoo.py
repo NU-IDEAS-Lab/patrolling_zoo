@@ -642,8 +642,8 @@ class parallel_env(ParallelEnv):
                 g.nodes[node]["lastNode"] = -1.0
                 g.nodes[node]["currentAction"] = -1.0
 
-            # Traverse through all agents and add their positions as new nodes to g
-            for a in self.agents:
+            # Traverse through all visible agents and add their positions as new nodes to g
+            for a in agents:
                 # To avoid node ID conflicts, generate a unique node ID
                 agent_node_id = f"agent_{a.id}_pos"
                 g.add_node(
