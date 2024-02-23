@@ -116,7 +116,8 @@ class parallel_env(ParallelEnv):
             self.action_spaces = spaces.Dict({agent: spaces.Discrete(len(self.pg.graph)) for agent in self.possible_agents})
         elif self.action_method == "neighbors":
             # we subtract 1 since for some reason the self-loop increases degree by 2
-            maxDegree = max([self.pg.graph.degree(node) - 1 for node in self.pg.graph.nodes])
+            # maxDegree = max([self.pg.graph.degree(node) - 1 for node in self.pg.graph.nodes])
+            maxDegree = max([self.pg.graph.degree(node) for node in self.pg.graph.nodes])
             self.action_spaces = spaces.Dict({agent: spaces.Discrete(maxDegree) for agent in self.possible_agents})
 
         # The state space is a complete observation of the environment.
@@ -772,10 +773,13 @@ class parallel_env(ParallelEnv):
                 # Interpret the action using the "neighbors" method.
                 elif self.action_method == "neighbors":
                     if agent.edge == None:
-                        action = action % (self.pg.graph.degree(agent.lastNode) - 1) #subtract 1 to deal with self-loops
+                        if action < self.pg.graph.degree(agent.lastNode):
+                            raise ValueError(f"Invalid action {action} for agent {agent.name}")
                         dstNode = list(self.pg.graph.neighbors(agent.lastNode))[action]
                     else:
-                        action = action % 2 #only 2 actions are possible when on an edge
+                        if action != agent.currentAction:
+                            # We cannot turn around!
+                            raise ValueError(f"Invalid action {action} for agent {agent.name}")
                         dstNode = agent.edge[action]
                 
                 else:
@@ -980,15 +984,26 @@ class parallel_env(ParallelEnv):
     def _getAvailableActions(self, agent):
         ''' Returns the available actions for the given agent. '''
 
-        if agent.edge == None:
-            # All actions available.
-            actionMap = np.ones(self.action_space(agent).n, dtype=np.float32)
-            return actionMap
-        else:
-            # Only the current action available (as it is still incomplete).
-            actionMap = np.zeros(self.action_space(agent).n, dtype=np.float32)
-            actionMap[agent.currentAction] = 1.0
-            return actionMap
+        if self.action_method == "full":
+            if agent.edge == None:
+                # All actions available.
+                actionMap = np.ones(self.action_space(agent).n, dtype=np.float32)
+                return actionMap
+            else:
+                # Only the current action available (as it is still incomplete).
+                actionMap = np.zeros(self.action_space(agent).n, dtype=np.float32)
+                actionMap[agent.currentAction] = 1.0
+                return actionMap
+        elif self.action_method == "neighbors":
+            if agent.edge == None:
+                # Can go to any neighbor.
+                actionMap = np.ones(self.action_space(agent).n, dtype=np.float32)
+                return actionMap
+            else:
+                # Only the current action available (as it is still incomplete).
+                actionMap = np.zeros(self.action_space(agent).n, dtype=np.float32)
+                actionMap[agent.currentAction] = 1.0
+                return actionMap
         
 
     def observe_with_communication(self, agent):
