@@ -232,21 +232,30 @@ class parallel_env(ParallelEnv):
                     low = np.array([0.0, -1.0], dtype=np.float32),
                     high = np.array([np.inf, np.inf], dtype=np.float32),
                 )
+                node_space = spaces.Box(
+                    # nodeType,visitTime
+                    low = np.array([-np.inf, 0.0], dtype=np.float32),
+                    high = np.array([np.inf, np.inf], dtype=np.float32),
+                )
+                node_type_idx = 0
             else:
                 edge_space = spaces.Box(
                     # weight
                     low = np.array([0.0], dtype=np.float32),
                     high = np.array([np.inf], dtype=np.float32),
                 )
-
-            state_space["graph"] = spaces.Graph(
                 node_space = spaces.Box(
                     # ID, nodeType,visitTime, lastNode, currentAction
                     low = np.array([0.0, -np.inf, 0.0, -1.0, -1.0], dtype=np.float32),
                     high = np.array([np.inf, np.inf, np.inf, np.inf, np.inf], dtype=np.float32),
-                ),
+                )
+                node_type_idx = 1
+
+            state_space["graph"] = spaces.Graph(
+                node_space = node_space,
                 edge_space = edge_space
             )
+            state_space["graph"].node_type_idx = node_type_idx
 
             state_space["lastNode"] = spaces.Box(
                 low = 0,
@@ -712,13 +721,15 @@ class parallel_env(ParallelEnv):
 
             if self.action_method == "neighbors":
                 edge_attrs = ["weight", "neighborIndex"]
+                node_attrs = ["nodeType", "idlenessTime"]
             else:
                 edge_attrs = ["weight"]
+                node_attrs = ["id", "nodeType", "idlenessTime", "lastNode", "currentAction"]
 
             # Convert g to PyG
             data = from_networkx(
                 subgraph,
-                group_node_attrs=["id", "nodeType", "idlenessTime", "lastNode", "currentAction"],
+                group_node_attrs=node_attrs,
                 group_edge_attrs=edge_attrs
             )
             data.x = data.x.float()

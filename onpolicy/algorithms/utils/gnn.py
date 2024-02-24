@@ -17,7 +17,7 @@ from torch import Tensor
 class GNNBase(nn.Module):
     ''' Base GNN module. '''
 
-    def __init__(self, layers, node_dim: int, edge_dim: int, output_dim: int, phi_dim: int, args):
+    def __init__(self, layers, node_dim: int, edge_dim: int, output_dim: int, phi_dim: int, args, node_type_idx):
         super(GNNBase, self).__init__()
 
         self.activation = [nn.Tanh(), nn.ReLU()][args.use_ReLU]
@@ -37,7 +37,8 @@ class GNNBase(nn.Module):
             use_ReLU=args.use_ReLU,
             use_layerNorm=False,
             add_self_loop=False,
-            edge_dim=edge_dim
+            edge_dim=edge_dim,
+            node_type_idx=node_type_idx
         )
         self.convLayer = nn.ModuleList()
 
@@ -166,6 +167,7 @@ class EmbedConv(MessagePassing):
         use_layerNorm: bool,
         add_self_loop: bool,
         edge_dim: int = 0,
+        node_type_idx = None
     ):
         """
             NOTE: Adding this class from https://github.com/nsidn98/InforMARL/blob/main/onpolicy/algorithms/utils/gnn.py
@@ -207,6 +209,7 @@ class EmbedConv(MessagePassing):
         layer_norm = [nn.Identity(), nn.LayerNorm(hidden_size)][use_layerNorm]
         init_method = [nn.init.xavier_uniform_, nn.init.orthogonal_][use_orthogonal]
         gain = nn.init.calculate_gain(["tanh", "relu"][use_ReLU])
+        self.node_type_idx = node_type_idx
 
         def init_(m):
             return init(m, init_method, lambda x: nn.init.constant_(x, 0), gain=gain)
@@ -238,10 +241,11 @@ class EmbedConv(MessagePassing):
         return self.propagate(edge_index=edge_index, x=x, edge_attr=edge_attr)
 
     def message(self, x_j: Tensor, edge_attr: OptTensor):
-        node_feat_idx = [0, 2, 3, 4]
+        all_idx = torch.arange(0, x_j.shape[1])
+        node_feat_idx = all_idx[all_idx != self.node_type_idx]
         node_feat_j = x_j[:, node_feat_idx]
         # dont forget to convert to torch.LongTensor
-        entity_type_j = x_j[:, 1].long()
+        entity_type_j = x_j[:, self.node_type_idx].long()
         entity_embed_j = self.entity_embed(entity_type_j)
         if edge_attr is not None:
             node_feat = torch.cat([node_feat_j, entity_embed_j, edge_attr], dim=1)
