@@ -53,7 +53,8 @@ class R_Actor(nn.Module):
                 edge_dim=get_shape_from_obs_space(obs_space_graph.edge_space)[0],
                 output_dim=self.hidden_size,
                 phi_dim=256,
-                args=args
+                args=args,
+                node_type_idx=obs_space_graph.node_type_idx
             )
 
             input_dim = self.hidden_size + get_shape_from_obs_space(obs_space_nongraph)[0]
