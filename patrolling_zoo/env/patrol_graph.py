@@ -191,13 +191,46 @@ class PatrolGraph():
             origins.append(self.getNearestNode(pos))
         return origins
     
+    
     def _dist(self, pos1, pos2):
         ''' Calculates the Euclidean distance between two points. '''
 
         return np.sqrt(np.power(pos1[0] - pos2[0], 2) + np.power(pos1[1] - pos2[1], 2))
+
 
     def getPyTorchGeometricGraph(self):
         ''' Returns a torch_geometric (PyG) graph object. '''
 
         from torch_geometric.utils.convert import from_networkx
         return from_networkx(self.graph, group_node_attrs=["pos", "visitTime"], group_edge_attrs=["weight"])
+
+
+    def exportToFile(self, filename):
+        ''' Exports to a file of the same format as `importFromFile`. '''
+
+        with open(filename, "w") as file:
+            # Write graph information.
+            file.write(f"{self.graphDimension}\n")
+            file.write(f"{self.widthPixels}\n")
+            file.write(f"{self.heightPixels}\n")
+            file.write(f"{self.resolution}\n")
+            file.write(f"{self.offsetX}\n")
+            file.write(f"{self.offsetY}\n")
+
+            # Write node data.
+            for i in range(self.graphDimension):
+                file.write("\n")
+                
+                # Write the node.
+                file.write(f"{i}\n")
+                file.write(f"{int((self.graph.nodes[i]['pos'][0] - self.offsetX) / self.resolution)}\n")
+                file.write(f"{int((self.graph.nodes[i]['pos'][1] - self.offsetY) / self.resolution)}\n")
+                
+                # Write edges.
+                numEdges = self.graph.degree[i]
+                file.write(f"{numEdges}\n")
+                for j in self.graph.neighbors(i):
+                    file.write(f"{j}\n")
+                    file.write("S\n")
+                    # Why do we convert to int first? Well, that's what the original patrolling_sim did...
+                    file.write(f"{int(round(self.graph.edges[i, j]['weight'] / self.resolution))}\n")
