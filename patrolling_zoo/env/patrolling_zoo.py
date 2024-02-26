@@ -243,7 +243,7 @@ class parallel_env(ParallelEnv):
                 # node_type_idx = 0
                 node_space = spaces.Box(
                     # ID, nodeType,visitTime, lastNode
-                    low = np.array([0.0, -np.inf, 0.0, -1.0, -1.0], dtype=np.float32),
+                    low = np.array([0.0, -np.inf, -1.0, -1.0, -1.0], dtype=np.float32),
                     high = np.array([np.inf, np.inf, np.inf, np.inf, np.inf], dtype=np.float32),
                 )
                 node_type_idx = 1
@@ -255,7 +255,7 @@ class parallel_env(ParallelEnv):
                 )
                 node_space = spaces.Box(
                     # ID, nodeType,visitTime, lastNode, currentAction
-                    low = np.array([0.0, -np.inf, 0.0, -1.0, -1.0], dtype=np.float32),
+                    low = np.array([0.0, -np.inf, -1.0, -1.0, -1.0], dtype=np.float32),
                     high = np.array([np.inf, np.inf, np.inf, np.inf, np.inf], dtype=np.float32),
                 )
                 node_type_idx = 1
@@ -640,7 +640,10 @@ class parallel_env(ParallelEnv):
         if observe_method in ["pyg"]:
             # Copy pg map to g
             g = deepcopy(self.pg.graph)
-            
+
+            # Assuming you have a list of visible vertices determined earlier in the code.
+            visible_vertices = [v for v in self.pg.graph.nodes if v in vertices]
+ 
             # Get a list of last visit times for each node.
             lastVisits = nx.get_node_attributes(g, 'visitTime')
             
@@ -648,6 +651,25 @@ class parallel_env(ParallelEnv):
             maxIdleness = self.step_count - min(lastVisits.values())
             minIdleness = self.step_count - max(lastVisits.values())
             allSame = maxIdleness == minIdleness
+
+            # # Initialize all node idleness times to -1 as default.
+            # for node in g.nodes:
+            #     g.nodes[node]["idlenessTime"] = -1.0  # Default for non-visible nodes
+        
+            #     # Add dummy lastNode and currentAction values as attributes in g for all nodes.
+            #     g.nodes[node]["lastNode"] = -1.0
+            #     g.nodes[node]["currentAction"] = -1.0
+
+            # for node in visible_vertices:
+            #     # Normalize idleness times for visible nodes
+            #     if allSame:
+            #         g.nodes[node]["idlenessTime"] = 1.0
+            #     else:
+            #         g.nodes[node]["idlenessTime"] = self._minMaxNormalize(
+            #             self.step_count - lastVisits.get(node, self.step_count),
+            #             minimum=minIdleness,
+            #             maximum=maxIdleness
+            #         )
 
             for node in g.nodes:
                 # Add normalized node idleness times as attributes in g.
@@ -863,6 +885,8 @@ class parallel_env(ParallelEnv):
                             if nextNode == dstNode:
                                 agent.currentAction = -1.0
                                 info_dict[agent]["ready"] = True
+                        # Agent reached the destination, assign a new speed from normal distribution
+                        agent.speed = np.random.normal(loc=agent.startingSpeed, scale=1.0)
             
                     # The agent has exceeded its movement budget for this step.
                     if stepSize <= 0.0:
