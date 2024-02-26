@@ -27,6 +27,7 @@ class GNNBase(nn.Module):
             node_dim - 1 + 2,
             output_dim,
             num_layers=2,
+            dropout=0.5
         )
 
 
