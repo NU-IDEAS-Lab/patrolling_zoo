@@ -964,12 +964,12 @@ class parallel_env(ParallelEnv):
         # Interpret the action using the "neighbors" method.
         elif self.action_method == "neighbors":
             if agent.edge == None:
-                if action > self.pg.graph.degree(agent.lastNode):
-                    raise ValueError(f"Invalid action {action} for agent {agent.name}")
+                if action >= self.pg.graph.degree(agent.lastNode):
+                    raise ValueError(f"Invalid action {action} for agent {agent.name}. Node {agent.lastNode} has only {self.pg.graph.degree(agent.lastNode)} neighbors.")
                 dstNode = list(self.pg.graph.neighbors(agent.lastNode))[action]
             else:
                 if action != agent.currentAction:
-                    raise ValueError(f"Invalid action {action} for agent {agent.name}")
+                    raise ValueError(f"Invalid action {action} for agent {agent.name}. Must complete action {agent.currentAction} first.")
                 dstNode = list(self.pg.graph.neighbors(agent.lastNode))[action]
         
         else:
