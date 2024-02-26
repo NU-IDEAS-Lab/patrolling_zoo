@@ -832,26 +832,9 @@ class parallel_env(ParallelEnv):
                 if not np.issubdtype(type(action), np.integer):
                     raise ValueError(f"Invalid action {action} of type {type(action)} provided.")
 
-                # Interpret the action using the "full" method.
-                if self.action_method == "full":
-                    if action not in self.pg.graph.nodes:
-                        raise ValueError(f"Invalid action {action} for agent {agent.name}")
-                    dstNode = action
-                
-                # Interpret the action using the "neighbors" method.
-                elif self.action_method == "neighbors":
-                    if agent.edge == None:
-                        if action > self.pg.graph.degree(agent.lastNode):
-                            raise ValueError(f"Invalid action {action} for agent {agent.name}")
-                        dstNode = list(self.pg.graph.neighbors(agent.lastNode))[action]
-                    else:
-                        if action != agent.currentAction:
-                            raise ValueError(f"Invalid action {action} for agent {agent.name}")
-                        dstNode = list(self.pg.graph.neighbors(agent.lastNode))[action]
-                
-                else:
-                    raise ValueError(f"Invalid action method {self.action_method}")
-                
+                # Get the destination node.
+                dstNode = self.getDestinationNode(agent, action)
+
                 # Store this as the agent's last action.
                 agent.currentAction = action
                 
@@ -967,6 +950,32 @@ class parallel_env(ParallelEnv):
         self.pg.setNodeVisitTime(node, timeStamp)
 
         return reward
+
+
+    def getDestinationNode(self, agent, action):
+        ''' Returns the destination node for the given agent and action. '''
+
+        # Interpret the action using the "full" method.
+        if self.action_method == "full":
+            if action not in self.pg.graph.nodes:
+                raise ValueError(f"Invalid action {action} for agent {agent.name}")
+            dstNode = action
+        
+        # Interpret the action using the "neighbors" method.
+        elif self.action_method == "neighbors":
+            if agent.edge == None:
+                if action > self.pg.graph.degree(agent.lastNode):
+                    raise ValueError(f"Invalid action {action} for agent {agent.name}")
+                dstNode = list(self.pg.graph.neighbors(agent.lastNode))[action]
+            else:
+                if action != agent.currentAction:
+                    raise ValueError(f"Invalid action {action} for agent {agent.name}")
+                dstNode = list(self.pg.graph.neighbors(agent.lastNode))[action]
+        
+        else:
+            raise ValueError(f"Invalid action method {self.action_method}")
+        
+        return dstNode
 
 
     def _moveTowardsNode(self, agent, node, stepSize):
