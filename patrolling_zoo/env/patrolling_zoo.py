@@ -66,6 +66,7 @@ class parallel_env(ParallelEnv):
                  attrition_times = [],
                  max_cycles: int = -1,
                  reward_interval: int = -1,
+                 regenerate_graph_on_reset: bool = False,
                  *args,
                  **kwargs):
         """
@@ -98,6 +99,7 @@ class parallel_env(ParallelEnv):
         self.attrition_random_probability = attrition_random_probability
         self.attrition_times = attrition_times
         self.attrition_min_agents = attrition_min_agents
+        self.regenerate_graph_on_reset = regenerate_graph_on_reset
 
         self.reward_interval = reward_interval
 
@@ -127,6 +129,7 @@ class parallel_env(ParallelEnv):
         obs_space = self._buildStateSpace(self.observe_method)
         self.observation_spaces = spaces.Dict({agent: obs_space for agent in self.possible_agents}) # type: ignore
 
+        self.reset_count = 0
         self.reset()
 
 
@@ -232,12 +235,18 @@ class parallel_env(ParallelEnv):
                     low = np.array([0.0, -1.0], dtype=np.float32),
                     high = np.array([np.inf, np.inf], dtype=np.float32),
                 )
+                # node_space = spaces.Box(
+                #     # nodeType,visitTime
+                #     low = np.array([-np.inf, 0.0], dtype=np.float32),
+                #     high = np.array([np.inf, np.inf], dtype=np.float32),
+                # )
+                # node_type_idx = 0
                 node_space = spaces.Box(
-                    # nodeType,visitTime
-                    low = np.array([-np.inf, 0.0], dtype=np.float32),
-                    high = np.array([np.inf, np.inf], dtype=np.float32),
+                    # ID, nodeType,visitTime, lastNode
+                    low = np.array([0.0, -np.inf, 0.0, -1.0, -1.0], dtype=np.float32),
+                    high = np.array([np.inf, np.inf, np.inf, np.inf, np.inf], dtype=np.float32),
                 )
-                node_type_idx = 0
+                node_type_idx = 1
             else:
                 edge_space = spaces.Box(
                     # weight
@@ -257,16 +266,16 @@ class parallel_env(ParallelEnv):
             )
             state_space["graph"].node_type_idx = node_type_idx
 
-            state_space["lastNode"] = spaces.Box(
-                low = 0,
-                high = self.pg.graph.number_of_nodes(),
-                dtype=np.int32
-            )
-            state_space["currentAction"] = spaces.Box(
-                low = -1.0,
-                high = np.inf,
-                dtype=np.float32
-            )
+            # state_space["lastNode"] = spaces.Box(
+            #     low = 0,
+            #     high = self.pg.graph.number_of_nodes(),
+            #     dtype=np.int32
+            # )
+            # state_space["currentAction"] = spaces.Box(
+            #     low = -1.0,
+            #     high = np.inf,
+            #     dtype=np.float32
+            # )
         
         if type(state_space) == dict:
             state_space = spaces.Dict(state_space)
@@ -277,11 +286,15 @@ class parallel_env(ParallelEnv):
     def reset(self, seed=None, options=None):
         ''' Sets the environment to its initial state. '''
 
+        self.reset_count += 1
+
         if seed != None:
             random.seed(seed)
 
         # Reset the graph.
-        self.pg.reset(seed)
+        regenerateGraph = self.regenerate_graph_on_reset and self.reset_count % 20 == 0
+        randomizeIds = regenerateGraph
+        self.pg.reset(seed, randomizeIds=randomizeIds, regenerateGraph=regenerateGraph)
 
         # Reset the information about idleness over time.
         self.avgIdlenessTimes = []
@@ -669,7 +682,7 @@ class parallel_env(ParallelEnv):
                     nodeType = 1,
                     visitTime = 0.0,
                     idlenessTime = 0.0,
-                    lastNode = a.lastNode,
+                    lastNode = g.nodes[a.lastNode]["id"] if a.lastNode in g.nodes else -1.0,
                     currentAction = a.currentAction if a in agents else -1.0
                 )
 
@@ -721,7 +734,8 @@ class parallel_env(ParallelEnv):
 
             if self.action_method == "neighbors":
                 edge_attrs = ["weight", "neighborIndex"]
-                node_attrs = ["nodeType", "idlenessTime"]
+                # node_attrs = ["nodeType", "idlenessTime"]
+                node_attrs = ["id", "nodeType", "idlenessTime", "lastNode", "currentAction"]
             else:
                 edge_attrs = ["weight"]
                 node_attrs = ["id", "nodeType", "idlenessTime", "lastNode", "currentAction"]
@@ -749,8 +763,8 @@ class parallel_env(ParallelEnv):
             obs["graph"] = data
 
             # Additionally, add the last node and last action of the agent to the observation.
-            obs["lastNode"] = agent.lastNode
-            obs["currentAction"] = agent.currentAction
+            # obs["lastNode"] = g.nodes[agent.lastNode]["id"] if agent.lastNode in g.nodes else -1.0
+            # obs["currentAction"] = agent.currentAction
         
         if (type(obs) == dict and obs == {}) or (type(obs) != dict and len(obs) < 1):
             raise ValueError(f"Invalid observation method {self.observe_method}")
@@ -1053,6 +1067,7 @@ class parallel_env(ParallelEnv):
             if agent.edge == None:
                 # All neighbors of the current node are available.
                 actionMap = np.zeros(self.action_space(agent).n, dtype=np.float32)
+                # numNeighbors = self.pg.graph.degree(agent.lastNode) - 1 # subtract 1 since the self loop adds 2 to the degree
                 numNeighbors = self.pg.graph.degree(agent.lastNode)
                 actionMap[:numNeighbors] = 1.0
                 return actionMap

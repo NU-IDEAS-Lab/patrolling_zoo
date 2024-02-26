@@ -46,7 +46,7 @@ class PatrollingEnv(object):
         #     )
 
         if args.graph_random:
-            pg = PatrolGraph(numNodes=args.graph_random_nodes, regenerateUponReset=True)
+            pg = PatrolGraph(numNodes=args.graph_random_nodes)
         else:
             pg = PatrolGraph(args.graph_file)
 
@@ -71,7 +71,8 @@ class PatrollingEnv(object):
             attrition_min_agents = args.attrition_min_agents,
             reward_method_terminal = args.reward_method_terminal,
             reward_interval = args.reward_interval,
-            max_cycles = -1 if self.args.skip_steps_sync or self.args.skip_steps_async else args.max_cycles
+            max_cycles = -1 if self.args.skip_steps_sync or self.args.skip_steps_async else args.max_cycles,
+            regenerate_graph_on_reset = args.graph_random
         )
             
         self.remove_redundancy = args.remove_redundancy

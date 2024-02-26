@@ -8,9 +8,8 @@ class PatrolGraph():
     ''' This reads a graph file of the format provided by
         https://github.com/davidbsp/patrolling_sim '''
 
-    def __init__(self, filepath = None, numNodes = 40, regenerateUponReset = False):
+    def __init__(self, filepath = None, numNodes = 40):
         self.graph = nx.Graph()
-        self.regenerateUponReset = regenerateUponReset
         if filepath is None:
             self.generateRandomGraph(numNodes)
         else:
@@ -94,14 +93,22 @@ class PatrolGraph():
             for j in i[1]:
                 if i[1][j] > self.longestPathLength:
                     self.longestPathLength = i[1][j]
+        
+        print(f"Finished generating random graph with {numNodes} nodes and degree {self.graph.degree()}.")
 
 
-    def reset(self, seed=None):
+    def reset(self, seed=None, randomizeIds=False, regenerateGraph=False):
         ''' Resets the graph to initial state.
-            If regenerateUponReset is True, a new random graph is generated. '''
+            If regenerateGraph is True, a new random graph is generated. '''
 
-        if self.regenerateUponReset:
+        if regenerateGraph:
             self.generateRandomGraph(self.graphDimension, sizeX=self.widthPixels, sizeY=self.heightPixels, seed=seed)
+        
+        if randomizeIds:
+            # Get random node IDs.
+            availableIds = random.sample(range(1000), self.graphDimension)
+            for node in self.graph.nodes:
+                self.graph.nodes[node]["id"] = availableIds.pop()
 
         for node in self.graph.nodes:
             self.graph.nodes[node]["visitTime"] = 0.0

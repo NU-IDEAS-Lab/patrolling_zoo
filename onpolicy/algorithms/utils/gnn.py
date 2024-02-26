@@ -1,7 +1,7 @@
 import torch
 from torch_geometric.nn import MessagePassing
 from torch_geometric.nn import AttentionalAggregation
-from torch_geometric.nn import GCNConv, TransformerConv
+from torch_geometric.nn import GCNConv, TransformerConv, GraphSAGE
 import torch.nn as nn
 
 from onpolicy.algorithms.utils.mlp import MLPLayer
@@ -20,13 +20,32 @@ class GNNBase(nn.Module):
     def __init__(self, layers, node_dim: int, edge_dim: int, output_dim: int, phi_dim: int, args, node_type_idx):
         super(GNNBase, self).__init__()
 
+        self.node_type_idx = node_type_idx
+
+        self.entity_embed = nn.Embedding(2, 2)
+        self.sage = GraphSAGE(
+            node_dim - 1 + 2,
+            output_dim,
+            num_layers=2,
+        )
+
+
+        return ########################################################################################################
+
         self.activation = [nn.Tanh(), nn.ReLU()][args.use_ReLU]
 
         layerSizes = []
         for i in range(layers, -1, -1):
             layerSizes.append(int(output_dim * (3 / 2) ** i))
 
-        # self.embedLayer = GNNLayer(node_dim, edge_dim, layerSizes[0], phi_dim, args)
+        # self.embedLayer = GNNLayer(
+        #     node_dim,
+        #     edge_dim,
+        #     layerSizes[0],
+        #     phi_dim,
+        #     args,
+        #     node_type_idx=node_type_idx
+        # )
         self.embedLayer = EmbedConv(
             node_dim - 1,
             num_embeddings=2,
@@ -61,9 +80,27 @@ class GNNBase(nn.Module):
             # ))
 
     def forward(self, x: torch.Tensor, edge_attr: torch.Tensor, edge_index: torch.Tensor, node_index=None) -> torch.Tensor:
+
+        all_idx = torch.arange(0, x.shape[1])
+        node_feat_idx = all_idx[all_idx != self.node_type_idx]
+        
+        # Extract node features and entity type for all nodes.
+        node_feat = x[:, node_feat_idx]
+        entity_type = x[:, self.node_type_idx].int()
+        entity_embed = self.entity_embed(entity_type)
+
+        info = torch.cat([node_feat, entity_embed], dim=1)
+
+        edge_attrs = edge_attr[:, 1:]
+        edge_weight = edge_attr[:, 0]
+
+        return self.sage(info, edge_index, edge_weight=edge_weight, edge_attr=edge_attrs)
+
+        return ########################################################################################################
+
         # Perform embedding
-        x = self.embedLayer(x, edge_attr, edge_index)
-        # x = self.embedLayer(x, edge_index, edge_attr=edge_attr)
+        # x = self.embedLayer(x, edge_attr, edge_index)
+        x = self.embedLayer(x, edge_index, edge_attr=edge_attr)
 
         edge_weight = edge_attr[:, 0]
 
@@ -121,7 +158,7 @@ class GNNLayer(MessagePassing):
             * https://github.com/MIT-REALM/gcbf-pytorch/blob/main/gcbf/nn/gnn.py (Primarily)
     '''
 
-    def __init__(self, node_dim: int, edge_dim: int, output_dim: int, phi_dim: int, args, num_embeddings=2, embedding_size=2):
+    def __init__(self, node_dim: int, edge_dim: int, output_dim: int, phi_dim: int, args, num_embeddings=2, embedding_size=2, node_type_idx=None):
 
         super(GNNLayer, self).__init__(
             # aggr=AttentionalAggregation(
@@ -140,6 +177,7 @@ class GNNLayer(MessagePassing):
         )
 
         gain = nn.init.calculate_gain(["tanh", "relu"][args.use_ReLU])
+        self.node_type_idx = node_type_idx
 
         self.entity_embed = nn.Embedding(num_embeddings, embedding_size)
 
@@ -156,20 +194,22 @@ class GNNLayer(MessagePassing):
             The entity type embedding in this function is based on that in
             https://github.com/nsidn98/InforMARL/blob/main/onpolicy/algorithms/utils/gnn.py '''
 
-        node_feat_idx = [0, 2, 3, 4]
+        all_idx = torch.arange(0, x_j.shape[1])
+        node_feat_idx = all_idx[all_idx != self.node_type_idx]
         
         # Extract node features and entity type for node j.
         node_feat_j = x_j[:, node_feat_idx]
-        entity_type_j = x_j[:, 1].int()
+        entity_type_j = x_j[:, self.node_type_idx].int()
         entity_embed_j = self.entity_embed(entity_type_j)
 
         # Extract node features and entity type for node i.
         node_feat_i = x_i[:, node_feat_idx]
-        entity_type_i = x_i[:, 1].int()
+        entity_type_i = x_i[:, self.node_type_idx].int()
         entity_embed_i = self.entity_embed(entity_type_i)
 
         info_ij = torch.cat([node_feat_i, entity_embed_i, node_feat_j, entity_embed_j, edge_attr], dim=1)
         return self.phi(info_ij)
+
 
     # def update(self, aggr_out: torch.Tensor, x: torch.Tensor = None) -> torch.Tensor:
     #     gamma_input = torch.cat([aggr_out, x], dim=1)
@@ -224,7 +264,21 @@ class EmbedConv(MessagePassing):
                 Edge feature dimension, If zero then edge features are not
                 considered. Defaults to 0.
         """
-        super(EmbedConv, self).__init__(aggr="add")
+        super(EmbedConv, self).__init__(
+            aggr="add"
+            # aggr=AttentionalAggregation(
+            #     gate_nn=MLPLayer(
+            #         input_dim=128,
+            #         output_dim=10,
+            #         hidden_size=128,
+            #         layer_N=3,
+            #         use_orthogonal=use_orthogonal,
+            #         use_ReLU=use_ReLU,
+            #         use_layer_norm=True,
+            #         gain=nn.init.calculate_gain(["tanh", "relu"][use_ReLU])
+            #     ),
+            # )
+        )
         self._layer_N = layer_N
         self._add_self_loops = add_self_loop
         active_func = [nn.Tanh(), nn.ReLU()][use_ReLU]
