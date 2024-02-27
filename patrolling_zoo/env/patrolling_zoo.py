@@ -160,7 +160,8 @@ class parallel_env(ParallelEnv):
         # Add to the dictionary depending on the observation method.
 
         # Add agent id.
-        if observe_method in ["ajg_new", "ajg_newer", "adjacency", "pyg"]:
+        # if observe_method in ["ajg_new", "ajg_newer", "adjacency", "pyg"]:
+        if observe_method in ["ajg_new", "ajg_newer", "adjacency"]:
             state_space["agent_id"] = spaces.Box(
                 low = -1,
                 high = len(self.possible_agents),
@@ -235,18 +236,18 @@ class parallel_env(ParallelEnv):
                     low = np.array([0.0, -1.0], dtype=np.float32),
                     high = np.array([np.inf, np.inf], dtype=np.float32),
                 )
-                # node_space = spaces.Box(
-                #     # nodeType,visitTime
-                #     low = np.array([-np.inf, 0.0], dtype=np.float32),
-                #     high = np.array([np.inf, np.inf], dtype=np.float32),
-                # )
-                # node_type_idx = 0
                 node_space = spaces.Box(
-                    # ID, nodeType,visitTime, lastNode
-                    low = np.array([0.0, -np.inf, -1.0, -1.0, -1.0], dtype=np.float32),
-                    high = np.array([np.inf, np.inf, np.inf, np.inf, np.inf], dtype=np.float32),
+                    # nodeType, idleness, degree
+                    low = np.array([-np.inf, -1.0, 0.0], dtype=np.float32),
+                    high = np.array([np.inf, np.inf, np.inf], dtype=np.float32),
                 )
-                node_type_idx = 1
+                node_type_idx = 0
+                # node_space = spaces.Box(
+                #     # ID, nodeType, idleness, lastNode, currentAction
+                #     low = np.array([0.0, -np.inf, -1.0, -1.0, -1.0], dtype=np.float32),
+                #     high = np.array([np.inf, np.inf, np.inf, np.inf, np.inf], dtype=np.float32),
+                # )
+                # node_type_idx = 1
             else:
                 edge_space = spaces.Box(
                     # weight
@@ -254,7 +255,7 @@ class parallel_env(ParallelEnv):
                     high = np.array([np.inf], dtype=np.float32),
                 )
                 node_space = spaces.Box(
-                    # ID, nodeType,visitTime, lastNode, currentAction
+                    # ID, nodeType, idleness, lastNode, currentAction
                     low = np.array([0.0, -np.inf, -1.0, -1.0, -1.0], dtype=np.float32),
                     high = np.array([np.inf, np.inf, np.inf, np.inf, np.inf], dtype=np.float32),
                 )
@@ -432,7 +433,8 @@ class parallel_env(ParallelEnv):
         obs = {}
 
         # Add agent ID.
-        if observe_method in ["ajg_new", "ajg_newer", "adjacency", "pyg"]:
+        # if observe_method in ["ajg_new", "ajg_newer", "adjacency", "pyg"]:
+        if observe_method in ["ajg_new", "ajg_newer", "adjacency"]:
             obs["agent_id"] = agent.id
 
         # Add agent position.
@@ -681,7 +683,6 @@ class parallel_env(ParallelEnv):
                         minimum = minIdleness,
                         maximum = maxIdleness
                     )
-                
                 # Add dummy lastNode and currentAction values as attributes in g.
                 g.nodes[node]["lastNode"] = -1.0
                 g.nodes[node]["currentAction"] = -1.0
@@ -737,9 +738,12 @@ class parallel_env(ParallelEnv):
             # Turn g into a digraph, dg
             dg = nx.DiGraph(g)
 
-            # Add neighbor indices to the edges.
             if self.action_method == "neighbors":
                 for i in dg.nodes:
+                    # Add degree to the node features.
+                    dg.nodes[i]["degree"] = dg.out_degree(i)
+
+                    # Add neighbor indices to the edges.
                     idx = 0
                     for j in dg.neighbors(i):
                         if dg.nodes[j]["nodeType"] == 0:
@@ -756,8 +760,8 @@ class parallel_env(ParallelEnv):
 
             if self.action_method == "neighbors":
                 edge_attrs = ["weight", "neighborIndex"]
-                # node_attrs = ["nodeType", "idlenessTime"]
-                node_attrs = ["id", "nodeType", "idlenessTime", "lastNode", "currentAction"]
+                node_attrs = ["nodeType", "idlenessTime", "degree"]
+                # node_attrs = ["id", "nodeType", "idlenessTime", "lastNode", "currentAction"]
             else:
                 edge_attrs = ["weight"]
                 node_attrs = ["id", "nodeType", "idlenessTime", "lastNode", "currentAction"]
@@ -772,7 +776,10 @@ class parallel_env(ParallelEnv):
             data.edge_attr = data.edge_attr.float()
 
             # Calculate the agent_mask based on the graph node ID assigned to this agent.
-            idx = subgraphNodes.index(f"agent_{agent.id}_pos")
+            if agent.edge == None:
+                idx = subgraphNodes.index(agent.lastNode)
+            else:
+                idx = subgraphNodes.index(f"agent_{agent.id}_pos")
             agent_mask = np.zeros(data.num_nodes, dtype=bool)
             agent_mask[idx] = True
             data.agent_idx = idx
@@ -800,7 +807,10 @@ class parallel_env(ParallelEnv):
             typeSet = set([type(v) for v in obs.values()])
             if Data in typeSet:
                 # If so, we want the observation to be a single-element array of objects.
-                obs = np.array(list(obs.values()), dtype=object)
+                o = np.empty((len(obs),), dtype=object)
+                for i, k in enumerate(obs.keys()):
+                    o[i] = obs[k]
+                obs = o
 
         return obs
     
@@ -886,7 +896,7 @@ class parallel_env(ParallelEnv):
                                 agent.currentAction = -1.0
                                 info_dict[agent]["ready"] = True
                         # Agent reached the destination, assign a new speed from normal distribution
-                        agent.speed = np.random.normal(loc=agent.startingSpeed, scale=1.0)
+                        # agent.speed = max(np.random.normal(loc=agent.startingSpeed, scale=10.0), 1.0)
             
                     # The agent has exceeded its movement budget for this step.
                     if stepSize <= 0.0:

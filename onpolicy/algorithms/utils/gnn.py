@@ -26,7 +26,7 @@ class GNNBase(nn.Module):
         self.sage = GraphSAGE(
             node_dim - 1 + 2,
             output_dim,
-            num_layers=2,
+            num_layers=3,
             dropout=0.5
         )
 
