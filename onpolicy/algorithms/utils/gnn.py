@@ -1,16 +1,19 @@
 import torch
+import torch.nn.functional as F
 from torch_geometric.nn import MessagePassing
 from torch_geometric.nn import AttentionalAggregation
-from torch_geometric.nn import GCNConv, TransformerConv, GraphSAGE
+from torch_geometric.nn.aggr import Aggregation, MultiAggregation
+from torch_geometric.nn import GCNConv, TransformerConv, GraphSAGE, SAGEConv
 import torch.nn as nn
 
 from onpolicy.algorithms.utils.mlp import MLPLayer
 
 from onpolicy.algorithms.utils.util import get_clones, init
-from typing import List, Tuple, Union, Optional
-from torch_geometric.typing import OptPairTensor, Adj, OptTensor, Size
+from typing import List, Tuple, Union, Optional, Final
+from torch_geometric.typing import OptPairTensor, Adj, OptTensor, Size, SparseTensor
 from torch_geometric.utils import add_self_loops
 from torch import Tensor
+from torch_geometric.utils import spmm
 
 """GNN modules."""
 
@@ -23,11 +26,15 @@ class GNNBase(nn.Module):
         self.node_type_idx = node_type_idx
 
         self.entity_embed = nn.Embedding(2, 2)
-        self.sage = GraphSAGE(
-            node_dim - 1 + 2,
+        self.sage = GraphSAGEWithEdges(
+            (
+                node_dim - 1 + 2 + 2, #node_dim - nodetype + node_embed + edge_embed
+                node_dim - 1 + 2
+            ),
             output_dim,
-            num_layers=3,
-            dropout=0.5
+            num_layers=1,
+            dropout=0.5,
+            # root_weight = False
         )
 
 
@@ -92,10 +99,11 @@ class GNNBase(nn.Module):
 
         info = torch.cat([node_feat, entity_embed], dim=1)
 
-        edge_attrs = edge_attr[:, 1:]
-        edge_weight = edge_attr[:, 0]
+        # edge_attrs = edge_attr[:, 1:]
+        # edge_weight = edge_attr[:, 0]
 
-        return self.sage(info, edge_index, edge_weight=edge_weight, edge_attr=edge_attrs)
+        return self.sage(info, edge_index, edge_attr=edge_attr)
+        # return self.sage(info, edge_index, edge_weight=edge_weight, edge_attr=edge_attrs)
 
         return ########################################################################################################
 
@@ -332,3 +340,148 @@ class EmbedConv(MessagePassing):
         for i in range(self._layer_N):
             x = self.lin2[i](x)
         return x
+
+
+class GraphSAGEWithEdges(GraphSAGE):
+    r"""The Graph Neural Network from the `"Inductive Representation Learning
+    on Large Graphs" <https://arxiv.org/abs/1706.02216>`_ paper, using the
+    :class:`~torch_geometric.nn.SAGEConv` operator for message passing.
+
+    Args:
+        in_channels (int or tuple): Size of each input sample, or :obj:`-1` to
+            derive the size from the first input(s) to the forward method.
+            A tuple corresponds to the sizes of source and target
+            dimensionalities.
+        hidden_channels (int): Size of each hidden sample.
+        num_layers (int): Number of message passing layers.
+        out_channels (int, optional): If not set to :obj:`None`, will apply a
+            final linear transformation to convert hidden node embeddings to
+            output size :obj:`out_channels`. (default: :obj:`None`)
+        dropout (float, optional): Dropout probability. (default: :obj:`0.`)
+        act (str or Callable, optional): The non-linear activation function to
+            use. (default: :obj:`"relu"`)
+        act_first (bool, optional): If set to :obj:`True`, activation is
+            applied before normalization. (default: :obj:`False`)
+        act_kwargs (Dict[str, Any], optional): Arguments passed to the
+            respective activation function defined by :obj:`act`.
+            (default: :obj:`None`)
+        norm (str or Callable, optional): The normalization function to
+            use. (default: :obj:`None`)
+        norm_kwargs (Dict[str, Any], optional): Arguments passed to the
+            respective normalization function defined by :obj:`norm`.
+            (default: :obj:`None`)
+        jk (str, optional): The Jumping Knowledge mode. If specified, the model
+            will additionally apply a final linear transformation to transform
+            node embeddings to the expected output feature dimensionality.
+            (:obj:`None`, :obj:`"last"`, :obj:`"cat"`, :obj:`"max"`,
+            :obj:`"lstm"`). (default: :obj:`None`)
+        **kwargs (optional): Additional arguments of
+            :class:`torch_geometric.nn.conv.SAGEConv`.
+    """
+
+    supports_edge_weight: Final[bool] = False # we just consider it an edge attribute...
+    supports_edge_attr: Final[bool] = True
+
+    def init_conv(self, in_channels: Union[int, Tuple[int, int]],
+                  out_channels: int, **kwargs) -> MessagePassing:
+        return SAGEConvWithEdges(in_channels, out_channels, **kwargs)
+    
+
+class SAGEConvWithEdges(SAGEConv):
+    r"""The GraphSAGE operator from the `"Inductive Representation Learning on
+    Large Graphs" <https://arxiv.org/abs/1706.02216>`_ paper
+
+    .. math::
+        \mathbf{x}^{\prime}_i = \mathbf{W}_1 \mathbf{x}_i + \mathbf{W}_2 \cdot
+        \mathrm{mean}_{j \in \mathcal{N(i)}} \mathbf{x}_j
+
+    If :obj:`project = True`, then :math:`\mathbf{x}_j` will first get
+    projected via
+
+    .. math::
+        \mathbf{x}_j \leftarrow \sigma ( \mathbf{W}_3 \mathbf{x}_j +
+        \mathbf{b})
+
+    as described in Eq. (3) of the paper.
+
+    Args:
+        in_channels (int or tuple): Size of each input sample, or :obj:`-1` to
+            derive the size from the first input(s) to the forward method.
+            A tuple corresponds to the sizes of source and target
+            dimensionalities.
+        out_channels (int): Size of each output sample.
+        aggr (str or Aggregation, optional): The aggregation scheme to use.
+            Any aggregation of :obj:`torch_geometric.nn.aggr` can be used,
+            *e.g.*, :obj:`"mean"`, :obj:`"max"`, or :obj:`"lstm"`.
+            (default: :obj:`"mean"`)
+        normalize (bool, optional): If set to :obj:`True`, output features
+            will be :math:`\ell_2`-normalized, *i.e.*,
+            :math:`\frac{\mathbf{x}^{\prime}_i}
+            {\| \mathbf{x}^{\prime}_i \|_2}`.
+            (default: :obj:`False`)
+        root_weight (bool, optional): If set to :obj:`False`, the layer will
+            not add transformed root node features to the output.
+            (default: :obj:`True`)
+        project (bool, optional): If set to :obj:`True`, the layer will apply a
+            linear transformation followed by an activation function before
+            aggregation (as described in Eq. (3) of the paper).
+            (default: :obj:`False`)
+        bias (bool, optional): If set to :obj:`False`, the layer will not learn
+            an additive bias. (default: :obj:`True`)
+        **kwargs (optional): Additional arguments of
+            :class:`torch_geometric.nn.conv.MessagePassing`.
+
+    Shapes:
+        - **inputs:**
+          node features :math:`(|\mathcal{V}|, F_{in})` or
+          :math:`((|\mathcal{V_s}|, F_{s}), (|\mathcal{V_t}|, F_{t}))`
+          if bipartite,
+          edge indices :math:`(2, |\mathcal{E}|)`
+        - **outputs:** node features :math:`(|\mathcal{V}|, F_{out})` or
+          :math:`(|\mathcal{V_t}|, F_{out})` if bipartite
+    """
+
+    def __init__(
+        self,
+        *args,
+        **kwargs,
+    ):
+
+        super().__init__(*args, **kwargs)
+
+
+    def forward(self, x: Union[Tensor, OptPairTensor], edge_index: Adj,
+                size: Size = None,
+                edge_attr: OptTensor = None) -> Tensor:
+
+        if isinstance(x, Tensor):
+            x: OptPairTensor = (x, x)
+
+        if self.project and hasattr(self, 'lin'):
+            x = (self.lin(x[0]).relu(), x[1])
+
+        # propagate_type: (x: OptPairTensor)
+        out = self.propagate(edge_index, x=x, edge_attr=edge_attr, size=size)
+        out = self.lin_l(out)
+
+        x_r = x[1]
+        if self.root_weight and x_r is not None:
+            out = out + self.lin_r(x_r)
+
+        if self.normalize:
+            out = F.normalize(out, p=2., dim=-1)
+
+        return out
+
+    def message(self, x_j: Tensor, edge_attr: OptTensor) -> Tensor:
+        info_ij = torch.concatenate([x_j, edge_attr], dim=1)
+        return info_ij
+
+    def message_and_aggregate(self, adj_t: SparseTensor,
+                              x: OptPairTensor) -> Tensor:
+        
+        raise NotImplementedError("message_and_aggregate is not implemented for SAGEConvWithEdges")
+
+        if isinstance(adj_t, SparseTensor):
+            adj_t = adj_t.set_value(None, layout=None)
+        return spmm(adj_t, x[0], reduce=self.aggr)
