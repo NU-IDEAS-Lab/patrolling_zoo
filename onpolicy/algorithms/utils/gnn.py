@@ -37,7 +37,7 @@ class GNNBase(nn.Module):
             num_layers=layers,
             dropout=dropout_rate,
             edge_channels=edge_dim,
-            root_weight=False,
+            # root_weight=False,
         )
 
 
@@ -51,8 +51,11 @@ class GNNBase(nn.Module):
         node_type = x[:, self.node_type_idx].int()
         node_type_embed = self.entity_embed(node_type)
 
+        # Add dummy edge attributes for the first layer. In message passing, the edge attributes will be included as part of the node features.
+        edge_feat = torch.zeros(node_feat.shape[0], edge_attr.shape[1], device=edge_attr.device)
+
         # Concatenate node features and type embeddings.
-        info = torch.cat([node_feat, node_type_embed], dim=1)
+        info = torch.cat([node_feat, node_type_embed, edge_feat], dim=1)
 
         return self.sage(info, edge_index, edge_attr=edge_attr)
     
@@ -216,16 +219,16 @@ class SAGEConvWithEdges(SAGEConv):
         super().__init__(*args, **kwargs)
         self.edge_channels = edge_channels
 
-        self.gamma = MLPLayer(
-            input_dim=self.in_channels + self.edge_channels,
-            output_dim=self.in_channels,
-            hidden_size=self.in_channels + self.edge_channels,
-            layer_N=2,
-            use_orthogonal=True,
-            use_ReLU=True,
-            use_layer_norm=True,
-            gain=nn.init.calculate_gain("relu")
-        )
+        # self.gamma = MLPLayer(
+        #     input_dim=self.in_channels + self.edge_channels,
+        #     output_dim=self.in_channels,
+        #     hidden_size=self.in_channels + self.edge_channels,
+        #     layer_N=2,
+        #     use_orthogonal=True,
+        #     use_ReLU=True,
+        #     use_layer_norm=True,
+        #     gain=nn.init.calculate_gain("relu")
+        # )
 
 
     def forward(self, x: Union[Tensor, OptPairTensor], edge_index: Adj,
@@ -252,18 +255,22 @@ class SAGEConvWithEdges(SAGEConv):
         return out
 
     def message(self, x_j: Tensor, edge_attr: OptTensor) -> Tensor:
+        # We assume that x_j has been expanded to include room for the edge attributes. This is done in GNNBase.
+        x_j[:, -self.edge_channels:] = edge_attr
+        return x_j
+
         info_ij = torch.concatenate([x_j, edge_attr], dim=1)
         return info_ij
     
-    def update(self, aggr_out: Tensor, x: torch.Tensor = None) -> Tensor:
-        ''' Use a linear layer to restore the correct shape of the output. '''
+    # def update(self, aggr_out: Tensor, x: torch.Tensor = None) -> Tensor:
+    #     ''' Use a linear layer to restore the correct shape of the output. '''
 
-        if aggr_out.shape[1] == self.in_channels:
-            return aggr_out
-        elif aggr_out.shape[1] == self.in_channels + self.edge_channels:
-            return self.gamma(aggr_out)
-        else:
-            raise ValueError(f"Unexpected shape {aggr_out.shape} for aggr_out in SAGEConvWithEdges.update. Expected {self.in_channels} or {self.in_channels + self.edge_channels}.")
+    #     if aggr_out.shape[1] == self.in_channels:
+    #         return aggr_out
+    #     elif aggr_out.shape[1] == self.in_channels + self.edge_channels:
+    #         return self.gamma(aggr_out)
+    #     else:
+    #         raise ValueError(f"Unexpected shape {aggr_out.shape} for aggr_out in SAGEConvWithEdges.update. Expected {self.in_channels} or {self.in_channels + self.edge_channels}.")
 
     def message_and_aggregate(self, adj_t: SparseTensor,
                               x: OptPairTensor) -> Tensor:
