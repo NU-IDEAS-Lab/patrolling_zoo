@@ -216,7 +216,16 @@ class SAGEConvWithEdges(SAGEConv):
         super().__init__(*args, **kwargs)
         self.edge_channels = edge_channels
 
-        self.gamma = Linear(self.in_channels + self.edge_channels, self.in_channels)
+        self.gamma = MLPLayer(
+            input_dim=self.in_channels + self.edge_channels,
+            output_dim=self.in_channels,
+            hidden_size=self.in_channels + self.edge_channels,
+            layer_N=2,
+            use_orthogonal=True,
+            use_ReLU=True,
+            use_layer_norm=True,
+            gain=nn.init.calculate_gain("relu")
+        )
 
 
     def forward(self, x: Union[Tensor, OptPairTensor], edge_index: Adj,
