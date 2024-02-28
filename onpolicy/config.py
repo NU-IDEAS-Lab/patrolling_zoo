@@ -220,6 +220,8 @@ def get_config():
                         default=False, help='Whether to use a GNN-based critic')
     parser.add_argument("--gnn_layer_N", type=int, default=2,
                         help="Number of GNN layers for actor/critic networks")
+    parser.add_argument("--gnn_hidden_size", type=int, default=512,
+                        help="Hidden size for GNN network")
     parser.add_argument("--gnn_dropout_rate", type=float, default=0.5,
                         help="Dropout rate for GNN layers")
     parser.add_argument("--gnn_node_embedding_num", type=int, default=2,

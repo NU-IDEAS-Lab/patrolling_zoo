@@ -51,7 +51,7 @@ class R_Actor(nn.Module):
                 layers=args.gnn_layer_N,
                 node_dim=get_shape_from_obs_space(obs_space_graph.node_space)[0],
                 edge_dim=get_shape_from_obs_space(obs_space_graph.edge_space)[0],
-                hidden_dim=self.hidden_size,
+                hidden_dim=args.gnn_hidden_size,
                 output_dim=self.hidden_size,
                 node_type_idx=obs_space_graph.node_type_idx,
                 node_type_dim=1,
