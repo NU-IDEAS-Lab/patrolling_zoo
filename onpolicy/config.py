@@ -218,6 +218,12 @@ def get_config():
                         default=True, help='Whether to use an MLP to interpret the GNN output')    
     parser.add_argument("--use_gnn_critic", action='store_true',
                         default=False, help='Whether to use a GNN-based critic')
+    parser.add_argument("--gnn_layer_N", type=int, default=2,
+                        help="Number of GNN layers for actor/critic networks")
+    parser.add_argument("--gnn_dropout_rate", type=float, default=0.5,
+                        help="Dropout rate for GNN layers")
+    parser.add_argument("--gnn_node_embedding_num", type=int, default=2,
+                        help="Number of node types.")
 
     # recurrent parameters
     parser.add_argument("--use_naive_recurrent_policy", action='store_true',

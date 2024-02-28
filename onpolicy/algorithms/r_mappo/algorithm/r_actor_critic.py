@@ -48,13 +48,16 @@ class R_Actor(nn.Module):
             self.obs_space_graph_idx = get_graph_obs_space_idx(obs_space)
 
             self.base = GNNBase(
-                layers=3,
+                layers=args.gnn_layer_N,
                 node_dim=get_shape_from_obs_space(obs_space_graph.node_space)[0],
                 edge_dim=get_shape_from_obs_space(obs_space_graph.edge_space)[0],
+                hidden_dim=self.hidden_size,
                 output_dim=self.hidden_size,
-                phi_dim=256,
-                args=args,
-                node_type_idx=obs_space_graph.node_type_idx
+                node_type_idx=obs_space_graph.node_type_idx,
+                node_type_dim=1,
+                node_type_embed_dim=2,
+                node_embedding_num=args.gnn_node_embedding_num,
+                dropout_rate=args.gnn_dropout_rate
             )
 
             input_dim = self.hidden_size + get_shape_from_obs_space(obs_space_nongraph)[0]
@@ -106,25 +109,11 @@ class R_Actor(nn.Module):
 
             # Restore the original shape of [batch_size, num_agents, num_feats] from [batch_size*num_agents, num_feats]
             actor_features, _ = to_dense_batch(actor_features, graphs.batch.to(self.device))
-            # actor_features = actor_features.reshape(obs.shape[0], -1, actor_features.shape[-1])
         
             if hasattr(graphs, "agent_idx"):
                 agent_idx = torch.from_numpy(np.array(graphs.agent_idx)).reshape(-1, 1).to(self.device)
                 actor_features = self.base.gatherNodeFeats(actor_features, agent_idx)
 
-            # actor_features = actor_features.sum(dim=1) #global pooling
-
-            # if hasattr(graphs, "agent_mask"):
-            #     agent_masks = np.array(graphs.agent_mask)
-            #     agent_masks = agent_masks.reshape(obs.shape[0], -1)
-
-            #     af = torch.zeros(obs.shape[0], obs.shape[1], actor_features.shape[-1], **self.tpdv)
-            #     for i in range(obs.shape[0]):
-            #         af[i] = actor_features[i, agent_masks[i], :]
-            #     actor_features = af
-            
-            # actor_features = actor_features.flatten(end_dim=1)
-                
             # Concatenate the graph and non-graph features.
             actor_features = torch.cat([actor_features, obs_nongraph], dim=-1)
 
@@ -177,25 +166,11 @@ class R_Actor(nn.Module):
 
             # Restore the original shape of [batch_size, num_agents, num_feats] from [batch_size*num_agents, num_feats]
             actor_features, _ = to_dense_batch(actor_features, graphs.batch.to(self.device))
-            # actor_features = actor_features.reshape(obs.shape[0], -1, actor_features.shape[-1])
         
             if hasattr(graphs, "agent_idx"):
                 agent_idx = torch.from_numpy(np.array(graphs.agent_idx)).reshape(-1, 1).to(self.device)
                 actor_features = self.base.gatherNodeFeats(actor_features, agent_idx)
 
-            # actor_features = actor_features.sum(dim=1) #global pooling
-
-            # if hasattr(graphs, "agent_mask"):
-            #     agent_masks = np.array(graphs.agent_mask)
-            #     agent_masks = agent_masks.reshape(obs.shape[0], -1)
-
-            #     af = torch.zeros(obs.shape[0], obs.shape[1], actor_features.shape[-1], **self.tpdv)
-            #     for i in range(obs.shape[0]):
-            #         af[i] = actor_features[i, agent_masks[i], :]
-            #     actor_features = af
-            
-            # actor_features = actor_features.flatten(end_dim=1)
-                
             # Concatenate the graph and non-graph features.
             actor_features = torch.cat([actor_features, obs_nongraph], dim=-1)
 
