@@ -57,7 +57,8 @@ class R_Actor(nn.Module):
                 node_type_dim=1,
                 node_type_embed_dim=2,
                 node_embedding_num=args.gnn_node_embedding_num,
-                dropout_rate=args.gnn_dropout_rate
+                dropout_rate=args.gnn_dropout_rate,
+                jk=args.gnn_skip_connections
             )
 
             input_dim = self.hidden_size + get_shape_from_obs_space(obs_space_nongraph)[0]

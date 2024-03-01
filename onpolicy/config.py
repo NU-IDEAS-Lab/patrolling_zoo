@@ -225,7 +225,9 @@ def get_config():
     parser.add_argument("--gnn_dropout_rate", type=float, default=0.5,
                         help="Dropout rate for GNN layers")
     parser.add_argument("--gnn_node_embedding_num", type=int, default=2,
-                        help="Number of node types.")
+                        help="Number of node types.")  
+    parser.add_argument("--gnn_skip_connections", action='store_true',
+                        default=False, help='Whether to use a GNN-based critic')
 
     # recurrent parameters
     parser.add_argument("--use_naive_recurrent_policy", action='store_true',

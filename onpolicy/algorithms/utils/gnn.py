@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import MessagePassing
+from torch_geometric.nn import AttentionalAggregation
 from torch_geometric.nn import GraphSAGE, SAGEConv
 from torch_geometric.nn.aggr import Aggregation, MultiAggregation
 from torch_geometric.nn import GraphSAGE, SAGEConv
@@ -24,7 +25,9 @@ class GNNBase(nn.Module):
                  node_type_dim: int = 1,
                  node_type_embed_dim: int = 2,
                  node_embedding_num: int = 2,
-                 dropout_rate: float = 0.0, **kwargs):
+                 dropout_rate: float = 0.0,
+                 jk = False,
+                 **kwargs):
         super(GNNBase, self).__init__(**kwargs)
 
         self.node_type_idx = node_type_idx
@@ -38,6 +41,8 @@ class GNNBase(nn.Module):
             dropout=dropout_rate,
             edge_channels=edge_dim,
             # root_weight=False,
+            jk="cat" if jk else None,
+            layer_count=layers
         )
 
 
@@ -56,6 +61,7 @@ class GNNBase(nn.Module):
 
         # Concatenate node features and type embeddings.
         info = torch.cat([node_feat, node_type_embed, edge_feat], dim=1)
+        # info = torch.cat([node_feat, node_type_embed], dim=1)
 
         return self.sage(info, edge_index, edge_attr=edge_attr)
     
@@ -145,11 +151,11 @@ class GraphSAGEWithEdges(GraphSAGE):
         # This is some hacky stuff to avoid needing to rewrite the entire GraphSAGE class.
         # We concatenate the edge attributes to the node features in the message method.
         # Therefore, reduce the output size by the edge attribute size.
-        # i = len(self.convs)
+        i = len(self.convs)
         # if i < self.num_layers - 1:
         #     out_channels -= 2
 
-        return SAGEConvWithEdges(in_channels, out_channels, **kwargs)
+        return SAGEConvWithEdges(in_channels, out_channels, idx=i, **kwargs)
     
 
 class SAGEConvWithEdges(SAGEConv):
@@ -211,12 +217,33 @@ class SAGEConvWithEdges(SAGEConv):
 
     def __init__(
         self,
+        in_channels: Union[int, Tuple[int, int]],
+        out_channels: int,
         *args,
+        idx: int = 0,
         edge_channels: int = 0,
+        layer_count: int = 1,
         **kwargs,
     ):
 
-        super().__init__(*args, **kwargs)
+        super().__init__(
+            in_channels,
+            out_channels,
+            *args,
+            aggr=AttentionalAggregation(
+                gate_nn=MLPLayer(
+                    input_dim=in_channels,
+                    output_dim=1,
+                    hidden_size=128,
+                    layer_N=2,
+                    use_orthogonal=True,
+                    use_ReLU=False,
+                    use_layer_norm=False,
+                    gain=nn.init.calculate_gain("tanh")
+                ),
+            ),
+            **kwargs
+        )
         self.edge_channels = edge_channels
 
         # self.gamma = MLPLayer(
@@ -229,6 +256,9 @@ class SAGEConvWithEdges(SAGEConv):
         #     use_layer_norm=True,
         #     gain=nn.init.calculate_gain("relu")
         # )
+        self.idx = idx
+        self.layer_count = layer_count
+        # print(f"Created convolutional layer {idx} with input size {self.in_channels} and edge size {self.edge_channels}.")
 
 
     def forward(self, x: Union[Tensor, OptPairTensor], edge_index: Adj,
@@ -254,7 +284,12 @@ class SAGEConvWithEdges(SAGEConv):
 
         return out
 
-    def message(self, x_j: Tensor, edge_attr: OptTensor) -> Tensor:
+    def message(self, x_j: Tensor, x_i: Tensor, edge_attr: OptTensor, edge_index: OptTensor = None) -> Tensor:
+        # if self.idx == self.layer_count - 1:
+        #     return torch.concatenate([x_j, edge_attr], dim=1)
+        # else:
+        #     return x_j
+
         # We assume that x_j has been expanded to include room for the edge attributes. This is done in GNNBase.
         x_j[:, -self.edge_channels:] = edge_attr
         return x_j
@@ -262,6 +297,15 @@ class SAGEConvWithEdges(SAGEConv):
         info_ij = torch.concatenate([x_j, edge_attr], dim=1)
         return info_ij
     
+    def update(self, aggr_out: Tensor, x: torch.Tensor = None) -> Tensor:
+        ''' Called after aggregation occurs. '''
+
+        # if self.idx < self.layer_count - 1:
+        # if self.idx == 0:
+        #     aggr_out[:, -1] = 0.0
+
+        return aggr_out
+
     # def update(self, aggr_out: Tensor, x: torch.Tensor = None) -> Tensor:
     #     ''' Use a linear layer to restore the correct shape of the output. '''
 
