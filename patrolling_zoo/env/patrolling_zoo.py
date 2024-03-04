@@ -896,7 +896,7 @@ class parallel_env(ParallelEnv):
                                 agent.currentAction = -1.0
                                 info_dict[agent]["ready"] = True
                         # Agent reached the destination, assign a new speed from normal distribution
-                        # agent.speed = max(np.random.normal(loc=agent.startingSpeed, scale=10.0), 1.0)
+                        # agent.speed = max(np.random.normal(loc=agent.startingSpeed, scale=5.0), 1.0)
             
                     # The agent has exceeded its movement budget for this step.
                     if stepSize <= 0.0:
@@ -961,11 +961,6 @@ class parallel_env(ParallelEnv):
         return obs_dict, reward_dict, done_dict, truncated_dict, info_dict
 
 
-    def onNodeVisit(self, node, timeStamp):
-        ''' Called when an agent visits a node.
-            Returns the reward for visiting the node, which is proportional to
-            node idleness time. '''
-        
     def onNodeVisit(self, node, timeStamp):
         ''' Called when an agent visits a node.
             Returns the reward for visiting the node, which is proportional to
