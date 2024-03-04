@@ -6,11 +6,11 @@ from torch import Tensor
 from torch_geometric.nn.aggr import Aggregation, MultiAggregation
 from torch_geometric.nn.conv import MessagePassing
 from torch_geometric.nn.dense.linear import Linear
-from torch_geometric.typing import Adj, OptPairTensor, Size, SparseTensor
+from torch_geometric.typing import Adj, OptPairTensor, Size, SparseTensor, OptTensor
 from torch_geometric.utils import spmm
 
 
-class SAGEConvWithEdges(MessagePassing):
+class SAGEConvWithEdgesNew(MessagePassing):
     r"""This class is a modification of GraphSAGE to support edge features.
 
     ORIGINAL DESCRIPTION BELOW:
@@ -76,6 +76,9 @@ class SAGEConvWithEdges(MessagePassing):
         root_weight: bool = True,
         project: bool = False,
         bias: bool = True,
+        is_final_layer: bool = False,
+        max_num_edges: int = 15,
+        edge_channels: int = 0,
         **kwargs,
     ):
         self.in_channels = in_channels
@@ -83,6 +86,9 @@ class SAGEConvWithEdges(MessagePassing):
         self.normalize = normalize
         self.root_weight = root_weight
         self.project = project
+        self.is_final_layer = is_final_layer
+        self.max_num_edges = max_num_edges
+        self.edge_channels = edge_channels
 
         if isinstance(in_channels, int):
             in_channels = (in_channels, in_channels)
@@ -106,6 +112,10 @@ class SAGEConvWithEdges(MessagePassing):
                 in_channels[0])
         else:
             aggr_out_channels = in_channels[0]
+        
+        # For the final layer, we concatenate the features of all neighbors.
+        if self.is_final_layer:
+            aggr_out_channels = aggr_out_channels * self.max_num_edges
 
         self.lin_l = Linear(aggr_out_channels, out_channels, bias=bias)
         if self.root_weight:
@@ -122,7 +132,8 @@ class SAGEConvWithEdges(MessagePassing):
             self.lin_r.reset_parameters()
 
     def forward(self, x: Union[Tensor, OptPairTensor], edge_index: Adj,
-                size: Size = None) -> Tensor:
+                size: Size = None,
+                edge_attr: OptTensor = None) -> Tensor:
 
         if isinstance(x, Tensor):
             x: OptPairTensor = (x, x)
@@ -131,7 +142,7 @@ class SAGEConvWithEdges(MessagePassing):
             x = (self.lin(x[0]).relu(), x[1])
 
         # propagate_type: (x: OptPairTensor)
-        out = self.propagate(edge_index, x=x, size=size)
+        out = self.propagate(edge_index, x=x, edge_attr=edge_attr, size=size)
         out = self.lin_l(out)
 
         x_r = x[1]
@@ -143,8 +154,31 @@ class SAGEConvWithEdges(MessagePassing):
 
         return out
 
-    def message(self, x_j: Tensor) -> Tensor:
+    def aggregate(self, inputs: Tensor, index: Tensor,
+                  ptr: Optional[Tensor], dim_size: Optional[int]) -> Tensor:
+        if self.is_final_layer:
+            # In the final layer, we take everything!
+            return inputs.view(-1, self.max_num_edges * inputs.size(-1))
+        else:
+            return super().aggregate(inputs, index, ptr, dim_size)
+
+    def message(self, x_j: Tensor, x_i: Tensor, edge_attr: OptTensor, edge_index: OptTensor = None) -> Tensor:
+        # if self.idx == self.layer_count - 1:
+        #     return torch.concatenate([x_j, edge_attr], dim=1)
+        # else:
+        #     return x_j
+
+        # We assume that x_j has been expanded to include room for the edge attributes. This is done in GNNBase.
+        x_j[:, -self.edge_channels:] = edge_attr
+
+        # If this is the final layer, ensure that x_j is expanded for the maximum number of neighbors.
+        if self.is_final_layer:
+            x_j = F.pad(x_j, (0, 0, 0, self.max_num_edges - x_j.shape[0]), mode='constant', value=-1.0)
+
         return x_j
+
+        info_ij = torch.concatenate([x_j, edge_attr], dim=1)
+        return info_ij
 
     def message_and_aggregate(self, adj_t: SparseTensor,
                               x: OptPairTensor) -> Tensor:

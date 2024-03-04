@@ -10,6 +10,7 @@ from torch_geometric.nn.dense.linear import Linear
 
 from onpolicy.algorithms.utils.mlp import MLPLayer
 from onpolicy.algorithms.utils.util import get_clones, init
+from onpolicy.algorithms.utils.gnn_conv import SAGEConvWithEdgesNew
 
 from typing import Tuple, Union, Final, Optional, List
 from torch_geometric.typing import OptPairTensor, Adj, OptTensor, Size, SparseTensor
@@ -155,7 +156,8 @@ class GraphSAGEWithEdges(GraphSAGE):
         # if i < self.num_layers - 1:
         #     out_channels -= 2
 
-        return SAGEConvWithEdges(in_channels, out_channels, idx=i, **kwargs)
+        # return SAGEConvWithEdges(in_channels, out_channels, idx=i, **kwargs)
+        return SAGEConvWithEdgesNew(in_channels, out_channels, is_final_layer=(i == self.num_layers - 1), **kwargs)
     
 
 class SAGEConvWithEdges(SAGEConv):
