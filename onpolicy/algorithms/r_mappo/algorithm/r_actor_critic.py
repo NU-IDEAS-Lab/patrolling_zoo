@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from onpolicy.algorithms.utils.util import init, check
 from onpolicy.algorithms.utils.cnn import CNNBase
 from onpolicy.algorithms.utils.mlp import MLPBase, MLPLayer
@@ -38,6 +39,7 @@ class R_Actor(nn.Module):
         self._recurrent_N = args.recurrent_N
         self.tpdv = dict(dtype=torch.float32, device=device)
         self.device = device
+        self.MAX_NEIGHBORS = 15
 
         post_base_dim = self.hidden_size
         
@@ -61,7 +63,11 @@ class R_Actor(nn.Module):
                 jk=args.gnn_skip_connections
             )
 
-            input_dim = self.hidden_size + get_shape_from_obs_space(obs_space_nongraph)[0]
+            
+
+            self.neighbor_scorer = MLPLayer(input_dim=self.hidden_size, output_dim=1, hidden_size=self.hidden_size, layer_N=3, use_orthogonal=args.use_orthogonal, use_ReLU=False)
+
+            input_dim = self.MAX_NEIGHBORS + get_shape_from_obs_space(obs_space_nongraph)[0]
             if self._use_gnn_mlp:
                 self.mlp0 = MLPLayer(input_dim=input_dim, output_dim=self.hidden_size, hidden_size=2048, layer_N=3, use_orthogonal=args.use_orthogonal, use_ReLU=args.use_ReLU)
             else:
@@ -108,10 +114,30 @@ class R_Actor(nn.Module):
             graphs = Batch.from_data_list(obs_graph).to(self.device, "x", "edge_attr", "edge_index")
             actor_features = self.base(graphs.x, graphs.edge_attr, graphs.edge_index)
 
-            # Restore the original shape of [batch_size, num_agents, num_feats] from [batch_size*num_agents, num_feats]
+            # Restore the original shape of [batch_size, num_nodes (including agents), num_feats] from [batch_size*num_nodes, num_feats]
             actor_features, _ = to_dense_batch(actor_features, graphs.batch.to(self.device))
         
-            if hasattr(graphs, "agent_idx"):
+            if hasattr(graphs, "neighbors"):
+
+                scores = torch.zeros((actor_features.shape[0], self.MAX_NEIGHBORS), **self.tpdv)
+                for i in range(actor_features.shape[0]):
+                    neighbors = check(np.array(graphs.neighbors[i])).to(**self.tpdv).int()
+                    neighborhood = actor_features[i, neighbors]
+                    neighborhood = F.pad(neighborhood, (0, 0, 0, self.MAX_NEIGHBORS - neighborhood.shape[0]), mode='constant', value=0.0)
+                    scores[i] = self.neighbor_scorer(neighborhood).reshape(-1, self.MAX_NEIGHBORS)
+
+                actor_features = scores
+
+                # # Calculate a score for each neighbor of each agent.
+                # # agent_idx = torch.from_numpy(np.array(graphs.agent_idx)).reshape(-1, 1).to(self.device)
+                # neighbors = check(np.array(graphs.neighbors, dtype=bool)).to(**self.tpdv).bool()
+                # neighborhood = actor_features[neighbors]
+                # neighborhood = F.pad(neighborhood, (0, 0, 0, self.MAX_NEIGHBORS - neighborhood.shape[0]), mode='constant', value=0.0)
+                # scores = self.neighbor_scorer(neighborhood)
+                
+                # # actor_features = torch.cat([actor_features, scores], dim=-1)
+                # actor_features = scores.reshape(-1, self.MAX_NEIGHBORS)
+            elif hasattr(graphs, "agent_idx"):
                 agent_idx = torch.from_numpy(np.array(graphs.agent_idx)).reshape(-1, 1).to(self.device)
                 actor_features = self.base.gatherNodeFeats(actor_features, agent_idx)
 
@@ -168,7 +194,34 @@ class R_Actor(nn.Module):
             # Restore the original shape of [batch_size, num_agents, num_feats] from [batch_size*num_agents, num_feats]
             actor_features, _ = to_dense_batch(actor_features, graphs.batch.to(self.device))
         
-            if hasattr(graphs, "agent_idx"):
+            if hasattr(graphs, "neighbors"):
+
+                scores = torch.zeros((actor_features.shape[0], self.MAX_NEIGHBORS), **self.tpdv)
+                for i in range(actor_features.shape[0]):
+                    neighbors = check(np.array(graphs.neighbors[i])).to(**self.tpdv).int()
+                    neighborhood = actor_features[i, neighbors]
+                    neighborhood = F.pad(neighborhood, (0, 0, 0, self.MAX_NEIGHBORS - neighborhood.shape[0]), mode='constant', value=0.0)
+                    scores[i] = self.neighbor_scorer(neighborhood).reshape(-1, self.MAX_NEIGHBORS)
+
+                actor_features = scores
+
+
+                # # Calculate a score for each neighbor of each agent.
+                # # agent_idx = torch.from_numpy(np.array(graphs.agent_idx)).reshape(-1, 1).to(self.device)
+                # neighbors = check(np.array(graphs.neighbors, dtype=bool)).to(**self.tpdv).bool()
+                
+                # # Extend the mask for the full feature size.
+                # # neighbors = neighbors.unsqueeze(2).repeat(1, 1, actor_features.shape[-1])
+
+                # # neighborhood = actor_features[neighbors]
+                # # neighborhood = torch.where(neighbors, actor_features, torch.zeros_like(actor_features))
+                # # neighborhood = F.pad(neighborhood, (0, 0, 0, self.MAX_NEIGHBORS - neighborhood.shape[0]), mode='constant', value=0.0)
+                # # scores = self.neighbor_scorer(neighborhood)
+                # scores = self.neighbor_scorer(actor_features)
+                
+                # # actor_features = torch.cat([actor_features, scores], dim=-1)
+                # actor_features = scores.reshape(-1, self.MAX_NEIGHBORS)
+            elif hasattr(graphs, "agent_idx"):
                 agent_idx = torch.from_numpy(np.array(graphs.agent_idx)).reshape(-1, 1).to(self.device)
                 actor_features = self.base.gatherNodeFeats(actor_features, agent_idx)
 

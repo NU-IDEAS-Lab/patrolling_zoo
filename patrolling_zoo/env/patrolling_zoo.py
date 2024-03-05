@@ -778,12 +778,24 @@ class parallel_env(ParallelEnv):
             # Calculate the agent_mask based on the graph node ID assigned to this agent.
             if agent.edge == None:
                 idx = subgraphNodes.index(agent.lastNode)
+                neighborhood = list(subgraph.neighbors(agent.lastNode))
             else:
                 idx = subgraphNodes.index(f"agent_{agent.id}_pos")
+                neighborhood = list(subgraph.neighbors(f"agent_{agent.id}_pos"))
             agent_mask = np.zeros(data.num_nodes, dtype=bool)
             agent_mask[idx] = True
             data.agent_idx = idx
             data.agent_mask = agent_mask
+
+            # Calculate neighbor information.
+            neighbors = []
+            for neighbor in neighborhood:
+                if subgraph.nodes[neighbor]["nodeType"] == 0:
+                    neighbors.append(subgraphNodes.index(neighbor))
+            nbrMask = np.zeros(data.num_nodes, dtype=bool)
+            nbrMask[neighbors] = True
+            data.neighbors = neighbors
+            data.neighbors_mask = nbrMask
 
             # Set up a numpy array to hold the observation.
             # o = np.empty((1,), dtype=object)

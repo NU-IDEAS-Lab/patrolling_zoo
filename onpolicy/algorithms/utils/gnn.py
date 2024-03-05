@@ -157,7 +157,9 @@ class GraphSAGEWithEdges(GraphSAGE):
         #     out_channels -= 2
 
         # return SAGEConvWithEdges(in_channels, out_channels, idx=i, **kwargs)
-        return SAGEConvWithEdgesNew(in_channels, out_channels, is_final_layer=(i == self.num_layers - 1), **kwargs)
+        # is_final_layer = (i == self.num_layers - 1)
+        is_final_layer = False
+        return SAGEConvWithEdgesNew(in_channels, out_channels, is_final_layer=is_final_layer, **kwargs)
     
 
 class SAGEConvWithEdges(SAGEConv):
