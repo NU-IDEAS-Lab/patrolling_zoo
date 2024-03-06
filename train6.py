@@ -11,7 +11,7 @@ all_args.env_name = "Patrolling"
 all_args.user_name = "ideas-mas"
 
 all_args.num_agents = 4
-all_args.agent_speed = 10.0
+all_args.agent_speed = 40.0
 all_args.action_method = "neighbors"
 all_args.observe_method = "pyg"
 all_args.observe_method_global = "adjacency"
@@ -25,7 +25,7 @@ all_args.reward_method_terminal = "average"
 
 # all_args.graph_random = True
 # all_args.graph_random_nodes = 9
-all_args.graph_name = "23nodes"
+all_args.graph_name = "milwaukee"
 all_args.graph_file = f"patrolling_zoo/env/{all_args.graph_name}.graph"
 # all_args.num_env_steps = 10000 #total number of steps
 all_args.num_env_steps = 10e5 * 1 #total number of steps
@@ -51,7 +51,7 @@ all_args.skip_steps_async = False
 all_args.use_ReLU = True
 # all_args.lr = 1e-3
 # all_args.entropy_coef = 0.1
-all_args.hidden_size = 256
+all_args.hidden_size = 512
 
 all_args.n_rollout_threads = 5
 all_args.save_interval = 1000
