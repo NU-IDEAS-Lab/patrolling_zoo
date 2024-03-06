@@ -40,9 +40,8 @@ class R_Actor(nn.Module):
         self.tpdv = dict(dtype=torch.float32, device=device)
         self.device = device
         self.MAX_NEIGHBORS = 15
+        self.MAX_NODES = 50
 
-        post_base_dim = self.hidden_size
-        
         if self._use_gnn:
             # Split up the graph and non-graph space.
             obs_space_graph = get_graph_obs_space(obs_space)
@@ -54,7 +53,7 @@ class R_Actor(nn.Module):
                 node_dim=get_shape_from_obs_space(obs_space_graph.node_space)[0],
                 edge_dim=get_shape_from_obs_space(obs_space_graph.edge_space)[0],
                 hidden_dim=args.gnn_hidden_size,
-                output_dim=self.hidden_size,
+                output_dim=args.gnn_hidden_size, #self.hidden_size,
                 node_type_idx=obs_space_graph.node_type_idx,
                 node_type_dim=1,
                 node_type_embed_dim=2,
@@ -65,22 +64,23 @@ class R_Actor(nn.Module):
 
             
 
-            self.neighbor_scorer = MLPLayer(input_dim=self.hidden_size, output_dim=1, hidden_size=self.hidden_size, layer_N=3, use_orthogonal=args.use_orthogonal, use_ReLU=False)
-
+            self.neighbor_scorer = MLPLayer(input_dim=args.gnn_hidden_size, output_dim=1, hidden_size=self.hidden_size, layer_N=3, use_orthogonal=args.use_orthogonal, use_ReLU=args.use_ReLU, use_layer_norm=False)
             input_dim = self.MAX_NEIGHBORS + get_shape_from_obs_space(obs_space_nongraph)[0]
+
             if self._use_gnn_mlp:
-                self.mlp0 = MLPLayer(input_dim=input_dim, output_dim=self.hidden_size, hidden_size=2048, layer_N=3, use_orthogonal=args.use_orthogonal, use_ReLU=args.use_ReLU)
-            else:
-                post_base_dim = input_dim
+                self.mlp0 = MLPLayer(input_dim=input_dim, output_dim=self.hidden_size, hidden_size=self.hidden_size, layer_N=3, use_orthogonal=args.use_orthogonal, use_ReLU=args.use_ReLU)
+                input_dim = self.hidden_size
         else:
             obs_shape = get_shape_from_obs_space(obs_space)
             base = CNNBase if len(obs_shape) == 3 else MLPBase
             self.base = base(args, obs_shape)
+            input_dim = self.hidden_size
 
         if self._use_naive_recurrent_policy or self._use_recurrent_policy:
-            self.rnn = RNNLayer(post_base_dim, self.hidden_size, self._recurrent_N, self._use_orthogonal)
+            self.rnn = RNNLayer(input_dim, self.hidden_size, self._recurrent_N, self._use_orthogonal)
+            input_dim = self.hidden_size
 
-        self.act = ACTLayer(action_space, self.hidden_size, self._use_orthogonal, self._gain)
+        self.act = ACTLayer(action_space, input_dim, self._use_orthogonal, self._gain)
 
         self.to(device)
 
@@ -119,14 +119,34 @@ class R_Actor(nn.Module):
         
             if hasattr(graphs, "neighbors"):
 
-                scores = torch.zeros((actor_features.shape[0], self.MAX_NEIGHBORS), **self.tpdv)
-                for i in range(actor_features.shape[0]):
-                    neighbors = check(np.array(graphs.neighbors[i])).to(**self.tpdv).int()
-                    neighborhood = actor_features[i, neighbors]
-                    neighborhood = F.pad(neighborhood, (0, 0, 0, self.MAX_NEIGHBORS - neighborhood.shape[0]), mode='constant', value=0.0)
-                    scores[i] = self.neighbor_scorer(neighborhood).reshape(-1, self.MAX_NEIGHBORS)
+                # scores = torch.zeros((actor_features.shape[0], self.MAX_NEIGHBORS), **self.tpdv)
+                # for i in range(actor_features.shape[0]):
+                #     neighbors = check(np.array(graphs.neighbors[i])).to(**self.tpdv).int()
+                #     neighborhood = actor_features[i, neighbors]
+                #     neighborhood = F.pad(neighborhood, (0, 0, 0, self.MAX_NEIGHBORS - neighborhood.shape[0]), mode='constant', value=0.0)
+                #     scores[i] = self.neighbor_scorer(neighborhood).reshape(-1, self.MAX_NEIGHBORS)
 
-                actor_features = scores
+                # actor_features = scores
+
+
+                # Pad actor_features to max neighbors.
+                if self.MAX_NODES - actor_features.shape[1] > 0:
+                    actor_features = F.pad(actor_features, (0, 0, 0, self.MAX_NODES - actor_features.shape[1]), mode='constant', value=0.0)
+
+                neighbors_mask = check(np.array(graphs.neighbors_mask)).to(**self.tpdv).bool()
+                # Extend the mask for the full feature size.
+                neighbors_mask = neighbors_mask.unsqueeze(2).repeat(1, 1, actor_features.shape[-1])
+                actor_features_masked = torch.where(neighbors_mask, actor_features, 0.0)
+                scores = self.neighbor_scorer(actor_features_masked)
+                
+                # Shift the scores to the correct position.
+                scores_shifted = torch.zeros((actor_features.shape[0], self.MAX_NEIGHBORS), **self.tpdv)
+                for i in range(actor_features.shape[0]):
+                    nbrs = check(np.array(graphs.neighbors[i])).to(**self.tpdv).int()
+                    scores_shifted[i, :nbrs.shape[0]] = scores[i, nbrs, 0]
+
+                actor_features = scores_shifted
+
 
                 # # Calculate a score for each neighbor of each agent.
                 # # agent_idx = torch.from_numpy(np.array(graphs.agent_idx)).reshape(-1, 1).to(self.device)
@@ -196,14 +216,33 @@ class R_Actor(nn.Module):
         
             if hasattr(graphs, "neighbors"):
 
-                scores = torch.zeros((actor_features.shape[0], self.MAX_NEIGHBORS), **self.tpdv)
-                for i in range(actor_features.shape[0]):
-                    neighbors = check(np.array(graphs.neighbors[i])).to(**self.tpdv).int()
-                    neighborhood = actor_features[i, neighbors]
-                    neighborhood = F.pad(neighborhood, (0, 0, 0, self.MAX_NEIGHBORS - neighborhood.shape[0]), mode='constant', value=0.0)
-                    scores[i] = self.neighbor_scorer(neighborhood).reshape(-1, self.MAX_NEIGHBORS)
+                # scores = torch.zeros((actor_features.shape[0], self.MAX_NEIGHBORS), **self.tpdv)
+                # for i in range(actor_features.shape[0]):
+                #     neighbors = check(np.array(graphs.neighbors[i])).to(**self.tpdv).int()
+                #     neighborhood = actor_features[i, neighbors]
+                #     neighborhood = F.pad(neighborhood, (0, 0, 0, self.MAX_NEIGHBORS - neighborhood.shape[0]), mode='constant', value=0.0)
+                #     scores[i] = self.neighbor_scorer(neighborhood).reshape(-1, self.MAX_NEIGHBORS)
 
-                actor_features = scores
+                # actor_features = scores
+
+
+                # Pad actor_features to max neighbors.
+                if self.MAX_NODES - actor_features.shape[1] > 0:
+                    actor_features = F.pad(actor_features, (0, 0, 0, self.MAX_NODES - actor_features.shape[1]), mode='constant', value=0.0)
+
+                neighbors_mask = check(np.array(graphs.neighbors_mask)).to(**self.tpdv).bool()
+                # Extend the mask for the full feature size.
+                neighbors_mask = neighbors_mask.unsqueeze(2).repeat(1, 1, actor_features.shape[-1])
+                actor_features_masked = torch.where(neighbors_mask, actor_features, 0.0)
+                scores = self.neighbor_scorer(actor_features_masked)
+                
+                # Shift the scores to the correct position.
+                scores_shifted = torch.zeros((actor_features.shape[0], self.MAX_NEIGHBORS), **self.tpdv)
+                for i in range(actor_features.shape[0]):
+                    nbrs = check(np.array(graphs.neighbors[i])).to(**self.tpdv).int()
+                    scores_shifted[i, :nbrs.shape[0]] = scores[i, nbrs, 0]
+
+                actor_features = scores_shifted
 
 
                 # # Calculate a score for each neighbor of each agent.

@@ -787,12 +787,18 @@ class parallel_env(ParallelEnv):
             data.agent_idx = idx
             data.agent_mask = agent_mask
 
+
+            # TEMPORARY: MAX_NEIGHBORS
+            MAX_NEIGHBORS = 15
+            MAX_NODES = 50
+
+
             # Calculate neighbor information.
             neighbors = []
             for neighbor in neighborhood:
                 if subgraph.nodes[neighbor]["nodeType"] == 0:
                     neighbors.append(subgraphNodes.index(neighbor))
-            nbrMask = np.zeros(data.num_nodes, dtype=bool)
+            nbrMask = np.zeros(MAX_NODES, dtype=bool)
             nbrMask[neighbors] = True
             data.neighbors = neighbors
             data.neighbors_mask = nbrMask
