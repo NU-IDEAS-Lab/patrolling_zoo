@@ -645,6 +645,14 @@ class parallel_env(ParallelEnv):
 
             # Assuming you have a list of visible vertices determined earlier in the code.
             visible_vertices = [v for v in self.pg.graph.nodes if v in vertices]
+
+            # Determine visible vertices and set nodeType accordingly
+            for node in g.nodes:
+                if node in visible_vertices:
+                    g.nodes[node]["nodeType"] = 0  # Node is visible
+                else:
+                    g.nodes[node]["nodeType"] = 2  # Node is not visible
+ 
  
             # Get a list of last visit times for each node.
             lastVisits = nx.get_node_attributes(g, 'visitTime')
@@ -654,38 +662,38 @@ class parallel_env(ParallelEnv):
             minIdleness = self.step_count - max(lastVisits.values())
             allSame = maxIdleness == minIdleness
 
-            # # Initialize all node idleness times to -1 as default.
-            # for node in g.nodes:
-            #     g.nodes[node]["idlenessTime"] = -1.0  # Default for non-visible nodes
-        
-            #     # Add dummy lastNode and currentAction values as attributes in g for all nodes.
-            #     g.nodes[node]["lastNode"] = -1.0
-            #     g.nodes[node]["currentAction"] = -1.0
-
-            # for node in visible_vertices:
-            #     # Normalize idleness times for visible nodes
-            #     if allSame:
-            #         g.nodes[node]["idlenessTime"] = 1.0
-            #     else:
-            #         g.nodes[node]["idlenessTime"] = self._minMaxNormalize(
-            #             self.step_count - lastVisits.get(node, self.step_count),
-            #             minimum=minIdleness,
-            #             maximum=maxIdleness
-            #         )
-
+            # Initialize all node idleness times to -1 as default.
             for node in g.nodes:
-                # Add normalized node idleness times as attributes in g.
+                g.nodes[node]["idlenessTime"] = -1.0  # Default for non-visible nodes
+        
+                # Add dummy lastNode and currentAction values as attributes in g for all nodes.
+                g.nodes[node]["lastNode"] = -1.0
+                g.nodes[node]["currentAction"] = -1.0
+
+            for node in visible_vertices:
+                # Normalize idleness times for visible nodes
                 if allSame:
                     g.nodes[node]["idlenessTime"] = 1.0
                 else:
                     g.nodes[node]["idlenessTime"] = self._minMaxNormalize(
-                        self.step_count - lastVisits[node],
-                        minimum = minIdleness,
-                        maximum = maxIdleness
+                        self.step_count - lastVisits.get(node, self.step_count),
+                        minimum=minIdleness,
+                        maximum=maxIdleness
                     )
-                # Add dummy lastNode and currentAction values as attributes in g.
-                g.nodes[node]["lastNode"] = -1.0
-                g.nodes[node]["currentAction"] = -1.0
+
+            # for node in g.nodes:
+            #     # Add normalized node idleness times as attributes in g.
+            #     if allSame:
+            #         g.nodes[node]["idlenessTime"] = 1.0
+            #     else:
+            #         g.nodes[node]["idlenessTime"] = self._minMaxNormalize(
+            #             self.step_count - lastVisits[node],
+            #             minimum = minIdleness,
+            #             maximum = maxIdleness
+            #         )
+            #     # Add dummy lastNode and currentAction values as attributes in g.
+            #     g.nodes[node]["lastNode"] = -1.0
+            #     g.nodes[node]["currentAction"] = -1.0
 
             # Ensure that we add a node for the current agent, even if it's dead.
             if agent not in agents:
