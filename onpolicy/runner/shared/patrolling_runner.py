@@ -284,7 +284,7 @@ class PatrollingRunner(Runner):
                 frames.append(image)
 
             dones = False
-            while not np.any(dones):
+            while not np.all(dones):
                 self.trainer.prep_rollout()
                 actions, rnn_states = self.trainer.policy.act(
                     np.concatenate(obs),
@@ -306,7 +306,7 @@ class PatrollingRunner(Runner):
                 # Split the combined observations into obs and share_obs, then combine across environments.
                 obs, share_obs, available_actions = self._process_combined_obs(combined_obs)
 
-                if not np.any(dones):
+                if not np.all(dones):
                     if ipython_clear_output:
                         clear_output(wait = True)
                     render_env.envs[0].env.render()

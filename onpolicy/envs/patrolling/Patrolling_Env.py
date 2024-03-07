@@ -68,6 +68,7 @@ class PatrollingEnv(object):
             observe_bitmap_dims = (args.observe_bitmap_size, args.observe_bitmap_size),
             attrition_method = args.attrition_method,
             attrition_random_probability = args.attrition_random_probability,
+            attrition_times = args.attrition_fixed_times,
             attrition_min_agents = args.attrition_min_agents,
             reward_method_terminal = args.reward_method_terminal,
             reward_interval = args.reward_interval,
