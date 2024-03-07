@@ -43,7 +43,7 @@ class GNNBase(nn.Module):
             edge_channels=edge_dim,
             # root_weight=False,
             jk="cat" if jk else None,
-            layer_count=layers,
+            # layer_count=layers,
             aggr="add"
         )
 
