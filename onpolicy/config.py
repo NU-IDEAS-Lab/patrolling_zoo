@@ -228,6 +228,10 @@ def get_config():
                         help="Number of node types.")  
     parser.add_argument("--gnn_skip_connections", action='store_true',
                         default=False, help='Whether to use a GNN-based critic')
+    parser.add_argument("--gnn_max_nodes", type=int, default=50,
+                        help="Maximum number of nodes that the GNN can support.")
+    parser.add_argument("--gnn_max_neighbors", type=int, default=15,
+                        help="Maximum number of neighbors that each node may have.")
 
     # recurrent parameters
     parser.add_argument("--use_naive_recurrent_policy", action='store_true',

@@ -73,9 +73,11 @@ class PatrollingEnv(object):
             reward_method_terminal = args.reward_method_terminal,
             reward_interval = args.reward_interval,
             max_cycles = -1 if self.args.skip_steps_sync or self.args.skip_steps_async else args.max_cycles,
-            regenerate_graph_on_reset = args.graph_random
+            regenerate_graph_on_reset = args.graph_random,
+            max_nodes = args.gnn_max_nodes,
+            max_neighbors = args.gnn_max_neighbors
         )
-            
+        
         self.remove_redundancy = args.remove_redundancy
         self.zero_feature = args.zero_feature
         self.share_reward = args.share_reward

@@ -3,11 +3,18 @@ import networkx as nx
 import math
 import matplotlib.pyplot as plt
 import random
+from enum import IntEnum
+
+class NODE_TYPE(IntEnum):
+    OBSERVABLE_NODE = 0
+    AGENT = 1
+    UNOBSERVABLE_NODE = 2
+
 
 class PatrolGraph():
     ''' This reads a graph file of the format provided by
         https://github.com/davidbsp/patrolling_sim '''
-
+    
     def __init__(self, filepath = None, numNodes = 40):
         self.graph = nx.Graph()
         if filepath is None:
@@ -37,7 +44,7 @@ class PatrolGraph():
                         int(file.readline()) * self.resolution + self.offsetY),
                     visitTime = 0.0,
                     id = i,
-                    nodeType = 0
+                    nodeType = NODE_TYPE.OBSERVABLE_NODE
                 )
                 
                 # Add a self-loop to the node.

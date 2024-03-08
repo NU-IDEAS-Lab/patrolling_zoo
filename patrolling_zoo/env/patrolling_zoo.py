@@ -1,5 +1,6 @@
 from pettingzoo.utils.env import ParallelEnv
 from patrolling_zoo.env.communication_model import CommunicationModel
+from patrolling_zoo.env.patrol_graph import NODE_TYPE
 from gymnasium import spaces
 import random
 import numpy as np
@@ -65,6 +66,8 @@ class parallel_env(ParallelEnv):
                  attrition_min_agents = 2,
                  attrition_times = [],
                  max_cycles: int = -1,
+                 max_nodes: int = 50,
+                 max_neighbors: int = 15,
                  reward_interval: int = -1,
                  regenerate_graph_on_reset: bool = False,
                  *args,
@@ -100,6 +103,8 @@ class parallel_env(ParallelEnv):
         self.attrition_times = attrition_times
         self.attrition_min_agents = attrition_min_agents
         self.regenerate_graph_on_reset = regenerate_graph_on_reset
+        self.max_nodes = max_nodes
+        self.max_neighbors = max_neighbors
 
         self.reward_interval = reward_interval
 
@@ -642,17 +647,6 @@ class parallel_env(ParallelEnv):
         if observe_method in ["pyg"]:
             # Copy pg map to g
             g = deepcopy(self.pg.graph)
-
-            # Assuming you have a list of visible vertices determined earlier in the code.
-            visible_vertices = [v for v in self.pg.graph.nodes if v in vertices]
-
-            # Determine visible vertices and set nodeType accordingly
-            for node in g.nodes:
-                if node in visible_vertices:
-                    g.nodes[node]["nodeType"] = 0  # Node is visible
-                else:
-                    g.nodes[node]["nodeType"] = 2  # Node is not visible
- 
  
             # Get a list of last visit times for each node.
             lastVisits = nx.get_node_attributes(g, 'visitTime')
@@ -662,38 +656,31 @@ class parallel_env(ParallelEnv):
             minIdleness = self.step_count - max(lastVisits.values())
             allSame = maxIdleness == minIdleness
 
-            # Initialize all node idleness times to -1 as default.
+            # Set attributes of patrol graph nodes.
             for node in g.nodes:
+                # Initialize all node idleness times to -1 as default.
                 g.nodes[node]["idlenessTime"] = -1.0  # Default for non-visible nodes
         
                 # Add dummy lastNode and currentAction values as attributes in g for all nodes.
                 g.nodes[node]["lastNode"] = -1.0
                 g.nodes[node]["currentAction"] = -1.0
 
-            for node in visible_vertices:
-                # Normalize idleness times for visible nodes
-                if allSame:
-                    g.nodes[node]["idlenessTime"] = 1.0
+                # Node is visible.
+                if node in vertices:
+                    # Normalize idleness times for visible nodes
+                    if allSame:
+                        g.nodes[node]["idlenessTime"] = 1.0
+                    else:
+                        g.nodes[node]["idlenessTime"] = self._minMaxNormalize(
+                            self.step_count - lastVisits.get(node, self.step_count),
+                            minimum=minIdleness,
+                            maximum=maxIdleness
+                        )
+                    g.nodes[node]["nodeType"] = NODE_TYPE.OBSERVABLE_NODE
+                
+                # Node is not visible.
                 else:
-                    g.nodes[node]["idlenessTime"] = self._minMaxNormalize(
-                        self.step_count - lastVisits.get(node, self.step_count),
-                        minimum=minIdleness,
-                        maximum=maxIdleness
-                    )
-
-            # for node in g.nodes:
-            #     # Add normalized node idleness times as attributes in g.
-            #     if allSame:
-            #         g.nodes[node]["idlenessTime"] = 1.0
-            #     else:
-            #         g.nodes[node]["idlenessTime"] = self._minMaxNormalize(
-            #             self.step_count - lastVisits[node],
-            #             minimum = minIdleness,
-            #             maximum = maxIdleness
-            #         )
-            #     # Add dummy lastNode and currentAction values as attributes in g.
-            #     g.nodes[node]["lastNode"] = -1.0
-            #     g.nodes[node]["currentAction"] = -1.0
+                    g.nodes[node]["nodeType"] = NODE_TYPE.UNOBSERVABLE_NODE
 
             # Ensure that we add a node for the current agent, even if it's dead.
             if agent not in agents:
@@ -709,8 +696,7 @@ class parallel_env(ParallelEnv):
                     agent_node_id,
                     pos = a.position,
                     id = -1 - a.id,
-                    # id = -1.0 if a == agent else -2.0,
-                    nodeType = 1,
+                    nodeType = NODE_TYPE.AGENT,
                     visitTime = 0.0,
                     idlenessTime = 0.0,
                     lastNode = g.nodes[a.lastNode]["id"] if a.lastNode in g.nodes else -1.0,
@@ -724,7 +710,7 @@ class parallel_env(ParallelEnv):
 
                     # Add all of a.lastNode's neighbors as edges to the agent's node.
                     for neighbor in g.neighbors(a.lastNode):
-                        if g.nodes[neighbor]["nodeType"] == 0:
+                        if g.nodes[neighbor]["nodeType"] != NODE_TYPE.AGENT:
                             g.add_edge(agent_node_id, neighbor, weight=g.edges[(a.lastNode, neighbor)]["weight"])
                 else:
                     node1_id, node2_id = a.edge
@@ -754,11 +740,11 @@ class parallel_env(ParallelEnv):
                     # Add neighbor indices to the edges.
                     idx = 0
                     for j in dg.neighbors(i):
-                        if dg.nodes[j]["nodeType"] == 0:
+                        if dg.nodes[j]["nodeType"] == NODE_TYPE.AGENT:
+                            dg.edges[(i, j)]["neighborIndex"] = -1
+                        else:
                             dg.edges[(i, j)]["neighborIndex"] = idx
                             idx += 1
-                        else:
-                            dg.edges[(i, j)]["neighborIndex"] = -1
 
             # Trim the graph to only include the nodes and edges that are visible to the agent.
             # subgraphNodes = vertices + [f"agent_{a.id}_pos" for a in agents]
@@ -795,25 +781,15 @@ class parallel_env(ParallelEnv):
             data.agent_idx = idx
             data.agent_mask = agent_mask
 
-
-            # TEMPORARY: MAX_NEIGHBORS
-            MAX_NEIGHBORS = 15
-            MAX_NODES = 50
-
-
             # Calculate neighbor information.
             neighbors = []
             for neighbor in neighborhood:
-                if subgraph.nodes[neighbor]["nodeType"] == 0:
+                if subgraph.nodes[neighbor]["nodeType"] != NODE_TYPE.AGENT:
                     neighbors.append(subgraphNodes.index(neighbor))
-            nbrMask = np.zeros(MAX_NODES, dtype=bool)
+            nbrMask = np.zeros(self.max_nodes, dtype=bool)
             nbrMask[neighbors] = True
             data.neighbors = neighbors
             data.neighbors_mask = nbrMask
-
-            # Set up a numpy array to hold the observation.
-            # o = np.empty((1,), dtype=object)
-            # o[0] = data
 
             obs["graph"] = data
 
