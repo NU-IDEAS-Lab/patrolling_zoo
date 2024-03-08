@@ -163,11 +163,6 @@ class SAGEConvWithEdgesNew(MessagePassing):
             return super().aggregate(inputs, index, ptr, dim_size)
 
     def message(self, x_j: Tensor, x_i: Tensor, edge_attr: OptTensor, edge_index: OptTensor = None) -> Tensor:
-        # if self.idx == self.layer_count - 1:
-        #     return torch.concatenate([x_j, edge_attr], dim=1)
-        # else:
-        #     return x_j
-
         # We assume that x_j has been expanded to include room for the edge attributes. This is done in GNNBase.
         x_j[:, -self.edge_channels:] = edge_attr
 
@@ -176,9 +171,6 @@ class SAGEConvWithEdgesNew(MessagePassing):
             x_j = F.pad(x_j, (0, 0, 0, self.max_num_edges - x_j.shape[0]), mode='constant', value=-1.0)
 
         return x_j
-
-        info_ij = torch.concatenate([x_j, edge_attr], dim=1)
-        return info_ij
 
     def message_and_aggregate(self, adj_t: SparseTensor,
                               x: OptPairTensor) -> Tensor:
