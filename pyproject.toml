@@ -23,7 +23,6 @@ classifiers = [
 packages = [
     "patrolling_zoo",
     "patrolling_zoo.env",
-    "algorithm",
     "test",
     "onpolicy",
     "onpolicy.algorithms",
