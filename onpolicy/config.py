@@ -224,7 +224,7 @@ def get_config():
                         help="Hidden size for GNN network")
     parser.add_argument("--gnn_dropout_rate", type=float, default=0.5,
                         help="Dropout rate for GNN layers")
-    parser.add_argument("--gnn_node_embedding_num", type=int, default=2,
+    parser.add_argument("--gnn_node_embedding_num", type=int, default=3,
                         help="Number of node types.")  
     parser.add_argument("--gnn_skip_connections", action='store_true',
                         default=False, help='Whether to use a GNN-based critic')
