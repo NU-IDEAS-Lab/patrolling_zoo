@@ -4,7 +4,7 @@ from patrolling_zoo.env.patrolling_zoo import parallel_env
 from patrolling_zoo.env.patrol_graph import PatrolGraph
 from patrolling_zoo.env.communication_model import CommunicationModel
 from gymnasium.spaces.utils import flatten, flatten_space
-from gymnasium.spaces import Dict
+from gymnasium.spaces import Dict, Graph
 import numpy as np
 
 
@@ -15,38 +15,8 @@ class PatrollingEnv(object):
         self.args = args
         self.num_agents = args.num_agents
         
-        # # make env
-        # if not (args.use_render and args.save_videos):
-        #     self.env = foot.create_environment(
-        #         env_name=args.scenario_name,
-        #         stacked=args.use_stacked_frames,
-        #         representation=args.representation,
-        #         rewards=args.rewards,
-        #         number_of_left_players_agent_controls=args.num_agents,
-        #         number_of_right_players_agent_controls=0,
-        #         channel_dimensions=(args.smm_width, args.smm_height),
-        #         render=(args.use_render and args.save_gifs)
-        #     )
-        # else:
-        #     # render env and save videos
-        #     self.env = football_env.create_environment(
-        #         env_name=args.scenario_name,
-        #         stacked=args.use_stacked_frames,
-        #         representation=args.representation,
-        #         rewards=args.rewards,
-        #         number_of_left_players_agent_controls=args.num_agents,
-        #         number_of_right_players_agent_controls=0,
-        #         channel_dimensions=(args.smm_width, args.smm_height),
-        #         # video related params
-        #         write_full_episode_dumps=True,
-        #         render=True,
-        #         write_video=True,
-        #         dump_frequency=1,
-        #         logdir=args.video_dir
-        #     )
-
         if args.graph_random:
-            pg = PatrolGraph(numNodes=args.graph_random_nodes, regenerateUponReset=True)
+            pg = PatrolGraph(numNodes=args.graph_random_nodes)
         else:
             pg = PatrolGraph(args.graph_file)
 
@@ -68,11 +38,16 @@ class PatrollingEnv(object):
             observe_bitmap_dims = (args.observe_bitmap_size, args.observe_bitmap_size),
             attrition_method = args.attrition_method,
             attrition_random_probability = args.attrition_random_probability,
+            attrition_times = args.attrition_fixed_times,
             attrition_min_agents = args.attrition_min_agents,
             reward_method_terminal = args.reward_method_terminal,
-            max_cycles = -1 if self.args.skip_steps_sync or self.args.skip_steps_async else args.episode_length
+            reward_interval = args.reward_interval,
+            max_cycles = -1 if self.args.skip_steps_sync or self.args.skip_steps_async else args.max_cycles,
+            regenerate_graph_on_reset = args.graph_random,
+            max_nodes = args.gnn_max_nodes,
+            max_neighbors = args.gnn_max_neighbors
         )
-            
+        
         self.remove_redundancy = args.remove_redundancy
         self.zero_feature = args.zero_feature
         self.share_reward = args.share_reward
@@ -83,8 +58,16 @@ class PatrollingEnv(object):
         # Set up action space.
         self.action_space = [self.env.action_spaces[a] for a in self.env.possible_agents]
 
+        # Determine whether observations should be flattened.
+        ospace = self.env.observation_spaces[self.env.possible_agents[0]]
+        self.flatten_observations = type(ospace) == Dict
+        if self.flatten_observations:
+            for k, v in ospace.spaces.items():
+                if type(v) == Graph:
+                    self.flatten_observations = False
+                    break
+
         # Set up observation space.
-        self.flatten_observations = type(self.env.observation_spaces[self.env.possible_agents[0]]) == Dict
         if self.flatten_observations:
             self.observation_space = [flatten_space(self.env.observation_spaces[a]) for a in self.env.possible_agents]
         else:
@@ -102,11 +85,12 @@ class PatrollingEnv(object):
         self.ppoSteps = 0
         self.prevAction = {a: None for a in self.env.possible_agents}
         self.deltaSteps = {a: 0 for a in self.env.possible_agents}
-        obs, _ = self.env.reset()
+        obs, _  = self.env.reset()
 
         combined_obs = {
             "obs": self._obs_wrapper(obs),
-            "share_obs": self._share_obs_wrapper(self.env.state_all())
+            "share_obs": self._share_obs_wrapper(self.env.state_all()),
+            "available_actions": self._available_actions_wrapper(self.env.available_actions)
         }
 
         return combined_obs
@@ -158,7 +142,8 @@ class PatrollingEnv(object):
 
             combined_obs = {
                 "obs": self._obs_wrapper(obs),
-                "share_obs": self._share_obs_wrapper(self.env.state_all())
+                "share_obs": self._share_obs_wrapper(self.env.state_all()),
+                "available_actions": self._available_actions_wrapper(self.env.available_actions)
             }
 
             # Increase reward.
@@ -203,6 +188,11 @@ class PatrollingEnv(object):
 
     def close(self):
         self.env.close()
+
+    def _available_actions_wrapper(self, available_actions):
+        res = np.array([available_actions[a] for a in self.env.possible_agents])
+        res = np.reshape(res, (self.num_agents, -1))
+        return res
 
     def _obs_wrapper(self, obs):
 

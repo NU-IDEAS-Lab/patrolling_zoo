@@ -1,13 +1,17 @@
 from pettingzoo.utils.env import ParallelEnv
 from patrolling_zoo.env.communication_model import CommunicationModel
+from patrolling_zoo.env.patrol_graph import NODE_TYPE
 from gymnasium import spaces
 import random
 import numpy as np
 import math
+from copy import deepcopy
 from matplotlib import pyplot as plt
 import networkx as nx
 from copy import copy
 from enum import IntEnum
+from torch_geometric.utils.convert import from_networkx
+from torch_geometric.data import Data
 
 
 class PatrolAgent():
@@ -28,6 +32,7 @@ class PatrolAgent():
         self.position = self.startingPosition
         self.speed = self.startingSpeed
         self.edge = None
+        self.currentAction = -1.0
         self.lastNode = self.startingNode
         self.lastNodeVisited = None
      
@@ -49,6 +54,8 @@ class parallel_env(ParallelEnv):
                  alpha = 10.0,
                  beta = 100.0,
                  action_method = "full",
+                 action_full_max_nodes = 40,
+                 action_neighbors_max_degree = 15,
                  reward_method_terminal = "average",
                  observation_radius = np.inf,
                  observe_method = "ajg_new",
@@ -59,7 +66,10 @@ class parallel_env(ParallelEnv):
                  attrition_min_agents = 2,
                  attrition_times = [],
                  max_cycles: int = -1,
+                 max_nodes: int = 50,
+                 max_neighbors: int = 15,
                  reward_interval: int = -1,
+                 regenerate_graph_on_reset: bool = False,
                  *args,
                  **kwargs):
         """
@@ -82,6 +92,8 @@ class parallel_env(ParallelEnv):
         self.max_cycles = max_cycles
         self.comms_model = comms_model
         self.action_method = action_method
+        self.action_full_max_nodes = action_full_max_nodes
+        self.action_neighbors_max_degree = action_neighbors_max_degree
         self.reward_method_terminal = reward_method_terminal
         self.observe_method = observe_method
         self.observe_method_global = observe_method_global if observe_method_global != None else observe_method
@@ -90,6 +102,9 @@ class parallel_env(ParallelEnv):
         self.attrition_random_probability = attrition_random_probability
         self.attrition_times = attrition_times
         self.attrition_min_agents = attrition_min_agents
+        self.regenerate_graph_on_reset = regenerate_graph_on_reset
+        self.max_nodes = max_nodes
+        self.max_neighbors = max_neighbors
 
         self.reward_interval = reward_interval
 
@@ -108,11 +123,8 @@ class parallel_env(ParallelEnv):
         ]
 
         # Create the action space.
-        if self.action_method == "full":
-            self.action_spaces = {agent: spaces.Discrete(len(self.pg.graph)) for agent in self.possible_agents}
-        elif self.action_method == "neighbors":
-            maxDegree = max([self.pg.graph.degree(node) for node in self.pg.graph.nodes])
-            self.action_spaces = {agent: spaces.Discrete(maxDegree) for agent in self.possible_agents}
+        action_space = self._buildActionSpace(self.action_method)
+        self.action_spaces = spaces.Dict({agent: action_space for agent in self.possible_agents}) # type: ignore
 
         # The state space is a complete observation of the environment.
         # This is not part of the standard PettingZoo API, but is useful for centralized training.
@@ -122,7 +134,22 @@ class parallel_env(ParallelEnv):
         obs_space = self._buildStateSpace(self.observe_method)
         self.observation_spaces = spaces.Dict({agent: obs_space for agent in self.possible_agents}) # type: ignore
 
+        self.reset_count = 0
         self.reset()
+
+
+    def _buildActionSpace(self, action_method):
+        ''' Creates a gym.spaces.* object representing the action space. '''
+
+        if action_method == "full":
+            if self.action_full_max_nodes < len(self.pg.graph):
+                raise ValueError("The action space is smaller than the graph size.")
+            maxNodes = self.action_full_max_nodes if self.action_full_max_nodes > 0 else len(self.pg.graph)
+            return spaces.Discrete(maxNodes)
+        
+        elif action_method == "neighbors":
+            maxDegree = self.action_neighbors_max_degree # just use a fixed size and mask it
+            return spaces.Discrete(maxDegree)
 
 
     def _buildStateSpace(self, observe_method):
@@ -203,6 +230,38 @@ class parallel_env(ParallelEnv):
                 ) for a in self.possible_agents
             }) # type: ignore
         
+        if observe_method in ["pyg"]:
+            if self.action_method == "neighbors":
+                edge_space = spaces.Box(
+                    # weight, neighborID
+                    low = np.array([0.0, -1.0], dtype=np.float32),
+                    high = np.array([np.inf, np.inf], dtype=np.float32),
+                )
+                node_space = spaces.Box(
+                    # nodeType, idleness, degree
+                    low = np.array([-np.inf, -1.0, 0.0], dtype=np.float32),
+                    high = np.array([np.inf, np.inf, np.inf], dtype=np.float32),
+                )
+                node_type_idx = 0
+            else:
+                edge_space = spaces.Box(
+                    # weight
+                    low = np.array([0.0], dtype=np.float32),
+                    high = np.array([np.inf], dtype=np.float32),
+                )
+                node_space = spaces.Box(
+                    # ID, nodeType, idleness, lastNode, currentAction
+                    low = np.array([0.0, -np.inf, -1.0, -1.0, -1.0], dtype=np.float32),
+                    high = np.array([np.inf, np.inf, np.inf, np.inf, np.inf], dtype=np.float32),
+                )
+                node_type_idx = 1
+
+            state_space["graph"] = spaces.Graph(
+                node_space = node_space,
+                edge_space = edge_space
+            )
+            state_space["graph"].node_type_idx = node_type_idx
+        
         if type(state_space) == dict:
             state_space = spaces.Dict(state_space)
         
@@ -212,11 +271,15 @@ class parallel_env(ParallelEnv):
     def reset(self, seed=None, options=None):
         ''' Sets the environment to its initial state. '''
 
+        self.reset_count += 1
+
         if seed != None:
             random.seed(seed)
 
         # Reset the graph.
-        self.pg.reset(seed)
+        regenerateGraph = self.regenerate_graph_on_reset and self.reset_count % 20 == 0
+        randomizeIds = regenerateGraph
+        self.pg.reset(seed, randomizeIds=randomizeIds, regenerateGraph=regenerateGraph)
 
         # Reset the information about idleness over time.
         self.avgIdlenessTimes = []
@@ -237,6 +300,9 @@ class parallel_env(ParallelEnv):
         self.step_count = 0
         self.dones = dict.fromkeys(self.agents, False)
 
+        # Set available actions.
+        self.available_actions = {agent: self._getAvailableActions(agent) for agent in self.agents}
+
         # Return the initial observation.
         observation = {agent: self.observe(agent) for agent in self.agents}
         info = {
@@ -244,6 +310,7 @@ class parallel_env(ParallelEnv):
                 "ready": True
             } for agent in self.agents
         }
+
         return observation, info
 
 
@@ -350,6 +417,7 @@ class parallel_env(ParallelEnv):
         obs = {}
 
         # Add agent ID.
+        # if observe_method in ["ajg_new", "ajg_newer", "adjacency", "pyg"]:
         if observe_method in ["ajg_new", "ajg_newer", "adjacency"]:
             obs["agent_id"] = agent.id
 
@@ -554,11 +622,179 @@ class parallel_env(ParallelEnv):
                     vec[2] = self._getAgentPathLength(a, self._getPathToNode(a, a.edge[0])) / self.pg.graph.edges[a.edge]["weight"]
                 graphPos[a] = vec
             obs["agent_graph_position"] = graphPos
+
+        if observe_method in ["pyg"]:
+            # Copy pg map to g
+            g = deepcopy(self.pg.graph)
+ 
+            # Get a list of last visit times for each node.
+            lastVisits = nx.get_node_attributes(g, 'visitTime')
+            
+            # Get min and max idleness times for normalization.
+            maxIdleness = self.step_count - min(lastVisits.values())
+            minIdleness = self.step_count - max(lastVisits.values())
+            allSame = maxIdleness == minIdleness
+
+            # Set attributes of patrol graph nodes.
+            for node in g.nodes:
+                # Initialize all node idleness times to -1 as default.
+                g.nodes[node]["idlenessTime"] = -1.0  # Default for non-visible nodes
         
+                # Add dummy lastNode and currentAction values as attributes in g for all nodes.
+                g.nodes[node]["lastNode"] = -1.0
+                g.nodes[node]["currentAction"] = -1.0
+
+                # Node is visible.
+                if node in vertices:
+                    # Normalize idleness times for visible nodes
+                    if allSame:
+                        g.nodes[node]["idlenessTime"] = 1.0
+                    else:
+                        g.nodes[node]["idlenessTime"] = self._minMaxNormalize(
+                            self.step_count - lastVisits.get(node, self.step_count),
+                            minimum=minIdleness,
+                            maximum=maxIdleness
+                        )
+                    g.nodes[node]["nodeType"] = NODE_TYPE.OBSERVABLE_NODE
+                
+                # Node is not visible.
+                else:
+                    g.nodes[node]["nodeType"] = NODE_TYPE.UNOBSERVABLE_NODE
+
+            # Ensure that we add a node for the current agent, even if it's dead.
+            if agent not in agents:
+                agentsPlusEgo = agents + [agent]
+            else:
+                agentsPlusEgo = agents
+
+            # Traverse through all visible agents and add their positions as new nodes to g
+            for a in agentsPlusEgo:
+                # To avoid node ID conflicts, generate a unique node ID
+                agent_node_id = f"agent_{a.id}_pos"
+                g.add_node(
+                    agent_node_id,
+                    pos = a.position,
+                    id = -1 - a.id,
+                    nodeType = NODE_TYPE.AGENT,
+                    visitTime = 0.0,
+                    idlenessTime = 0.0,
+                    lastNode = g.nodes[a.lastNode]["id"] if a.lastNode in g.nodes else -1.0,
+                    currentAction = a.currentAction if a in agents else -1.0
+                )
+
+                # Check if the agent has an edge that it is currently on
+                if a.edge is None:
+                    # If the agent is not on an edge, add an edge from the agent's node to the node it is currently on
+                    g.add_edge(agent_node_id, a.lastNode, weight=0.0)
+
+                    # Add all of a.lastNode's neighbors as edges to the agent's node.
+                    for neighbor in g.neighbors(a.lastNode):
+                        if g.nodes[neighbor]["nodeType"] != NODE_TYPE.AGENT:
+                            g.add_edge(agent_node_id, neighbor, weight=g.edges[(a.lastNode, neighbor)]["weight"])
+                else:
+                    node1_id, node2_id = a.edge
+
+                    # Calculate weights or set them on a case-by-case basis
+                    weight_to_node1 = self._calculateEdgeWeight(a.position, g.nodes[node1_id]['pos'])
+                    weight_to_node2 = self._calculateEdgeWeight(a.position, g.nodes[node2_id]['pos'])
+
+                    g.add_edge(agent_node_id, node1_id, weight=weight_to_node1)
+                    g.add_edge(agent_node_id, node2_id, weight=weight_to_node2)
+            
+            # Normalize the edge weights of g.
+            weights = nx.get_edge_attributes(g, 'weight')
+            maxWeight = max(weights.values())
+            minWeight = min(weights.values())
+            for edge in g.edges:
+                g.edges[edge]["weight"] = self._minMaxNormalize(weights[edge], minimum=minWeight, maximum=maxWeight)
+            
+            # Turn g into a digraph, dg
+            dg = nx.DiGraph(g)
+
+            if self.action_method == "neighbors":
+                for i in dg.nodes:
+                    # Add degree to the node features.
+                    dg.nodes[i]["degree"] = dg.out_degree(i)
+
+                    # Add neighbor indices to the edges.
+                    idx = 0
+                    for j in dg.neighbors(i):
+                        if dg.nodes[j]["nodeType"] == NODE_TYPE.AGENT:
+                            dg.edges[(i, j)]["neighborIndex"] = -1
+                        else:
+                            dg.edges[(i, j)]["neighborIndex"] = idx
+                            idx += 1
+
+            # Trim the graph to only include the nodes and edges that are visible to the agent.
+            # subgraphNodes = vertices + [f"agent_{a.id}_pos" for a in agents]
+            # subgraph = nx.subgraph(g, subgraphNodes)
+            subgraph = dg
+            subgraphNodes = list(g.nodes)
+
+            if self.action_method == "neighbors":
+                edge_attrs = ["weight", "neighborIndex"]
+                node_attrs = ["nodeType", "idlenessTime", "degree"]
+                # node_attrs = ["id", "nodeType", "idlenessTime", "lastNode", "currentAction"]
+            else:
+                edge_attrs = ["weight"]
+                node_attrs = ["id", "nodeType", "idlenessTime", "lastNode", "currentAction"]
+
+            # Convert g to PyG
+            data = from_networkx(
+                subgraph,
+                group_node_attrs=node_attrs,
+                group_edge_attrs=edge_attrs
+            )
+            data.x = data.x.float()
+            data.edge_attr = data.edge_attr.float()
+
+            # Calculate the agent_mask based on the graph node ID assigned to this agent.
+            if agent.edge == None:
+                idx = subgraphNodes.index(agent.lastNode)
+                neighborhood = list(subgraph.neighbors(agent.lastNode))
+            else:
+                idx = subgraphNodes.index(f"agent_{agent.id}_pos")
+                neighborhood = list(subgraph.neighbors(f"agent_{agent.id}_pos"))
+            agent_mask = np.zeros(data.num_nodes, dtype=bool)
+            agent_mask[idx] = True
+            data.agent_idx = idx
+            data.agent_mask = agent_mask
+
+            # Calculate neighbor information.
+            neighbors = []
+            for neighbor in neighborhood:
+                if subgraph.nodes[neighbor]["nodeType"] != NODE_TYPE.AGENT:
+                    neighbors.append(subgraphNodes.index(neighbor))
+            nbrMask = np.zeros(self.max_nodes, dtype=bool)
+            nbrMask[neighbors] = True
+            data.neighbors = neighbors
+            data.neighbors_mask = nbrMask
+
+            obs["graph"] = data
+
+
         if (type(obs) == dict and obs == {}) or (type(obs) != dict and len(obs) < 1):
             raise ValueError(f"Invalid observation method {self.observe_method}")
         
+
+        # Check if type of any values in obs is a graph.
+        if type(obs) == dict:
+            # Ensure dictionary ordering.
+            obs = dict(sorted(obs.items()))
+
+            typeSet = set([type(v) for v in obs.values()])
+            if Data in typeSet:
+                # If so, we want the observation to be a single-element array of objects.
+                o = np.empty((len(obs),), dtype=object)
+                for i, k in enumerate(obs.keys()):
+                    o[i] = obs[k]
+                obs = o
+
         return obs
+    
+    def _calculateEdgeWeight(self, pos1, pos2):
+        '''Calculate the weights of the edges based on the position of the two points, here simply use the Euclidean distance'''
+        return np.linalg.norm(np.array(pos1) - np.array(pos2))
 
     def step(self, action_dict={}, lastStep=False):
         ''''
@@ -606,34 +842,12 @@ class parallel_env(ParallelEnv):
                 if not np.issubdtype(type(action), np.integer):
                     raise ValueError(f"Invalid action {action} of type {type(action)} provided.")
 
-                # Interpret the action using the "full" method.
-                if self.action_method == "full":
-                    if action not in self.pg.graph.nodes:
-                        raise ValueError(f"Invalid action {action} for agent {agent.name}")
-                    dstNode = action
-                
-                # Interpret the action using the "neighbors" method.
-                elif self.action_method == "neighbors":
-                    if agent.edge == None:
-                        if action >= self.pg.graph.degree(agent.lastNode):
-                            # Provide a penalty for invalid actions.
-                            reward_dict[agent] -= 1.0
-                            continue
-                        dstNode = list(self.pg.graph.neighbors(agent.lastNode))[action]
-                    else:
-                        if action >= 2: #only 2 actions are possible when on an edge
-                            # Provide a penalty for invalid actions.
-                            reward_dict[agent] -= 1.0
-                            continue
-                        dstNode = agent.edge[action]
-                
-                else:
-                    raise ValueError(f"Invalid action method {self.action_method}")
-                
-                # Provide penalty for visiting the same node twice in a row.
-                if dstNode == agent.lastNodeVisited:
-                    reward_dict[agent] -= 1.0
+                # Get the destination node.
+                dstNode = self.getDestinationNode(agent, action)
 
+                # Store this as the agent's last action.
+                agent.currentAction = action
+                
                 # Calculate the shortest path.
                 path = self._getPathToNode(agent, dstNode)
                 pathLen = self._getAgentPathLength(agent, path)
@@ -653,23 +867,22 @@ class parallel_env(ParallelEnv):
 
                             agent.lastNodeVisited = nextNode
                             if nextNode == dstNode:
+                                agent.currentAction = -1.0
                                 info_dict[agent]["ready"] = True
+                        # Agent reached the destination, assign a new speed from normal distribution
+                        # agent.speed = max(np.random.normal(loc=agent.startingSpeed, scale=5.0), 1.0)
             
                     # The agent has exceeded its movement budget for this step.
                     if stepSize <= 0.0:
                         break
 
         # Record the average idleness time at this step.
-        self.avgIdlenessTimes.append(self.pg.getAverageIdlenessTime(self.step_count))        
+        avg = self._minMaxNormalize(self.pg.getAverageIdlenessTime(self.step_count), minimum=0.0, maximum=self.step_count)
+        self.avgIdlenessTimes.append(avg)        
 
         # Perform observations.
         for agent in self.possible_agents:
-
-            # 3 communicaiton models here
-            # agent_observation = self.observe_with_communication(agent)
             agent_observation = self.observe(agent)
-            
-            # Update the observation for the agent
             obs_dict[agent] = agent_observation
         
         # Record miscellaneous information.
@@ -691,10 +904,11 @@ class parallel_env(ParallelEnv):
                     reward_dict[agent] += self.beta * self.step_count / (self.pg.getStdDevIdlenessTime(self.step_count) + 1e-8)
                 elif self.reward_method_terminal == "averageAverage":
                     avg = np.average(self.avgIdlenessTimes)
-                    reward_dict[agent] += self.beta * self.step_count / (avg + 1e-8)
+                    # reward_dict[agent] += self.beta * self.step_count / (avg + 1e-8)
+                    reward_dict[agent] -= self.beta * avg
                 elif self.reward_method_terminal == "divNormalizedWorst":
                     reward_dict[agent] /= self._minMaxNormalize(self.pg.getWorstIdlenessTime(self.step_count), minimum=0.0, maximum=self.max_cycles)
-                else:
+                elif self.reward_method_terminal != "none":
                     raise ValueError(f"Invalid terminal reward method {self.reward_method_terminal}")
 
                 info_dict[agent]["ready"] = True
@@ -706,17 +920,16 @@ class parallel_env(ParallelEnv):
         elif self.reward_interval >= 0 and self.step_count % self.reward_interval == 0:
             for agent in self.agents:
                 # reward_dict[agent] += self.beta * self.step_count / (self.pg.getAverageIdlenessTime(self.step_count) + 1e-8)
-                reward_dict[agent] += self.beta / self._minMaxNormalize(self.pg.getAverageIdlenessTime(self.step_count), minimum=0.0, maximum=self.max_cycles)
+                reward_dict[agent] -= self.beta * self._minMaxNormalize(self.pg.getAverageIdlenessTime(self.step_count), minimum=0.0, maximum=self.step_count)
 
         done_dict = {agent: self.dones[agent] for agent in self.possible_agents}
+
+        # Set available actions.
+        self.available_actions = {agent: self._getAvailableActions(agent) for agent in self.possible_agents}
+
         return obs_dict, reward_dict, done_dict, truncated_dict, info_dict
 
 
-    def onNodeVisit(self, node, timeStamp):
-        ''' Called when an agent visits a node.
-            Returns the reward for visiting the node, which is proportional to
-            node idleness time. '''
-        
     def onNodeVisit(self, node, timeStamp):
         ''' Called when an agent visits a node.
             Returns the reward for visiting the node, which is proportional to
@@ -735,6 +948,32 @@ class parallel_env(ParallelEnv):
         self.pg.setNodeVisitTime(node, timeStamp)
 
         return reward
+
+
+    def getDestinationNode(self, agent, action):
+        ''' Returns the destination node for the given agent and action. '''
+
+        # Interpret the action using the "full" method.
+        if self.action_method == "full":
+            if action not in self.pg.graph.nodes:
+                raise ValueError(f"Invalid action {action} for agent {agent.name}")
+            dstNode = action
+        
+        # Interpret the action using the "neighbors" method.
+        elif self.action_method == "neighbors":
+            if agent.edge == None:
+                if action >= self.pg.graph.degree(agent.lastNode):
+                    raise ValueError(f"Invalid action {action} for agent {agent.name}. Node {agent.lastNode} has only {self.pg.graph.degree(agent.lastNode)} neighbors.")
+                dstNode = list(self.pg.graph.neighbors(agent.lastNode))[action]
+            else:
+                if action != agent.currentAction:
+                    raise ValueError(f"Invalid action {action} for agent {agent.name}. Must complete action {agent.currentAction} first.")
+                dstNode = list(self.pg.graph.neighbors(agent.lastNode))[action]
+        
+        else:
+            raise ValueError(f"Invalid action method {self.action_method}")
+        
+        return dstNode
 
 
     def _moveTowardsNode(self, agent, node, stepSize):
@@ -816,16 +1055,33 @@ class parallel_env(ParallelEnv):
         return a + (x - minimum) * (b - a) / (maximum - minimum + eps)
 
 
-    def observe_with_communication(self, agent):
-        ''' Adds communicated states to the agent's observation. '''
+    def _getAvailableActions(self, agent):
+        ''' Returns the available actions for the given agent. '''
 
-        other_agents = [temp for temp in self.agents if temp != agent ]
-        agent_observation = self.observe(agent)
-
-        for a in other_agents:
-            receive_obs = self.comms_model.canReceive(a, agent)
-
-            if receive_obs:
-                agent_observation["agent_state"][a] = a.position
-
-        return agent_observation
+        if self.action_method == "full":
+            if agent.edge == None:
+                # All actions available.
+                actionMap = np.zeros(self.action_space(agent).n, dtype=np.float32)
+                actionMap[:self.pg.graph.number_of_nodes()] = 1.0
+                return actionMap
+            else:
+                # Only the current action available (as it is still incomplete).
+                actionMap = np.zeros(self.action_space(agent).n, dtype=np.float32)
+                actionMap[agent.currentAction] = 1.0
+                return actionMap
+        
+        elif self.action_method == "neighbors":
+            if agent.edge == None:
+                # All neighbors of the current node are available.
+                actionMap = np.zeros(self.action_space(agent).n, dtype=np.float32)
+                # numNeighbors = self.pg.graph.degree(agent.lastNode) - 1 # subtract 1 since the self loop adds 2 to the degree
+                numNeighbors = self.pg.graph.degree(agent.lastNode)
+                actionMap[:numNeighbors] = 1.0
+                return actionMap
+            else:
+                # Only the current action available (as it is still incomplete).
+                actionMap = np.zeros(self.action_space(agent).n, dtype=np.float32)
+                actionMap[agent.currentAction] = 1.0
+                return actionMap
+        else:
+            raise ValueError(f"Invalid action method {self.action_method}")

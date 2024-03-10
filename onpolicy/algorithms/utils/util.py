@@ -13,5 +13,8 @@ def get_clones(module, N):
     return nn.ModuleList([copy.deepcopy(module) for i in range(N)])
 
 def check(input):
-    output = torch.from_numpy(input) if type(input) == np.ndarray else input
+    if type(input) == np.ndarray:
+        output = torch.from_numpy(input)
+    else:
+        output = input
     return output

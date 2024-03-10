@@ -80,6 +80,8 @@ def parse_args(args, parser):
     parser.add_argument("--reward_method_terminal", type=str,
                         default="average", 
                         help="the method to use for terminal reward.")
+    parser.add_argument("--reward_interval", type=int, default=-1,
+                        help="number of steps between the periodic reward. -1 disables periodic reward")
     parser.add_argument("--num_agents", type=int, default=3,
                         help="number of controlled players.")
     parser.add_argument("--agent_speed", type=float, default=10.0,
@@ -102,6 +104,8 @@ def parse_args(args, parser):
                         help="the observable radius for each agent")
     parser.add_argument("--attrition_method", type=str, default="none", 
                         help="the method to use for agent attrition")
+    parser.add_argument("--attrition_fixed_times", type=list, default=[], 
+                        help="the fixed attrition times")
     parser.add_argument("--attrition_random_probability", type=float, default=0.0,
                         help="the random attrition probability")
     parser.add_argument("--attrition_min_agents", type=int, default=2,

@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
+from torch_geometric.data import Batch
 from onpolicy.utils.util import get_grad_norm, huber_loss, mse_loss
 from onpolicy.utils.valuenorm import ValueNorm
 from onpolicy.algorithms.utils.util import check
@@ -30,6 +31,7 @@ class R_MAPPO():
         self.max_grad_norm = args.max_grad_norm       
         self.huber_delta = args.huber_delta
 
+        self._use_gnn_policy = args.use_gnn_policy
         self._use_recurrent_policy = args.use_recurrent_policy
         self._use_naive_recurrent = args.use_naive_recurrent_policy
         self._use_max_grad_norm = args.use_max_grad_norm
@@ -113,6 +115,7 @@ class R_MAPPO():
         return_batch = check(return_batch).to(**self.tpdv)
         active_masks_batch = check(active_masks_batch).to(**self.tpdv)
 
+
         # Reshape to do in a single forward pass for all steps
         values, action_log_probs, dist_entropy = self.policy.evaluate_actions(share_obs_batch,
                                                                               obs_batch, 
@@ -141,6 +144,7 @@ class R_MAPPO():
         if update_actor:
             self.policy.actor_optimizer.zero_grad()
             (policy_loss - dist_entropy * self.entropy_coef).backward()
+            # (policy_loss - dist_entropy * self.entropy_coef).backward(create_graph=True, retain_graph=True)
 
         if self._use_max_grad_norm:
             actor_grad_norm = nn.utils.clip_grad_norm_(self.policy.actor.parameters(), self.max_grad_norm)

@@ -3,14 +3,20 @@ import networkx as nx
 import math
 import matplotlib.pyplot as plt
 import random
+from enum import IntEnum
+
+class NODE_TYPE(IntEnum):
+    OBSERVABLE_NODE = 0
+    AGENT = 1
+    UNOBSERVABLE_NODE = 2
+
 
 class PatrolGraph():
     ''' This reads a graph file of the format provided by
         https://github.com/davidbsp/patrolling_sim '''
-
-    def __init__(self, filepath = None, numNodes = 40, regenerateUponReset = False):
+    
+    def __init__(self, filepath = None, numNodes = 40):
         self.graph = nx.Graph()
-        self.regenerateUponReset = regenerateUponReset
         if filepath is None:
             self.generateRandomGraph(numNodes)
         else:
@@ -36,9 +42,14 @@ class PatrolGraph():
                 self.graph.add_node(i,
                     pos = (int(file.readline()) * self.resolution + self.offsetX,
                         int(file.readline()) * self.resolution + self.offsetY),
-                    visitTime = 0.0
+                    visitTime = 0.0,
+                    id = i,
+                    nodeType = NODE_TYPE.OBSERVABLE_NODE
                 )
                 
+                # Add a self-loop to the node.
+                # self.graph.add_edge(i, i)
+
                 # Create edges.
                 numEdges = int(file.readline())
                 for _ in range(numEdges):
@@ -79,6 +90,8 @@ class PatrolGraph():
 
         for node in self.graph.nodes:
             self.graph.nodes[node]["visitTime"] = 0.0
+            self.graph.nodes[node]["nodeType"] = 0
+            self.graph.nodes[node]["id"] = node
         for edge in self.graph.edges:
             self.graph.edges[edge]["weight"] = self._dist(self.graph.nodes[edge[0]]["pos"], self.graph.nodes[edge[1]]["pos"])
         self.longestPathLength = 0.0
@@ -87,14 +100,22 @@ class PatrolGraph():
             for j in i[1]:
                 if i[1][j] > self.longestPathLength:
                     self.longestPathLength = i[1][j]
+        
+        print(f"Finished generating random graph with {numNodes} nodes and degree {self.graph.degree()}.")
 
 
-    def reset(self, seed=None):
+    def reset(self, seed=None, randomizeIds=False, regenerateGraph=False):
         ''' Resets the graph to initial state.
-            If regenerateUponReset is True, a new random graph is generated. '''
+            If regenerateGraph is True, a new random graph is generated. '''
 
-        if self.regenerateUponReset:
+        if regenerateGraph:
             self.generateRandomGraph(self.graphDimension, sizeX=self.widthPixels, sizeY=self.heightPixels, seed=seed)
+        
+        if randomizeIds:
+            # Get random node IDs.
+            availableIds = random.sample(range(1000), self.graphDimension)
+            for node in self.graph.nodes:
+                self.graph.nodes[node]["id"] = availableIds.pop()
 
         for node in self.graph.nodes:
             self.graph.nodes[node]["visitTime"] = 0.0
@@ -177,7 +198,46 @@ class PatrolGraph():
             origins.append(self.getNearestNode(pos))
         return origins
     
+    
     def _dist(self, pos1, pos2):
         ''' Calculates the Euclidean distance between two points. '''
 
         return np.sqrt(np.power(pos1[0] - pos2[0], 2) + np.power(pos1[1] - pos2[1], 2))
+
+
+    def getPyTorchGeometricGraph(self):
+        ''' Returns a torch_geometric (PyG) graph object. '''
+
+        from torch_geometric.utils.convert import from_networkx
+        return from_networkx(self.graph, group_node_attrs=["pos", "visitTime"], group_edge_attrs=["weight"])
+
+
+    def exportToFile(self, filename):
+        ''' Exports to a file of the same format as `importFromFile`. '''
+
+        with open(filename, "w") as file:
+            # Write graph information.
+            file.write(f"{self.graphDimension}\n")
+            file.write(f"{self.widthPixels}\n")
+            file.write(f"{self.heightPixels}\n")
+            file.write(f"{self.resolution}\n")
+            file.write(f"{self.offsetX}\n")
+            file.write(f"{self.offsetY}\n")
+
+            # Write node data.
+            for i in range(self.graphDimension):
+                file.write("\n")
+                
+                # Write the node.
+                file.write(f"{i}\n")
+                file.write(f"{int((self.graph.nodes[i]['pos'][0] - self.offsetX) / self.resolution)}\n")
+                file.write(f"{int((self.graph.nodes[i]['pos'][1] - self.offsetY) / self.resolution)}\n")
+                
+                # Write edges.
+                numEdges = self.graph.degree[i]
+                file.write(f"{numEdges}\n")
+                for j in self.graph.neighbors(i):
+                    file.write(f"{j}\n")
+                    file.write("S\n")
+                    # Why do we convert to int first? Well, that's what the original patrolling_sim did...
+                    file.write(f"{int(round(self.graph.edges[i, j]['weight'] / self.resolution))}\n")
