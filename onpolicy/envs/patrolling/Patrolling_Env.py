@@ -15,36 +15,6 @@ class PatrollingEnv(object):
         self.args = args
         self.num_agents = args.num_agents
         
-        # # make env
-        # if not (args.use_render and args.save_videos):
-        #     self.env = foot.create_environment(
-        #         env_name=args.scenario_name,
-        #         stacked=args.use_stacked_frames,
-        #         representation=args.representation,
-        #         rewards=args.rewards,
-        #         number_of_left_players_agent_controls=args.num_agents,
-        #         number_of_right_players_agent_controls=0,
-        #         channel_dimensions=(args.smm_width, args.smm_height),
-        #         render=(args.use_render and args.save_gifs)
-        #     )
-        # else:
-        #     # render env and save videos
-        #     self.env = football_env.create_environment(
-        #         env_name=args.scenario_name,
-        #         stacked=args.use_stacked_frames,
-        #         representation=args.representation,
-        #         rewards=args.rewards,
-        #         number_of_left_players_agent_controls=args.num_agents,
-        #         number_of_right_players_agent_controls=0,
-        #         channel_dimensions=(args.smm_width, args.smm_height),
-        #         # video related params
-        #         write_full_episode_dumps=True,
-        #         render=True,
-        #         write_video=True,
-        #         dump_frequency=1,
-        #         logdir=args.video_dir
-        #     )
-
         if args.graph_random:
             pg = PatrolGraph(numNodes=args.graph_random_nodes)
         else:

@@ -148,9 +148,6 @@ class parallel_env(ParallelEnv):
             return spaces.Discrete(maxNodes)
         
         elif action_method == "neighbors":
-            # we subtract 1 since for some reason the self-loop increases degree by 2
-            # maxDegree = max([self.pg.graph.degree(node) - 1 for node in self.pg.graph.nodes])
-            # maxDegree = max([self.pg.graph.degree(node) for node in self.pg.graph.nodes])
             maxDegree = self.action_neighbors_max_degree # just use a fixed size and mask it
             return spaces.Discrete(maxDegree)
 
@@ -165,7 +162,6 @@ class parallel_env(ParallelEnv):
         # Add to the dictionary depending on the observation method.
 
         # Add agent id.
-        # if observe_method in ["ajg_new", "ajg_newer", "adjacency", "pyg"]:
         if observe_method in ["ajg_new", "ajg_newer", "adjacency"]:
             state_space["agent_id"] = spaces.Box(
                 low = -1,
@@ -247,12 +243,6 @@ class parallel_env(ParallelEnv):
                     high = np.array([np.inf, np.inf, np.inf], dtype=np.float32),
                 )
                 node_type_idx = 0
-                # node_space = spaces.Box(
-                #     # ID, nodeType, idleness, lastNode, currentAction
-                #     low = np.array([0.0, -np.inf, -1.0, -1.0, -1.0], dtype=np.float32),
-                #     high = np.array([np.inf, np.inf, np.inf, np.inf, np.inf], dtype=np.float32),
-                # )
-                # node_type_idx = 1
             else:
                 edge_space = spaces.Box(
                     # weight
@@ -271,17 +261,6 @@ class parallel_env(ParallelEnv):
                 edge_space = edge_space
             )
             state_space["graph"].node_type_idx = node_type_idx
-
-            # state_space["lastNode"] = spaces.Box(
-            #     low = 0,
-            #     high = self.pg.graph.number_of_nodes(),
-            #     dtype=np.int32
-            # )
-            # state_space["currentAction"] = spaces.Box(
-            #     low = -1.0,
-            #     high = np.inf,
-            #     dtype=np.float32
-            # )
         
         if type(state_space) == dict:
             state_space = spaces.Dict(state_space)
@@ -793,10 +772,7 @@ class parallel_env(ParallelEnv):
 
             obs["graph"] = data
 
-            # Additionally, add the last node and last action of the agent to the observation.
-            # obs["lastNode"] = g.nodes[agent.lastNode]["id"] if agent.lastNode in g.nodes else -1.0
-            # obs["currentAction"] = agent.currentAction
-        
+
         if (type(obs) == dict and obs == {}) or (type(obs) != dict and len(obs) < 1):
             raise ValueError(f"Invalid observation method {self.observe_method}")
         
@@ -872,10 +848,6 @@ class parallel_env(ParallelEnv):
                 # Store this as the agent's last action.
                 agent.currentAction = action
                 
-                # Provide penalty for visiting the same node twice in a row.
-                # if dstNode == agent.lastNodeVisited:
-                #     reward_dict[agent] -= 1.0
-
                 # Calculate the shortest path.
                 path = self._getPathToNode(agent, dstNode)
                 pathLen = self._getAgentPathLength(agent, path)
@@ -910,12 +882,7 @@ class parallel_env(ParallelEnv):
 
         # Perform observations.
         for agent in self.possible_agents:
-
-            # 3 communicaiton models here
-            # agent_observation = self.observe_with_communication(agent)
             agent_observation = self.observe(agent)
-            
-            # Update the observation for the agent
             obs_dict[agent] = agent_observation
         
         # Record miscellaneous information.
@@ -1118,18 +1085,3 @@ class parallel_env(ParallelEnv):
                 return actionMap
         else:
             raise ValueError(f"Invalid action method {self.action_method}")
-        
-
-    def observe_with_communication(self, agent):
-        ''' Adds communicated states to the agent's observation. '''
-
-        other_agents = [temp for temp in self.agents if temp != agent ]
-        agent_observation = self.observe(agent)
-
-        for a in other_agents:
-            receive_obs = self.comms_model.canReceive(a, agent)
-
-            if receive_obs:
-                agent_observation["agent_state"][a] = a.position
-
-        return agent_observation
