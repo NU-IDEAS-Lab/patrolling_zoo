@@ -17,7 +17,7 @@ from torch_geometric.data import Data
 class PatrolAgent():
     ''' This class stores all agent state. '''
 
-    def __init__(self, id, position=(0.0, 0.0), speed = 1.0, observationRadius=np.inf, startingNode=None, currentState = 1):
+    def __init__(self, id, position=(0.0, 0.0), speed = 1.0, observationRadius=np.inf, startingNode=None, currentState = 1, max_nodes = 50):
         self.id = id
         self.name = f"agent_{id}"
         self.startingPosition = position
@@ -25,6 +25,7 @@ class PatrolAgent():
         self.startingNode = startingNode
         self.observationRadius = observationRadius
         self.currentState = currentState
+        self.max_nodes = max_nodes
         self.reset()
     
     
@@ -35,6 +36,7 @@ class PatrolAgent():
         self.currentAction = -1.0
         self.lastNode = self.startingNode
         self.lastNodeVisited = None
+        self.stateBelief = {i: -1.0 for i in range(self.max_nodes)}
      
 
 class parallel_env(ParallelEnv):
@@ -118,7 +120,8 @@ class parallel_env(ParallelEnv):
             PatrolAgent(i, startingPositions[i],
                         speed = speed,
                         startingNode = self.agentOrigins[i],
-                        observationRadius = self.observationRadius
+                        observationRadius = self.observationRadius,
+                        max_nodes = self.max_nodes
             ) for i in range(num_agents)
         ]
 
@@ -391,6 +394,31 @@ class parallel_env(ParallelEnv):
         return self._populateStateSpace(self.observe_method, agent, radius, allow_done_agents)
 
 
+    def communicate(self, receiver=None, allow_done_agents=False):
+        ''' Simulates messages sent by all agents to receiver.
+            If received successfully, the receiver updates its state belief.
+            If receiver is set to none, will perform communication for all. '''
+
+        # Determine which agents can communicate.
+        if allow_done_agents:
+            agentList = self.possible_agents
+        else:
+            agentList = self.agents
+        
+        if receiver == None:
+            receiverList = agentList
+        else:
+            receiverList = [receiver]
+
+        # Perform communication.
+        for rcvr in receiverList:
+            for a in agentList:
+                if a != rcvr and self.comms_model.canReceive(a, rcvr):
+                    for v in self.pg.graph.nodes:
+                        if self._dist(self.pg.getNodePosition(v), a.position) <= a.observationRadius:
+                            rcvr.stateBelief[v] = self.pg.getNodeVisitTime(v)
+
+
     def _populateStateSpace(self, observe_method, agent, radius, allow_done_agents):
         ''' Returns a populated state/observation space.'''
 
@@ -405,13 +433,23 @@ class parallel_env(ParallelEnv):
         # Calculate the list of visible agents and vertices.
         vertices = [v for v in self.pg.graph.nodes if self._dist(self.pg.getNodePosition(v), agent.position) <= radius]
         agents = [a for a in agentList if self._dist(a.position, agent.position) <= radius]
+
+        # Update beliefs for nodes which we can see.
+        for v in vertices:
+            agent.stateBelief[v] = self.pg.getNodeVisitTime(v)
+
+        # Perform communication.
         for a in agentList:
             if a != agent and self.comms_model.canReceive(a, agent):
                 if a not in agents:
                     agents.append(a)
                 for v in self.pg.graph.nodes:
-                    if v not in vertices and self._dist(self.pg.getNodePosition(v), a.position) <= radius:
-                        vertices.append(v)
+                    if self._dist(self.pg.getNodePosition(v), a.position) <= radius:
+                        if v not in vertices:
+                            vertices.append(v)
+                        # Update state belief for communicates nodes.
+                        agent.stateBelief[v] = self.pg.getNodeVisitTime(v)
+        
         agents = sorted(agents, key=lambda a: a.id)
         vertices = sorted(vertices)
         
@@ -629,37 +667,34 @@ class parallel_env(ParallelEnv):
             g = deepcopy(self.pg.graph)
  
             # Get a list of last visit times for each node.
-            lastVisits = nx.get_node_attributes(g, 'visitTime')
+            lastVisits = [agent.stateBelief[i] for i in range(self.pg.graph.number_of_nodes())]
             
             # Get min and max idleness times for normalization.
-            maxIdleness = self.step_count - min(lastVisits.values())
-            minIdleness = self.step_count - max(lastVisits.values())
+            maxIdleness = self.step_count - min(lastVisits)
+            minIdleness = self.step_count - max(lastVisits)
             allSame = maxIdleness == minIdleness
 
             # Set attributes of patrol graph nodes.
             for node in g.nodes:
-                # Initialize all node idleness times to -1 as default.
-                g.nodes[node]["idlenessTime"] = -1.0  # Default for non-visible nodes
-        
                 # Add dummy lastNode and currentAction values as attributes in g for all nodes.
                 g.nodes[node]["lastNode"] = -1.0
                 g.nodes[node]["currentAction"] = -1.0
 
-                # Node is visible.
-                if node in vertices:
-                    # Normalize idleness times for visible nodes
-                    if allSame:
-                        g.nodes[node]["idlenessTime"] = 1.0
-                    else:
-                        g.nodes[node]["idlenessTime"] = self._minMaxNormalize(
-                            self.step_count - lastVisits.get(node, self.step_count),
-                            minimum=minIdleness,
-                            maximum=maxIdleness
-                        )
-                    g.nodes[node]["nodeType"] = NODE_TYPE.OBSERVABLE_NODE
-                
-                # Node is not visible.
+                # Normalize idleness times for visible nodes
+                if allSame:
+                    g.nodes[node]["idlenessTime"] = 1.0
                 else:
+                    g.nodes[node]["idlenessTime"] = self._minMaxNormalize(
+                        self.step_count - lastVisits[node],
+                        minimum=minIdleness,
+                        maximum=maxIdleness
+                    )
+                        
+                if node in vertices:
+                    # Node is visible.
+                    g.nodes[node]["nodeType"] = NODE_TYPE.OBSERVABLE_NODE
+                else:
+                    # Node is not visible.
                     g.nodes[node]["nodeType"] = NODE_TYPE.UNOBSERVABLE_NODE
 
             # Ensure that we add a node for the current agent, even if it's dead.
