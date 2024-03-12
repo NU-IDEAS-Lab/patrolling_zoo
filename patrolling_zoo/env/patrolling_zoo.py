@@ -406,8 +406,9 @@ class parallel_env(ParallelEnv):
         vertices = [v for v in self.pg.graph.nodes if self._dist(self.pg.getNodePosition(v), agent.position) <= radius]
         agents = [a for a in agentList if self._dist(a.position, agent.position) <= radius]
         for a in agentList:
-            if a != agent and a not in agents and self.comms_model.canReceive(a, agent):
-                agents.append(a)
+            if a != agent and self.comms_model.canReceive(a, agent):
+                if a not in agents:
+                    agents.append(a)
                 for v in self.pg.graph.nodes:
                     if v not in vertices and self._dist(self.pg.getNodePosition(v), a.position) <= radius:
                         vertices.append(v)
