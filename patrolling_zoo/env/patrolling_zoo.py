@@ -240,12 +240,18 @@ class parallel_env(ParallelEnv):
                     low = np.array([0.0, -1.0], dtype=np.float32),
                     high = np.array([np.inf, np.inf], dtype=np.float32),
                 )
+                # node_space = spaces.Box(
+                #     # nodeType, idleness, degree
+                #     low = np.array([-np.inf, -1.0, 0.0], dtype=np.float32),
+                #     high = np.array([np.inf, np.inf, np.inf], dtype=np.float32),
+                # )
+                # node_type_idx = 0
                 node_space = spaces.Box(
-                    # nodeType, idleness, degree
-                    low = np.array([-np.inf, -1.0, 0.0], dtype=np.float32),
-                    high = np.array([np.inf, np.inf, np.inf], dtype=np.float32),
+                    # ID, nodeType, idleness, degree, lastNode, currentAction
+                    low = np.array([-np.inf, 0.0, -1.0, 0.0, -1.0, -1.0], dtype=np.float32),
+                    high = np.array([np.inf, np.inf, np.inf, np.inf, np.inf, np.inf], dtype=np.float32),
                 )
-                node_type_idx = 0
+                node_type_idx = 1
             else:
                 edge_space = spaces.Box(
                     # weight
@@ -634,8 +640,9 @@ class parallel_env(ParallelEnv):
             # Create adjacency matrix.
             adjacency = -1.0 * np.ones((self.pg.graph.number_of_nodes(), self.pg.graph.number_of_nodes()), dtype=np.float32)
             for edge in self.pg.graph.edges:
-                maxWeight = max([self.pg.graph.edges[e]["weight"] for e in self.pg.graph.edges])
-                minWeight = min([self.pg.graph.edges[e]["weight"] for e in self.pg.graph.edges])
+                weights = list(nx.get_edge_attributes(self.pg.graph, 'weight').values())
+                maxWeight = max(weights)
+                minWeight = min(weights)
                 weight = self._minMaxNormalize(self.pg.graph.edges[edge]["weight"], minimum=minWeight, maximum=maxWeight)
                 adjacency[edge[0], edge[1]] = weight
                 adjacency[edge[1], edge[0]] = weight
@@ -769,8 +776,8 @@ class parallel_env(ParallelEnv):
 
             if self.action_method == "neighbors":
                 edge_attrs = ["weight", "neighborIndex"]
-                node_attrs = ["nodeType", "idlenessTime", "degree"]
-                # node_attrs = ["id", "nodeType", "idlenessTime", "lastNode", "currentAction"]
+                # node_attrs = ["nodeType", "idlenessTime", "degree"]
+                node_attrs = ["id", "nodeType", "idlenessTime", "degree", "lastNode", "currentAction"]
             else:
                 edge_attrs = ["weight"]
                 node_attrs = ["id", "nodeType", "idlenessTime", "lastNode", "currentAction"]
