@@ -1,5 +1,17 @@
 # MAPPO
 
+## ABOUT THIS PACKAGE
+
+This package was originally created by Yu et al. and was taken from https://github.com/marlbenchmark/on-policy/.
+
+We (Goeckner et al.) have modified this package to support graph neural networks and the `patrolling_zoo` environment
+for use with our MAGEC algorithm.
+
+Original README.md file follows:
+
+
+
+
 ## New Update！！！We support SMAC V2 now～
 
 Chao Yu*, Akash Velu*, Eugene Vinitsky, Jiaxuan Gao, Yu Wang, Alexandre Bayen, and Yi Wu. 

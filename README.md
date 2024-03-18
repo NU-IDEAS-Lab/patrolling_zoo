@@ -1,5 +1,13 @@
 # Patrolling Zoo
 
+This repository contains the policy/training code for the paper, "Graph Neural Network-based Multi-agent Reinforcement Learning for Resilient Distributed Coordination of Multi-Robot Systems", by Anthony Goeckner, Yueyuan Sui, Nicolas Martinet, Xinliang Li, and Qi Zhu of Northwestern University in Evanston, Illinois.
+
+## Package Description
+Packages are as follows:
+
+ * **onpolicy**: Contains the algorithm code.
+ * **patrolling_zoo**: Contains the environment code.
+
 ## Installation
 
  1) Clone the patrolling_zoo repository:
