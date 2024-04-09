@@ -1,8 +1,8 @@
 import random
 
-from patrolling_zoo.env.patrolling_zoo import parallel_env
-from patrolling_zoo.env.patrol_graph import PatrolGraph
-from patrolling_zoo.env.communication_model import CommunicationModel
+from sdzoo.env.sdzoo import parallel_env
+from sdzoo.env.patrol_graph import PatrolGraph
+from sdzoo.env.communication_model import CommunicationModel
 from gymnasium.spaces.utils import flatten, flatten_space
 from gymnasium.spaces import Dict, Graph
 import numpy as np

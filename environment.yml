@@ -1,4 +1,4 @@
-name: patrolling_zoo
+name: sdzoo
 channels:
   - pyg
   - pytorch

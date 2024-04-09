@@ -1,5 +1,5 @@
 from pettingzoo.utils.env import ParallelEnv
-from patrolling_zoo.env.communication_model import CommunicationModel
+from sdzoo.env.communication_model import CommunicationModel
 from gymnasium import spaces
 import random
 import numpy as np
@@ -36,7 +36,7 @@ class PatrolAgent():
 
 class parallel_env(ParallelEnv):
     metadata = {
-        "name": "patrolling_zoo_environment_v0",
+        "name": "sdzoo_environment_v0",
     }
 
     def __init__(self, patrol_graph, num_agents,
