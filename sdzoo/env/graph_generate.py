@@ -77,7 +77,7 @@ def save_graph_to_file(graph, filename):
 
 # Generate and save the graph
 graph = generate_graph_with_coordinates_v3(num_nodes=40, a=20, b=100)
-save_graph_to_file(graph, '/Users/yueyuansui/Github/patrolling_zoo/patrolling_zoo/env/graph_file.graph')
+save_graph_to_file(graph, '/home/gyaan/sdzoo/sdzoo/env/graph_file.graph')
 
 # Draw the graph (optional)
 pos = nx.get_node_attributes(graph, 'pos')
