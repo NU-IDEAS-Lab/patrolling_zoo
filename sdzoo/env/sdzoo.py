@@ -180,22 +180,6 @@ class parallel_env(ParallelEnv):
                     high = np.inf,
                 ) for v in range(self.pg.graph.number_of_nodes())
             }) # type: ignore
-
-        # Add agent Euclidean position.
-        if observe_method in ["ranking", "raw", "old"]:
-            # Get graph bounds in Euclidean space.
-            pos = nx.get_node_attributes(self.pg.graph, 'pos')
-            minPosX = min(pos[p][0] for p in pos)
-            maxPosX = max(pos[p][0] for p in pos)
-            minPosY = min(pos[p][1] for p in pos)
-            maxPosY = max(pos[p][1] for p in pos)
-
-            state_space["agent_state"] = spaces.Dict({
-                a: spaces.Box(
-                    low = np.array([minPosX, minPosY], dtype=np.float32),
-                    high = np.array([maxPosX, maxPosY], dtype=np.float32),
-                ) for a in self.possible_agents
-            }) # type: ignore
         
         # Add vertex distances from each agent.
         if observe_method in ["old", "ajg_new", "ajg_newer"]:
@@ -205,15 +189,6 @@ class parallel_env(ParallelEnv):
                     high = np.array([np.inf] * self.pg.graph.number_of_nodes(), dtype=np.float32),
                 ) for a in self.possible_agents
             }) # type: ignore
-        
-        # Add bitmap observation.
-        if observe_method in ["bitmap", "bitmap2"]:
-            state_space = spaces.Box(
-                low=-2.0,
-                high=np.inf,
-                shape=(self.observe_bitmap_dims[0], self.observe_bitmap_dims[1], len(self.OBSERVATION_CHANNELS)),
-                dtype=np.float32,
-            )
         
         # Add adjacency matrix.
         if observe_method in ["adjacency", "ajg_newer"]:
@@ -460,16 +435,6 @@ class parallel_env(ParallelEnv):
         if observe_method in ["ajg_new", "ajg_newer", "adjacency"]:
             obs["agent_id"] = agent.id
 
-        # Add agent position.
-        if observe_method in ["ranking", "raw", "old"]:
-            obs["agent_state"] = {a: a.position for a in agents}
-
-        # Add vertex idleness time (ranked).
-        if observe_method in ["ranking"]:
-            nodes_idless = {node : self.pg.getNodeIdlenessTime(node, self.step_count) for node in vertices}
-            unique_sorted_idleness_times = sorted(list(set(nodes_idless.values())))
-            obs["vertex_state"] = {v: unique_sorted_idleness_times.index(nodes_idless[v]) for v in vertices}
-        
         # Add vertex idleness time (minMax normalized).
         if observe_method in ["ajg_new", "ajg_newer"]:
             # Create numpy array of idleness times.
@@ -499,17 +464,6 @@ class parallel_env(ParallelEnv):
             for node in vertices:
                 obs["vertex_state"][node] = self.pg.getNodeIdlenessTime(node, self.step_count)
 
-        # Add vertex distances from each agent (raw).
-        if observe_method in ["old"]:
-            vertexDistances = {}
-            for a in agents:
-                vDists = np.zeros(self.pg.graph.number_of_nodes())
-                for v in self.pg.graph.nodes:
-                    path = self._getPathToNode(a, v)
-                    vDists[v] = self._getAgentPathLength(a, path)
-                vertexDistances[a] = vDists
-            obs["vertex_distances"] = vertexDistances
-
         # Add vertex distances from each agent (normalized).
         if observe_method in ["ajg_new", "ajg_newer"]:
             # Calculate the shortest path distances from each agent to each node.
@@ -527,107 +481,6 @@ class parallel_env(ParallelEnv):
                 vertexDistances[a] = vDists[a.id]
             
             obs["vertex_distances"] = vertexDistances
-
-        # Add bitmap observation.
-        if observe_method in ["bitmap"]:
-            # Create an image which defaults to -1.
-            bitmap = -1.0 * np.ones(self.observation_space(agent).shape, dtype=np.float32)
-
-            # Set the observing agent's ID in the (0, 0) position. This is a bit hacky.
-            bitmap[0, 0, self.OBSERVATION_CHANNELS.AGENT_ID] = agent.id
-
-            def _normPosition(pos):
-                if radius == np.inf:
-                    x = self._minMaxNormalize(pos[0], a=0.0, b=self.observe_bitmap_dims[0], minimum=0.0, maximum=self.pg.widthPixels, eps=0.01)
-                    y = self._minMaxNormalize(pos[1], a=0.0, b=self.observe_bitmap_dims[1], minimum=0.0, maximum=self.pg.heightPixels, eps=0.01)
-                else:
-                    x = self._minMaxNormalize(pos[0], a=0.0, b=self.observe_bitmap_dims[0], minimum=agent.position[0] - radius, maximum=agent.position[0] + radius, eps=0.01)
-                    y = self._minMaxNormalize(pos[1], a=0.0, b=self.observe_bitmap_dims[1], minimum=agent.position[1] - radius, maximum=agent.position[1] + radius, eps=0.01)
-                return x, y
-
-            # Add agents to the observation.
-            for a in agents:
-                pos = _normPosition(a.position)
-                if pos[0] < 0 or pos[0] >= self.observe_bitmap_dims[0] or pos[1] < 0 or pos[1] >= self.observe_bitmap_dims[1]:
-                    continue
-                bitmap[int(pos[0]), int(pos[1]), self.OBSERVATION_CHANNELS.AGENT_ID] = a.id
-            
-            # Add vertex idleness times to the observation.
-            for v in vertices:
-                pos = _normPosition(self.pg.getNodePosition(v))
-                if pos[0] < 0 or pos[0] >= self.observe_bitmap_dims[0] or pos[1] < 0 or pos[1] >= self.observe_bitmap_dims[1]:
-                    continue
-                bitmap[int(pos[0]), int(pos[1]), self.OBSERVATION_CHANNELS.IDLENESS] = self.pg.getNodeIdlenessTime(v, self.step_count)
-            
-            # Add edges to the graph channel.
-            for edge in self.pg.graph.edges:
-                pos1 = _normPosition(self.pg.getNodePosition(edge[0]))
-                pos2 = _normPosition(self.pg.getNodePosition(edge[1]))
-                dist = self._dist(pos1, pos2)
-                if dist > 0.0:
-                    for i in range(int(dist)):
-                        pos = (int(pos1[0] + (pos2[0] - pos1[0]) * i / dist), int(pos1[1] + (pos2[1] - pos1[1]) * i / dist))
-                        if pos[0] < 0 or pos[0] >= self.observe_bitmap_dims[0] or pos[1] < 0 or pos[1] >= self.observe_bitmap_dims[1]:
-                            continue
-                        bitmap[pos[0], pos[1], self.OBSERVATION_CHANNELS.GRAPH] = -2.0
-
-            # Add vertices to the graph channel.
-            for v in vertices:
-                pos = _normPosition(self.pg.getNodePosition(v))
-                if pos[0] < 0 or pos[0] >= self.observe_bitmap_dims[0] or pos[1] < 0 or pos[1] >= self.observe_bitmap_dims[1]:
-                    continue
-                bitmap[int(pos[0]), int(pos[1]), self.OBSERVATION_CHANNELS.GRAPH] = v
-
-            obs = bitmap
-
-        # Add bitmap2 observation. This variant uses -1 to indicate unobserved nodes and agents, rather than cropping the bitmap.
-        if observe_method in ["bitmap2"]:
-            # Create an image which defaults to -1.
-            bitmap = -1.0 * np.ones(self.observation_space(agent).shape, dtype=np.float32)
-
-            # Set the observing agent's ID in the (0, 0) position. This is a bit hacky.
-            bitmap[0, 0, self.OBSERVATION_CHANNELS.AGENT_ID] = agent.id
-
-            def _normPosition(pos):
-                x = self._minMaxNormalize(pos[0], a=0.0, b=self.observe_bitmap_dims[0], minimum=0.0, maximum=self.pg.widthPixels, eps=0.01)
-                y = self._minMaxNormalize(pos[1], a=0.0, b=self.observe_bitmap_dims[1], minimum=0.0, maximum=self.pg.heightPixels, eps=0.01)
-                return x, y
-
-            # Add agents to the observation.
-            for a in agents:
-                pos = _normPosition(a.position)
-                bitmap[int(pos[0]), int(pos[1]), self.OBSERVATION_CHANNELS.AGENT_ID] = a.id
-            
-            # Add vertex idleness times to the observation.
-            for v in vertices:
-                pos = _normPosition(self.pg.getNodePosition(v))
-                bitmap[int(pos[0]), int(pos[1]), self.OBSERVATION_CHANNELS.IDLENESS] = self.pg.getNodeIdlenessTime(v, self.step_count)
-            
-            # Add edges to the graph channel.
-            for edge in self.pg.graph.edges:
-                pos1 = _normPosition(self.pg.getNodePosition(edge[0]))
-                pos2 = _normPosition(self.pg.getNodePosition(edge[1]))
-                dist = self._dist(pos1, pos2)
-                if dist > 0.0:
-                    for i in range(int(dist)):
-                        pos = (int(pos1[0] + (pos2[0] - pos1[0]) * i / dist), int(pos1[1] + (pos2[1] - pos1[1]) * i / dist))
-                        bitmap[pos[0], pos[1], self.OBSERVATION_CHANNELS.GRAPH] = -2.0
-
-            # Add vertices to the graph channel.
-            for v in self.pg.graph.nodes:
-                pos = _normPosition(self.pg.getNodePosition(v))
-                bitmap[int(pos[0]), int(pos[1]), self.OBSERVATION_CHANNELS.GRAPH] = v
-
-            obs = bitmap
-
-        # Add adjacency matrix.
-        if observe_method in ["ajg_newer"]:
-            # Create adjacency matrix.
-            adjacency = -1.0 * np.ones((self.pg.graph.number_of_nodes(), self.pg.graph.number_of_nodes()), dtype=np.float32)
-            for edge in self.pg.graph.edges:
-                adjacency[edge[0], edge[1]] = 1.0
-                adjacency[edge[1], edge[0]] = 1.0
-            obs["adjacency"] = adjacency
 
         # Add weighted adjacency matrix (normalized).
         if observe_method in ["adjacency"]:
