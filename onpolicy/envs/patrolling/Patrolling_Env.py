@@ -8,7 +8,7 @@ from gymnasium.spaces import Dict, Graph
 import numpy as np
 
 
-class PatrollingEnv(object):
+class SDEnv(object): # TODO: update observation space, reward function to match formulation
     '''Wrapper to make the Patrolling Zoo environment compatible'''
 
     def __init__(self, args):

@@ -9,7 +9,7 @@ def euclidean_distance(pos1, pos2):
     """Compute the Euclidean distance between two points represented as tuples."""
     return math.sqrt((pos1[0] - pos2[0])**2 + (pos1[1] - pos2[1])**2)
 
-def generate_graph_with_coordinates_v3(num_nodes=40, a=40, b=75):
+def generate_graph_with_coordinates_v3(num_nodes=40, a=40, b=75): # TODO: update for people, payloads, and depot node
     while True:
         """
         Generate a random graph where the probability of an edge existing between two nodes 

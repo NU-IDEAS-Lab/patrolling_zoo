@@ -33,8 +33,9 @@ class PatrolGraph():
             self.offsetX = float(file.readline())
             self.offsetY = float(file.readline())
 
+            # TODO: add depot node
             # Read node data.
-            for _ in range(self.graphDimension):
+            for _ in range(self.graphDimension): 
                 file.readline()
                 
                 # Create the node.
@@ -238,6 +239,8 @@ class PatrolGraph():
             file.write(f"{self.offsetX}\n")
             file.write(f"{self.offsetY}\n")
 
+            # TODO: add depot node
+            
             # Write node data.
             for i in range(self.graphDimension):
                 file.write("\n")

@@ -12,7 +12,7 @@ import torch
 
 # code repository sub-packages
 from onpolicy.config import get_config
-from onpolicy.envs.patrolling.Patrolling_Env import PatrollingEnv
+from onpolicy.envs.patrolling.Patrolling_Env import SDEnv
 from onpolicy.envs.env_wrappers import SubprocVecEnv, DummyVecEnv
 
 from onpolicy.scripts.train.train_patrolling import parse_args, validateArgs
@@ -21,7 +21,7 @@ def make_train_env(all_args):
     def get_env_fn(rank):
         def init_env():
             if all_args.env_name == "Patrolling":
-                env = PatrollingEnv(all_args)
+                env = SDEnv(all_args)
             else:
                 print("Can not support the " +
                       all_args.env_name + " environment.")
