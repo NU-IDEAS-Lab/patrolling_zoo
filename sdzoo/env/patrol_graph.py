@@ -23,7 +23,7 @@ class PatrolGraph():
             self.loadFromFile(filepath)
 
 
-    def loadFromFile(self, filepath: str):
+    def loadFromFile(self, filepath: str): # TODO: add format for people at each node to be able to test a consistent graph
         with open(filepath, "r") as file:
             # Read graph information.
             self.graphDimension = int(file.readline())
@@ -44,7 +44,9 @@ class PatrolGraph():
                         int(file.readline()) * self.resolution + self.offsetY),
                     visitTime = 0.0,
                     id = i,
-                    nodeType = NODE_TYPE.OBSERVABLE_NODE
+                    nodeType = NODE_TYPE.OBSERVABLE_NODE,
+                    people = np.random.randint(4), # random integers from [0,4)
+                    payloads = 0
                 )
                 
                 # Add a self-loop to the node.
@@ -90,8 +92,10 @@ class PatrolGraph():
 
         for node in self.graph.nodes:
             self.graph.nodes[node]["visitTime"] = 0.0
-            self.graph.nodes[node]["nodeType"] = 0
+            self.graph.nodes[node]["nodeType"] = NODE_TYPE.OBSERVABLE_NODE
             self.graph.nodes[node]["id"] = node
+            self.graph.nodes[node]["people"] = np.random.randint(4)
+            self.graph.nodes[node]["payloads"] = 0
         for edge in self.graph.edges:
             self.graph.edges[edge]["weight"] = self._dist(self.graph.nodes[edge[0]]["pos"], self.graph.nodes[edge[1]]["pos"])
         self.longestPathLength = 0.0
@@ -119,6 +123,7 @@ class PatrolGraph():
 
         for node in self.graph.nodes:
             self.graph.nodes[node]["visitTime"] = 0.0
+            self.graph.nodes[node]["payloads"] = 0
 
 
     def getNodePosition(self, node):
@@ -168,7 +173,16 @@ class PatrolGraph():
         average_idleness_time = self.getAverageIdlenessTime(currentTime)
         return math.sqrt(sum([math.pow(self.getNodeIdlenessTime(node, currentTime) - average_idleness_time, 2) for node in nodes]) / float(number_of_nodes))
 
+    def getNodePayloads(self, node):
+        ''' Returns the number of payloads delivered to a node'''
 
+        return self.graph.nodes[node]["payloads"]
+    
+    def getNodePeople(self, node):
+        ''' Returns the number of people at a node'''
+
+        return self.graph.nodes[node]["people"]
+    
     def getNearestNode(self, pos, epsilon=None):
         ''' Returns the nearest node to the given position.
             If epsilon is not None and no node is within epsilon, returns None. '''
@@ -209,10 +223,10 @@ class PatrolGraph():
         ''' Returns a torch_geometric (PyG) graph object. '''
 
         from torch_geometric.utils.convert import from_networkx
-        return from_networkx(self.graph, group_node_attrs=["pos", "visitTime"], group_edge_attrs=["weight"])
+        return from_networkx(self.graph, group_node_attrs=["pos", "visitTime", "people", "payloads"], group_edge_attrs=["weight"])
 
 
-    def exportToFile(self, filename):
+    def exportToFile(self, filename): # TODO: add format for people at each node to be able to test on a consistent graph
         ''' Exports to a file of the same format as `importFromFile`. '''
 
         with open(filename, "w") as file:

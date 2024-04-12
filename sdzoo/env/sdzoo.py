@@ -44,11 +44,6 @@ class parallel_env(ParallelEnv):
         "name": "sdzoo_environment_v0",
     }
 
-    class OBSERVATION_CHANNELS(IntEnum):
-        AGENT_ID = 0
-        IDLENESS = 1
-        GRAPH = 2
-
     def __init__(self, patrol_graph, num_agents,
                  comms_model = CommunicationModel(model = "none"),
                  require_explicit_visit = True,
