@@ -12,7 +12,7 @@ import torch
 
 # code repository sub-packages
 from onpolicy.config import get_config
-from onpolicy.envs.patrolling.Patrolling_Env import SDEnv
+from onpolicy.envs.patrolling.SDEnv import SDEnv
 from onpolicy.envs.env_wrappers import SubprocVecEnv, DummyVecEnv
 
 from onpolicy.scripts.train.train_patrolling import parse_args, validateArgs

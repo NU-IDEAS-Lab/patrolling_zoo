@@ -1,7 +1,7 @@
 import random
 
 from sdzoo.env.sdzoo import parallel_env
-from sdzoo.env.patrol_graph import PatrolGraph
+from sdzoo.env.sd_graph import SDGraph
 from sdzoo.env.communication_model import CommunicationModel
 from gymnasium.spaces.utils import flatten, flatten_space
 from gymnasium.spaces import Dict, Graph
@@ -16,12 +16,12 @@ class SDEnv(object): # TODO: update observation space, reward function to match 
         self.num_agents = args.num_agents
         
         if args.graph_random:
-            pg = PatrolGraph(numNodes=args.graph_random_nodes)
+            pg = SDGraph(numNodes=args.graph_random_nodes)
         else:
-            pg = PatrolGraph(args.graph_file)
+            pg = SDGraph(args.graph_file)
 
         self.env = parallel_env(
-            patrol_graph = pg,
+            sd_graph = pg,
             num_agents = args.num_agents,
             comms_model = CommunicationModel(
                 model = args.communication_model,

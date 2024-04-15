@@ -8,7 +8,7 @@ from matplotlib import pyplot as plt
 import networkx as nx
 from copy import copy
 
-class PatrolAgent():
+class SDAgent():
     ''' This class stores all agent state. '''
 
     def __init__(self, id, position=(0.0, 0.0), speed = 1.0, observationRadius=np.inf, startingNode=None, currentState = 1):
@@ -39,7 +39,7 @@ class parallel_env(ParallelEnv):
         "name": "sdzoo_environment_v0",
     }
 
-    def __init__(self, patrol_graph, num_agents,
+    def __init__(self, sd_graph, num_agents,
                  model = CommunicationModel(model = "bernoulli"),
                  model_name = "bernouli_model",
                  require_explicit_visit = True,
@@ -56,7 +56,7 @@ class parallel_env(ParallelEnv):
         Initialize the PatrolEnv object.
 
         Args:
-            patrol_graph (PatrolGraph): The patrol graph representing the environment.
+            sd_graph (SDGraph): The patrol graph representing the environment.
             num_agents (int): The number of agents in the environment.
 
         Returns:
@@ -64,7 +64,7 @@ class parallel_env(ParallelEnv):
         """
         super().__init__(*args, **kwargs)
 
-        self.pg = patrol_graph
+        self.pg = sd_graph
 
         # Configuration.
         self.requireExplicitVisit = require_explicit_visit
@@ -84,7 +84,7 @@ class parallel_env(ParallelEnv):
         startingNodes = random.sample(list(self.pg.graph.nodes), num_agents)
         startingPositions = [self.pg.getNodePosition(i) for i in startingNodes]
         self.possible_agents = [
-            PatrolAgent(i, startingPositions[i],
+            SDAgent(i, startingPositions[i],
                         speed = speed,
                         startingNode = startingNodes[i],
                         observationRadius = self.observationRadius

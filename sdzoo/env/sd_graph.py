@@ -11,14 +11,14 @@ class NODE_TYPE(IntEnum):
     UNOBSERVABLE_NODE = 2
 
 
-class PatrolGraph():
+class SDGraph():
     ''' This reads a graph file of the format provided by
         https://github.com/davidbsp/patrolling_sim '''
     
-    def __init__(self, filepath = None, numNodes = 40):
+    def __init__(self, filepath = None, numNodes = 40, payloads = 25):
         self.graph = nx.Graph()
         if filepath is None:
-            self.generateRandomGraph(numNodes)
+            self.generateRandomGraph(numNodes, payloads=payloads)
         else:
             self.loadFromFile(filepath)
 

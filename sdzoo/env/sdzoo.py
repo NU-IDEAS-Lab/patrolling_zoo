@@ -1,6 +1,6 @@
 from pettingzoo.utils.env import ParallelEnv
 from sdzoo.env.communication_model import CommunicationModel
-from sdzoo.env.patrol_graph import NODE_TYPE
+from sdzoo.env.sd_graph import NODE_TYPE
 from gymnasium import spaces
 import random
 import numpy as np
@@ -14,7 +14,7 @@ from torch_geometric.utils.convert import from_networkx
 from torch_geometric.data import Data
 
 
-class PatrolAgent():
+class SDAgent():
     ''' This class stores all agent state. '''
 
     def __init__(self, id, position=(0.0, 0.0), speed = 1.0, observationRadius=np.inf, startingNode=None, currentState = 1, max_nodes = 50):
@@ -44,7 +44,7 @@ class parallel_env(ParallelEnv):
         "name": "sdzoo_environment_v0",
     }
 
-    def __init__(self, patrol_graph, num_agents,
+    def __init__(self, sd_graph, num_agents,
                  comms_model = CommunicationModel(model = "none"),
                  require_explicit_visit = True,
                  speed = 1.0,
@@ -73,7 +73,7 @@ class parallel_env(ParallelEnv):
         Initialize the PatrolEnv object.
 
         Args:
-            patrol_graph (PatrolGraph): The patrol graph representing the environment.
+            sd_graph (SDGraph): The patrol graph representing the environment.
             num_agents (int): The number of agents in the environment.
 
         Returns:
@@ -81,7 +81,7 @@ class parallel_env(ParallelEnv):
         """
         super().__init__(*args, **kwargs)
 
-        self.pg = patrol_graph
+        self.pg = sd_graph
 
         # Configuration.
         self.requireExplicitVisit = require_explicit_visit
@@ -112,7 +112,7 @@ class parallel_env(ParallelEnv):
         self.agentOrigins = random.sample(list(self.pg.graph.nodes), num_agents)
         startingPositions = [self.pg.getNodePosition(i) for i in self.agentOrigins]
         self.possible_agents = [
-            PatrolAgent(i, startingPositions[i],
+            SDAgent(i, startingPositions[i],
                         speed = speed,
                         startingNode = self.agentOrigins[i],
                         observationRadius = self.observationRadius,
