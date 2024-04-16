@@ -17,7 +17,7 @@ from torch_geometric.data import Data
 class SDAgent():
     ''' This class stores all agent state. '''
 
-    def __init__(self, id, position=(0.0, 0.0), speed = 1.0, observationRadius=np.inf, startingNode=None, currentState = 1, max_nodes = 50):
+    def __init__(self, id, position=(0.0, 0.0), speed = 1.0, observationRadius=np.inf, startingNode=None, currentState = 1, max_nodes = 50, max_capacity = 1):
         self.id = id
         self.name = f"agent_{id}"
         self.startingPosition = position
@@ -26,6 +26,7 @@ class SDAgent():
         self.observationRadius = observationRadius
         self.currentState = currentState
         self.max_nodes = max_nodes
+        self.max_capacity = max_capacity
         self.reset()
     
     
@@ -37,9 +38,10 @@ class SDAgent():
         self.lastNode = self.startingNode
         self.lastNodeVisited = None
         self.stateBelief = {i: -1.0 for i in range(self.max_nodes)}
+        self.payloads = 0
      
 
-class parallel_env(ParallelEnv):
+class parallel_env(ParallelEnv): 
     metadata = {
         "name": "sdzoo_environment_v0",
     }
@@ -143,14 +145,14 @@ class parallel_env(ParallelEnv):
             if self.action_full_max_nodes < len(self.pg.graph):
                 raise ValueError("The action space is smaller than the graph size.")
             maxNodes = self.action_full_max_nodes if self.action_full_max_nodes > 0 else len(self.pg.graph)
-            return spaces.Discrete(maxNodes)
+            return spaces.Discrete(maxNodes + 2) # add 2 for load and drop
         
         elif action_method == "neighbors":
             maxDegree = self.action_neighbors_max_degree # just use a fixed size and mask it
-            return spaces.Discrete(maxDegree)
+            return spaces.Discrete(maxDegree + 2) # add 2 for load and drop
 
 
-    def _buildStateSpace(self, observe_method):
+    def _buildStateSpace(self, observe_method): # TODO: add payloads to agent state
         ''' Creates a state space given the observation method.
             Returns a gym.spaces.* object. '''
         
@@ -389,7 +391,7 @@ class parallel_env(ParallelEnv):
                             rcvr.stateBelief[v] = self.pg.getNodeVisitTime(v)
 
 
-    def _populateStateSpace(self, observe_method, agent, radius, allow_done_agents):
+    def _populateStateSpace(self, observe_method, agent, radius, allow_done_agents): # TODO: add payloads
         ''' Returns a populated state/observation space.'''
 
         if radius == None:
@@ -680,7 +682,7 @@ class parallel_env(ParallelEnv):
         '''Calculate the weights of the edges based on the position of the two points, here simply use the Euclidean distance'''
         return np.linalg.norm(np.array(pos1) - np.array(pos2))
 
-    def step(self, action_dict={}, lastStep=False):
+    def step(self, action_dict={}, lastStep=False): # TODO: add load and drop steps for agents, use negative numbers for load and drop
         ''''
         Perform a step in the environment based on the given action dictionary.
 
@@ -695,7 +697,7 @@ class parallel_env(ParallelEnv):
         '''
         self.step_count += 1
         obs_dict = {}
-        reward_dict = {agent: 0.0 for agent in self.possible_agents}
+        reward_dict = {agent: 0.0 for agent in self.possible_agents} # TODO: add positive rewards for dropping correct loads, picking up correct loads, negative rewards for picking up/dropping off incorrect loads
         truncated_dict = {agent: False for agent in self.possible_agents}
         info_dict = {
             agent: {
@@ -719,7 +721,7 @@ class parallel_env(ParallelEnv):
                     print(f"Agent {attrition_agent.id} has been removed from the environment at step {self.step_count}.")
 
         # Perform actions.
-        for agent in self.agents:
+        for agent in self.agents: # TODO: add loading/dropping off payloads
             if agent in action_dict:
                 action = action_dict[agent]
 
@@ -814,7 +816,7 @@ class parallel_env(ParallelEnv):
         return obs_dict, reward_dict, done_dict, truncated_dict, info_dict
 
 
-    def onNodeVisit(self, node, timeStamp):
+    def onNodeVisit(self, node, timeStamp): # TODO: change for dropping/picking up loads
         ''' Called when an agent visits a node.
             Returns the reward for visiting the node, which is proportional to
             node idleness time. '''
@@ -834,7 +836,7 @@ class parallel_env(ParallelEnv):
         return reward
 
 
-    def getDestinationNode(self, agent, action):
+    def getDestinationNode(self, agent, action): # TODO: inspect for changes needed regarding loading/dropping payloads
         ''' Returns the destination node for the given agent and action. '''
 
         # Interpret the action using the "full" method.
@@ -860,7 +862,7 @@ class parallel_env(ParallelEnv):
         return dstNode
 
 
-    def _moveTowardsNode(self, agent, node, stepSize):
+    def _moveTowardsNode(self, agent, node, stepSize): # TODO: inspect for changes needed regarding loading/dropping payloads
         ''' Takes a single step towards the next node.
             Returns a tuple containing whether the agent has reached the node
             and the remaining step size. '''

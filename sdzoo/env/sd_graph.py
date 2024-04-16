@@ -98,7 +98,7 @@ class SDGraph():
         self.offsetY = 0.0
         self.totalPayloads = payloads
 
-        depot_node = np.random.randint(len(self.graph.nodes))
+        depot_node = random.randint(0, len(self.graph.nodes) - 1)
         node_count = 0
         for node in self.graph.nodes:
             depot = False
@@ -124,7 +124,7 @@ class SDGraph():
 
                 people = float("inf")
                 while people > people_left:
-                    people = np.random.randint(4) # add maximum 3 people at a time to a given node
+                    people = random.randint(0, 3) # add maximum 3 people at a time to a given node
                 self.graph.nodes[node]["people"] += people
                 people_left -= people
 
