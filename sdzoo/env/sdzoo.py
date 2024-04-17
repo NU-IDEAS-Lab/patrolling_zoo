@@ -392,7 +392,10 @@ class parallel_env(ParallelEnv):
                 if a != rcvr and self.comms_model.canReceive(a, rcvr):
                     for v in self.sdg.graph.nodes:
                         if self._dist(self.sdg.getNodePosition(v), a.position) <= a.observationRadius:
-                            rcvr.stateBelief[v] = (self.sdg.getNodePayloads(v), self.sdg.getNodePeople(v))
+                            if self.sdg.isDepot(v):
+                                rcvr.stateBelief[v] = self.sdg.getNodePayloads(v)
+                            else:
+                                rcvr.stateBelief[v] = self.sdg.getNodePeople(v) - self.sdg.getNodePayloads(v)
 
 
     def _populateStateSpace(self, observe_method, agent, radius, allow_done_agents): # TODO: add payloads
@@ -412,7 +415,10 @@ class parallel_env(ParallelEnv):
 
         # Update beliefs for nodes which we can see.
         for v in vertices:
-            agent.stateBelief[v] = (self.sdg.getNodePayloads(v), self.sdg.getNodePeople(v))
+            if self.sdg.isDepot(v):
+                agent.stateBelief[v] = self.sdg.getNodePayloads(v)
+            else:
+                agent.stateBelief[v] = self.sdg.getNodePeople(v) - self.sdg.getNodePayloads(v)
 
         # Perform communication.
         for a in agentList:
@@ -424,7 +430,10 @@ class parallel_env(ParallelEnv):
                         if v not in vertices:
                             vertices.append(v)
                         # Update state belief for communicates nodes.
-                        agent.stateBelief[v] = (self.sdg.getNodePayloads(v), self.sdg.getNodePeople(v))
+                        if self.sdg.isDepot(v):
+                            agent.stateBelief[v] = self.sdg.getNodePayloads(v)
+                        else:
+                            agent.stateBelief[v] = self.sdg.getNodePeople(v) - self.sdg.getNodePayloads(v)
         
         agents = sorted(agents, key=lambda a: a.id)
         vertices = sorted(vertices)
@@ -457,13 +466,17 @@ class parallel_env(ParallelEnv):
             for v in vertices:
                 obs["vertex_state"][v] = idlenessTimes[v]
 
-        # Add vertex idleness time (raw).
+        # Add vertex people and payloads at each vertex.
         if observe_method in ["raw", "old", "idlenessOnly", "adjacency"]:
             # Create dictionary with default value of -1.0.
             obs["vertex_state"] = {v: -1.0 for v in range(self.sdg.graph.number_of_nodes())}
 
             for node in vertices:
-                obs["vertex_state"][node] = self.sdg.getNodeIdlenessTime(node, self.step_count)
+                if self.sdg.isDepot(node):
+                    # to keep vertex states positive, only use payloads for the state of the depot
+                    obs["vertex_state"][node] = self.sdg.getNodePayloads(node)
+                else:
+                    obs["vertex_state"][node] = (self.sdg.getNodePeople(node) - self.sdg.getNodePayloads(node))
 
         # Add vertex distances from each agent (normalized).
         if observe_method in ["ajg_new", "ajg_newer"]:
@@ -555,6 +568,7 @@ class parallel_env(ParallelEnv):
                     people = -1.0,
                     payloads = a.payloads,
                     max_capacity = a.max_capacity,
+                    depot = False, # for consistency in the gnn
                     lastNode = g.nodes[a.lastNode]["id"] if a.lastNode in g.nodes else -1.0,
                     currentAction = a.currentAction if a in agents else -1.0
                 )
