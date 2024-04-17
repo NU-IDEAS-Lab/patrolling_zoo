@@ -217,8 +217,8 @@ class parallel_env(ParallelEnv):
                     high = np.array([np.inf, np.inf], dtype=np.float32),
                 )
                 node_space = spaces.Box(
-                    # nodeType, idleness, degree, people, payloads
-                    low = np.array([-np.inf, -1.0, 0.0, 0.0, 0.0], dtype=np.float32),
+                    # nodeType, degree, people, payloads, max_capacity
+                    low = np.array([-np.inf, 0.0, -1.0, 0.0, -1.0], dtype=np.float32),
                     high = np.array([np.inf, np.inf, np.inf, np.inf, np.inf], dtype=np.float32),
                 )
                 node_type_idx = 0
@@ -229,9 +229,9 @@ class parallel_env(ParallelEnv):
                     high = np.array([np.inf], dtype=np.float32),
                 )
                 node_space = spaces.Box(
-                    # ID, nodeType, idleness, lastNode, currentAction
-                    low = np.array([0.0, -np.inf, -1.0, -1.0, -1.0], dtype=np.float32),
-                    high = np.array([np.inf, np.inf, np.inf, np.inf, np.inf], dtype=np.float32),
+                    # ID, nodeType, lastNode, currentAction, people, payloads, max_capacity
+                    low = np.array([0.0, -np.inf, -1.0, -1.0, -1.0, 0.0, -1.0], dtype=np.float32),
+                    high = np.array([np.inf, np.inf, np.inf, np.inf, np.inf, np.inf, np.inf], dtype=np.float32),
                 )
                 node_type_idx = 1
 
@@ -525,9 +525,11 @@ class parallel_env(ParallelEnv):
 
             # Set attributes of patrol graph nodes.
             for node in g.nodes:
-                # Add dummy lastNode and currentAction values as attributes in g for all nodes.
+                # Add dummy lastNode, currentAction, and max_capacity values as attributes in g for all nodes.
                 g.nodes[node]["lastNode"] = -1.0
                 g.nodes[node]["currentAction"] = -1.0
+                g.nodes[node]["max_capacity"] = -1.0
+
 
                 # Set appropriate visibility for each node  
                 if node in vertices:
@@ -550,7 +552,7 @@ class parallel_env(ParallelEnv):
                     id = -1 - a.id,
                     nodeType = NODE_TYPE.AGENT,
                     visitTime = 0.0,
-                    idlenessTime = 0.0,
+                    people = -1.0,
                     payloads = a.payloads,
                     max_capacity = a.max_capacity,
                     lastNode = g.nodes[a.lastNode]["id"] if a.lastNode in g.nodes else -1.0,
@@ -608,11 +610,11 @@ class parallel_env(ParallelEnv):
 
             if self.action_method == "neighbors":
                 edge_attrs = ["weight", "neighborIndex"]
-                node_attrs = ["nodeType", "idlenessTime", "degree", "people", "payloads"]
+                node_attrs = ["nodeType", "degree", "people", "payloads", "max_capacity"]
                 # node_attrs = ["id", "nodeType", "idlenessTime", "lastNode", "currentAction"]
             else:
                 edge_attrs = ["weight"]
-                node_attrs = ["id", "nodeType", "idlenessTime", "lastNode", "currentAction"]
+                node_attrs = ["id", "nodeType", "lastNode", "currentAction", "people", "payloads", "max_capacity"]
 
             # Convert g to PyG
             data = from_networkx(
