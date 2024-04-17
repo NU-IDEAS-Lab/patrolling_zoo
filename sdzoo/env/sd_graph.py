@@ -211,6 +211,21 @@ class SDGraph():
 
         return self.graph.nodes[node]["payloads"]
     
+    def putPayloads(self, node, num):
+        ''' Adds `num` payloads to `node`'''
+
+        self.graph.nodes[node]["payloads"] += num
+
+    def takePayloads(self, node, num):
+        ''' Removes `num` payloads from `node`'''
+
+        self.graph.nodes[node]["payloads"] -= num
+
+    def isDepot(self, node):
+        ''' Returns if a given node is the depot node'''
+        
+        return self.graph.nodes[node]["depot"]
+    
     def getNodePeople(self, node):
         ''' Returns the number of people at a node'''
 

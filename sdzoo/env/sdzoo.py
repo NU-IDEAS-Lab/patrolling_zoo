@@ -13,6 +13,9 @@ from enum import IntEnum
 from torch_geometric.utils.convert import from_networkx
 from torch_geometric.data import Data
 
+class ACTION(IntEnum):
+    LOAD = 0
+    DROP = 1
 
 class SDAgent():
     ''' This class stores all agent state. '''
@@ -518,12 +521,7 @@ class parallel_env(ParallelEnv):
             g = deepcopy(self.sdg.graph)
  
             # Get a list of last visit times for each node.
-            lastVisits = [agent.stateBelief[i] for i in range(self.sdg.graph.number_of_nodes())]
-            
-            # Get min and max idleness times for normalization.
-            maxIdleness = self.step_count - min(lastVisits)
-            minIdleness = self.step_count - max(lastVisits)
-            allSame = maxIdleness == minIdleness
+            lastBeliefs = [agent.stateBelief[i] for i in range(self.sdg.graph.number_of_nodes())]     
 
             # Set attributes of patrol graph nodes.
             for node in g.nodes:
@@ -531,16 +529,7 @@ class parallel_env(ParallelEnv):
                 g.nodes[node]["lastNode"] = -1.0
                 g.nodes[node]["currentAction"] = -1.0
 
-                # Normalize idleness times for visible nodes
-                if allSame:
-                    g.nodes[node]["idlenessTime"] = 1.0
-                else:
-                    g.nodes[node]["idlenessTime"] = self._minMaxNormalize(
-                        self.step_count - lastVisits[node],
-                        minimum=minIdleness,
-                        maximum=maxIdleness
-                    )
-                        
+                # Set appropriate visibility for each node  
                 if node in vertices:
                     # Node is visible.
                     g.nodes[node]["nodeType"] = NODE_TYPE.OBSERVABLE_NODE
@@ -549,10 +538,7 @@ class parallel_env(ParallelEnv):
                     g.nodes[node]["nodeType"] = NODE_TYPE.UNOBSERVABLE_NODE
 
             # Ensure that we add a node for the current agent, even if it's dead.
-            if agent not in agents:
-                agentsPlusEgo = agents + [agent]
-            else:
-                agentsPlusEgo = agents
+            agentsPlusEgo = agents + [agent] if agent not in agents else agents
 
             # Traverse through all visible agents and add their positions as new nodes to g
             for a in agentsPlusEgo:
@@ -685,7 +671,7 @@ class parallel_env(ParallelEnv):
         '''Calculate the weights of the edges based on the position of the two points, here simply use the Euclidean distance'''
         return np.linalg.norm(np.array(pos1) - np.array(pos2))
 
-    def step(self, action_dict={}, lastStep=False): # TODO: add load and drop steps for agents, use negative numbers for load and drop
+    def step(self, action_dict={}, lastStep=False): 
         ''''
         Perform a step in the environment based on the given action dictionary.
 
@@ -700,7 +686,7 @@ class parallel_env(ParallelEnv):
         '''
         self.step_count += 1
         obs_dict = {}
-        reward_dict = {agent: 0.0 for agent in self.possible_agents} # TODO: add positive rewards for dropping correct loads, picking up correct loads, negative rewards for picking up/dropping off incorrect loads
+        reward_dict = {agent: 0.0 for agent in self.possible_agents} 
         truncated_dict = {agent: False for agent in self.possible_agents}
         info_dict = {
             agent: {
@@ -724,46 +710,59 @@ class parallel_env(ParallelEnv):
                     print(f"Agent {attrition_agent.id} has been removed from the environment at step {self.step_count}.")
 
         # Perform actions.
-        for agent in self.agents: # TODO: add loading/dropping off payloads
+        for agent in self.agents: 
             if agent in action_dict:
                 action = action_dict[agent]
 
                 if not np.issubdtype(type(action), np.integer):
                     raise ValueError(f"Invalid action {action} of type {type(action)} provided.")
 
-                # Get the destination node.
-                dstNode = self.getDestinationNode(agent, action)
+                is_movement = action == ACTION.DROP or action == ACTION.LOAD
 
-                # Store this as the agent's last action.
-                agent.currentAction = action
+                if not is_movement:
+                    if action == ACTION.DROP:
+                        # attempt to drop the payload(s), add the appropriate reward
+                        reward_dict[agent] += self._dropPayload(agent)  
+                    else:
+                        # attempt to load the payload(s), add the appropriate reward
+                        reward_dict[agent] += self._loadPayload(agent)
+                else:
+                    # set the actions back to node indices
+                    action -= 2
+
+                    # Get the destination node.
+                    dstNode = self.getDestinationNode(agent, action)
+
+                    # Store this as the agent's last action.
+                    agent.currentAction = action
+                    
+                    # Calculate the shortest path.
+                    path = self._getPathToNode(agent, dstNode)
+                    pathLen = self._getAgentPathLength(agent, path)
+                    
+                    # Take a step towards the next node.
+                    stepSize = np.random.normal(loc=agent.speed, scale=1.0)
+                    for nextNode in path:
+                        reached, stepSize = self._moveTowardsNode(agent, nextNode, stepSize)
+
+                        # The agent has reached the next node.
+                        if reached:
+                            if nextNode == dstNode or not self.requireExplicitVisit:
+                                # The agent has reached its destination, visiting the node.
+                                # The agent receives a reward for visiting the node.
+                                r = self.onNodeVisit(nextNode, self.step_count)
+                                reward_dict[agent] += r
+
+                                agent.lastNodeVisited = nextNode # TODO: ask about this
+                                if nextNode == dstNode:
+                                    agent.currentAction = -1.0
+                                    info_dict[agent]["ready"] = True
+                            # Agent reached the destination, assign a new speed from normal distribution
+                            # agent.speed = max(np.random.normal(loc=agent.startingSpeed, scale=5.0), 1.0)
                 
-                # Calculate the shortest path.
-                path = self._getPathToNode(agent, dstNode)
-                pathLen = self._getAgentPathLength(agent, path)
-                
-                # Take a step towards the next node.
-                stepSize = np.random.normal(loc=agent.speed, scale=1.0)
-                for nextNode in path:
-                    reached, stepSize = self._moveTowardsNode(agent, nextNode, stepSize)
-
-                    # The agent has reached the next node.
-                    if reached:
-                        if nextNode == dstNode or not self.requireExplicitVisit:
-                            # The agent has reached its destination, visiting the node.
-                            # The agent receives a reward for visiting the node.
-                            r = self.onNodeVisit(nextNode, self.step_count)
-                            reward_dict[agent] += r
-
-                            agent.lastNodeVisited = nextNode
-                            if nextNode == dstNode:
-                                agent.currentAction = -1.0
-                                info_dict[agent]["ready"] = True
-                        # Agent reached the destination, assign a new speed from normal distribution
-                        # agent.speed = max(np.random.normal(loc=agent.startingSpeed, scale=5.0), 1.0)
-            
-                    # The agent has exceeded its movement budget for this step.
-                    if stepSize <= 0.0:
-                        break
+                        # The agent has exceeded its movement budget for this step.
+                        if stepSize <= 0.0:
+                            break
 
         # Record the average idleness time at this step.
         avg = self._minMaxNormalize(self.sdg.getAverageIdlenessTime(self.step_count), minimum=0.0, maximum=self.step_count)
@@ -819,7 +818,7 @@ class parallel_env(ParallelEnv):
         return obs_dict, reward_dict, done_dict, truncated_dict, info_dict
 
 
-    def onNodeVisit(self, node, timeStamp): # TODO: change for dropping/picking up loads
+    def onNodeVisit(self, node, timeStamp): 
         ''' Called when an agent visits a node.
             Returns the reward for visiting the node, which is proportional to
             node idleness time. '''
@@ -839,7 +838,7 @@ class parallel_env(ParallelEnv):
         return reward
 
 
-    def getDestinationNode(self, agent, action): # TODO: inspect for changes needed regarding loading/dropping payloads
+    def getDestinationNode(self, agent, action): 
         ''' Returns the destination node for the given agent and action. '''
 
         # Interpret the action using the "full" method.
@@ -865,7 +864,7 @@ class parallel_env(ParallelEnv):
         return dstNode
 
 
-    def _moveTowardsNode(self, agent, node, stepSize): # TODO: inspect for changes needed regarding loading/dropping payloads
+    def _moveTowardsNode(self, agent, node, stepSize):
         ''' Takes a single step towards the next node.
             Returns a tuple containing whether the agent has reached the node
             and the remaining step size. '''
@@ -974,3 +973,54 @@ class parallel_env(ParallelEnv):
                 return actionMap
         else:
             raise ValueError(f"Invalid action method {self.action_method}")
+        
+    def _dropPayload(self, agent):
+        if agent.edge is None and agent.payloads > 0:
+            # agent is at a node and has a payload
+            people = self.sdg.getNodePeople(agent.lastNode)
+            node_payloads = self.sdg.getNodePayloads(agent.lastNode)
+            diff = people - node_payloads
+            
+            # this will not allow dropping at depot since there are no people at the depot
+            if diff > 0:
+                # node needs more payloads
+                if diff >= agent.payloads:
+                    # node needs either exactly what the agent is carrying or more, so drop all payloads
+                    self.sdg.putPayloads(agent.lastNode, agent.payloads)
+                    agent.payloads = 0 
+                else:
+                    # node needs less than the payloads the agent is carrying, so drop only what is needed
+                    self.sdg.putPayloads(agent.lastNode, diff)
+                    agent.payloads -= diff
+                
+                # successful drop, calculate reward based on how many payloads dropped
+                new_node_payloads = self.sdg.getNodePayloads(agent.lastNode)
+                new_diff = people - new_node_payloads
+                return self.alpha * (diff - new_diff) # successful drop
+        
+        return -10 * self.alpha # unsuccessful drop, return negative reward
+
+
+    def _loadPayload(self, agent):
+        node_payloads = self.sdg.getNodePayloads(agent.lastNode)
+
+        if agent.edge is None and agent.payloads < agent.max_capacity and node_payloads > 0:
+            # agent is at a node, is carrying less than its max capacity, and the node has available payloads
+            agent_need = agent.max_capacity - agent.payloads
+            if node_payloads <= agent_need:
+                # node has less than or exactly the number of payloads needed, so take them all
+                self.sdg.takePayloads(agent.lastNode, node_payloads)
+                agent.payloads += node_payloads
+            else:
+                # node has more than needed, so take only what the agent can carry
+                self.sdg.takePayloads(agent.lastNode, agent_need)
+                agent.payloads += agent_need
+
+            # successful load, calculate reward based on how many payloads were added to the agent
+            new_agent_need = agent.max_capacity - agent.payloads
+            reward = self.alpha * (agent_need - new_agent_need) 
+            # zero reward if not taking from the depot node
+            reward *= int(self.sdg.isDepot(agent.lastNode))
+            return reward 
+        
+        return -10 * self.alpha # unsuccessful load, return negative reward
