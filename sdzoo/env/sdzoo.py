@@ -950,7 +950,7 @@ class parallel_env(ParallelEnv):
             if agent.edge == None:
                 # All actions available.
                 actionMap = np.zeros(self.action_space(agent).n, dtype=np.float32)
-                actionMap[:self.sdg.graph.number_of_nodes()] = 1.0
+                actionMap[:self.sdg.graph.number_of_nodes() + 2] = 1.0 # add 2 for load and drop
                 return actionMap
             else:
                 # Only the current action available (as it is still incomplete).
@@ -959,12 +959,12 @@ class parallel_env(ParallelEnv):
                 return actionMap
         
         elif self.action_method == "neighbors":
-            if agent.edge == None: # TODO: add load/drop when not on edge
+            if agent.edge == None:
                 # All neighbors of the current node are available.
                 actionMap = np.zeros(self.action_space(agent).n, dtype=np.float32)
                 # numNeighbors = self.sdg.graph.degree(agent.lastNode) - 1 # subtract 1 since the self loop adds 2 to the degree
                 numNeighbors = self.sdg.graph.degree(agent.lastNode)
-                actionMap[:numNeighbors] = 1.0
+                actionMap[:numNeighbors + 2] = 1.0 # add 2 for load and drop
                 return actionMap
             else:
                 # Only the current action available (as it is still incomplete).
