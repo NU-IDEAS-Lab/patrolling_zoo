@@ -72,6 +72,9 @@ class parallel_env(ParallelEnv):
                  max_neighbors: int = 15,
                  reward_interval: int = -1,
                  regenerate_graph_on_reset: bool = False,
+                 node_visit_reward = 2,
+                 drop_reward = 5,
+                 load_reward = 5,
                  *args,
                  **kwargs):
         """
@@ -107,6 +110,9 @@ class parallel_env(ParallelEnv):
         self.regenerate_graph_on_reset = regenerate_graph_on_reset
         self.max_nodes = max_nodes
         self.max_neighbors = max_neighbors
+        self.node_visit_reward = node_visit_reward
+        self.drop_reward = drop_reward
+        self.load_reward = load_reward
 
         self.reward_interval = reward_interval
 
@@ -392,10 +398,7 @@ class parallel_env(ParallelEnv):
                 if a != rcvr and self.comms_model.canReceive(a, rcvr):
                     for v in self.sdg.graph.nodes:
                         if self._dist(self.sdg.getNodePosition(v), a.position) <= a.observationRadius:
-                            if self.sdg.isDepot(v):
-                                rcvr.stateBelief[v] = self.sdg.getNodePayloads(v)
-                            else:
-                                rcvr.stateBelief[v] = self.sdg.getNodePeople(v) - self.sdg.getNodePayloads(v)
+                            rcvr.stateBelief[v] = self.sdg.getNodeState(v)
 
 
     def _populateStateSpace(self, observe_method, agent, radius, allow_done_agents): # TODO: get rid of idleness
@@ -415,10 +418,7 @@ class parallel_env(ParallelEnv):
 
         # Update beliefs for nodes which we can see.
         for v in vertices:
-            if self.sdg.isDepot(v):
-                agent.stateBelief[v] = self.sdg.getNodePayloads(v)
-            else:
-                agent.stateBelief[v] = self.sdg.getNodePeople(v) - self.sdg.getNodePayloads(v)
+            agent.stateBelief[v] = self.sdg.getNodeState(v)
 
         # Perform communication.
         for a in agentList:
@@ -430,10 +430,7 @@ class parallel_env(ParallelEnv):
                         if v not in vertices:
                             vertices.append(v)
                         # Update state belief for communicates nodes.
-                        if self.sdg.isDepot(v):
-                            agent.stateBelief[v] = self.sdg.getNodePayloads(v)
-                        else:
-                            agent.stateBelief[v] = self.sdg.getNodePeople(v) - self.sdg.getNodePayloads(v)
+                        agent.stateBelief[v] = self.sdg.getNodeState(v)
         
         agents = sorted(agents, key=lambda a: a.id)
         vertices = sorted(vertices)
@@ -472,11 +469,7 @@ class parallel_env(ParallelEnv):
             obs["vertex_state"] = {v: -1.0 for v in range(self.sdg.graph.number_of_nodes())}
 
             for node in vertices:
-                if self.sdg.isDepot(node):
-                    # to keep vertex states positive, only use payloads for the state of the depot
-                    obs["vertex_state"][node] = self.sdg.getNodePayloads(node)
-                else:
-                    obs["vertex_state"][node] = (self.sdg.getNodePeople(node) - self.sdg.getNodePayloads(node))
+                obs["vertex_state"][node] = self.sdg.getNodeState(node)
 
         # Add vertex distances from each agent (normalized).
         if observe_method in ["ajg_new", "ajg_newer"]:
@@ -766,7 +759,7 @@ class parallel_env(ParallelEnv):
                             if nextNode == dstNode or not self.requireExplicitVisit:
                                 # The agent has reached its destination, visiting the node.
                                 # The agent receives a reward for visiting the node.
-                                r = self.onNodeVisit(nextNode, self.step_count)
+                                r = self.onNodeVisit(agent, nextNode)
                                 reward_dict[agent] += r
 
                                 agent.lastNodeVisited = nextNode # TODO: ask about this
@@ -778,11 +771,7 @@ class parallel_env(ParallelEnv):
                 
                         # The agent has exceeded its movement budget for this step.
                         if stepSize <= 0.0:
-                            break
-
-        # Record the average idleness time at this step.
-        avg = self._minMaxNormalize(self.sdg.getAverageIdlenessTime(self.step_count), minimum=0.0, maximum=self.step_count)
-        self.avgIdlenessTimes.append(avg)        
+                            break      
 
         # Perform observations.
         for agent in self.possible_agents:
@@ -796,35 +785,36 @@ class parallel_env(ParallelEnv):
         info_dict["worst_idleness"] = self.sdg.getWorstIdlenessTime(self.step_count)
         info_dict["agent_count"] = len(self.agents)
 
+        #if all people saved, set lastStep = True
+        if self.sdg.getTotalState() == 0:
+            lastStep = True
+
         # Check truncation conditions.
         if lastStep or (self.max_cycles >= 0 and self.step_count >= self.max_cycles):
             for agent in self.agents:
                 # Provide an end-of-episode reward.
                 if self.reward_method_terminal == "average":
-                    reward_dict[agent] += self.beta * self.step_count / (self.sdg.getAverageIdlenessTime(self.step_count) + 1e-8)
-                elif self.reward_method_terminal == "worst":
-                    reward_dict[agent] += self.beta * self.step_count / (self.sdg.getWorstIdlenessTime(self.step_count) + 1e-8)
-                elif self.reward_method_terminal == "stddev":
-                    reward_dict[agent] += self.beta * self.step_count / (self.sdg.getStdDevIdlenessTime(self.step_count) + 1e-8)
-                elif self.reward_method_terminal == "averageAverage":
-                    avg = np.average(self.avgIdlenessTimes)
-                    # reward_dict[agent] += self.beta * self.step_count / (avg + 1e-8)
-                    reward_dict[agent] -= self.beta * avg
-                elif self.reward_method_terminal == "divNormalizedWorst":
-                    reward_dict[agent] /= self._minMaxNormalize(self.sdg.getWorstIdlenessTime(self.step_count), minimum=0.0, maximum=self.max_cycles)
+                    reward_dict[agent] -= self.beta * self.sdg.getTotalState()
+                    reward_dict[agent] -= self.step_count
+                # elif self.reward_method_terminal == "worst":
+                #     reward_dict[agent] += self.beta * self.step_count / (self.sdg.getWorstIdlenessTime(self.step_count) + 1e-8)
+                # elif self.reward_method_terminal == "stddev":
+                #     reward_dict[agent] += self.beta * self.step_count / (self.sdg.getStdDevIdlenessTime(self.step_count) + 1e-8)
+                # elif self.reward_method_terminal == "averageAverage":
+                #     avg = np.average(self.avgIdlenessTimes)
+                #     # reward_dict[agent] += self.beta * self.step_count / (avg + 1e-8)
+                #     reward_dict[agent] -= self.beta * avg
+                # elif self.reward_method_terminal == "divNormalizedWorst":
+                #     reward_dict[agent] /= self._minMaxNormalize(self.sdg.getWorstIdlenessTime(self.step_count), minimum=0.0, maximum=self.max_cycles)
                 elif self.reward_method_terminal != "none":
                     raise ValueError(f"Invalid terminal reward method {self.reward_method_terminal}")
 
                 info_dict[agent]["ready"] = True
             
                 truncated_dict[agent] = True
+                self.dones[agent] = True
+
             self.agents = []
-        
-        # Provide a reward at a fixed interval.
-        elif self.reward_interval >= 0 and self.step_count % self.reward_interval == 0:
-            for agent in self.agents:
-                # reward_dict[agent] += self.beta * self.step_count / (self.sdg.getAverageIdlenessTime(self.step_count) + 1e-8)
-                reward_dict[agent] -= self.beta * self._minMaxNormalize(self.sdg.getAverageIdlenessTime(self.step_count), minimum=0.0, maximum=self.step_count)
 
         done_dict = {agent: self.dones[agent] for agent in self.possible_agents}
 
@@ -834,24 +824,18 @@ class parallel_env(ParallelEnv):
         return obs_dict, reward_dict, done_dict, truncated_dict, info_dict
 
 
-    def onNodeVisit(self, node, timeStamp): # TODO: remove idleness
+    def onNodeVisit(self, agent, node): # TODO: remove idleness
+        # reward if agent doesn't have a belief about node
         ''' Called when an agent visits a node.
-            Returns the reward for visiting the node, which is proportional to
-            node idleness time. '''
+            Returns the reward for visiting the node, which is the node_visit_reward if
+             the agent does not already have a belief about the node, otherwise 0. '''
         
         # Record the node visit.
         self.nodeVisits[node] += 1
 
         # Calculate a visitation reward.
-        idleness = self.sdg.getNodeIdlenessTime(node, timeStamp)
-        avgIdleness = self.sdg.getAverageIdlenessTime(timeStamp)
-        reward = self._minMaxNormalize(idleness, minimum=0.0, maximum=avgIdleness)
-        reward = self.alpha * reward
-
-        # Update the node visit time.
-        self.sdg.setNodeVisitTime(node, timeStamp)
-
-        return reward
+        reward = self.node_visit_reward if agent.stateBelief[node] == -1.0 else 0
+        return self.alpha * reward
 
 
     def getDestinationNode(self, agent, action): 
@@ -991,52 +975,43 @@ class parallel_env(ParallelEnv):
             raise ValueError(f"Invalid action method {self.action_method}")
         
     def _dropPayload(self, agent):
-        if agent.edge is None and agent.payloads > 0:
-            # agent is at a node and has a payload
-            people = self.sdg.getNodePeople(agent.lastNode)
-            node_payloads = self.sdg.getNodePayloads(agent.lastNode)
-            diff = people - node_payloads
-            
-            # this will not allow dropping at depot since there are no people at the depot
-            if diff > 0:
-                # node needs more payloads
-                if diff >= agent.payloads:
-                    # node needs either exactly what the agent is carrying or more, so drop all payloads
-                    self.sdg.putPayloads(agent.lastNode, agent.payloads)
-                    agent.payloads = 0 
-                else:
-                    # node needs less than the payloads the agent is carrying, so drop only what is needed
-                    self.sdg.putPayloads(agent.lastNode, diff)
-                    agent.payloads -= diff
-                
-                # successful drop, calculate reward based on how many payloads dropped
-                new_node_payloads = self.sdg.getNodePayloads(agent.lastNode)
-                new_diff = people - new_node_payloads
-                return self.alpha * (diff - new_diff) # successful drop
+        ''' Drop a payload and return some reward. 
+            There is a positive reward for dropping a payload for a person in need, and 0 reward for dropping unneeded payloads. 
+            There is also a negative reward for attempting to drop a payload when the agent is not carrying anything. '''
         
-        return -10 * self.alpha # unsuccessful drop, return negative reward
+        initial_state = self.sdg.getNodeState(agent.lastNode)
+
+        if agent.payloads > 0:
+            # drop a payload
+            self.sdg.putPayloads(agent.lastNode, 1)
+            agent.payloads -= 1 
+
+            # positive reward for dropping properly, no reward for dropping too much
+            new_state = self.sdg.getNodeState(agent.lastNode)
+
+            reward = self.alpha * self.drop_reward if new_state < initial_state else 0
+            return reward
+        
+        return -2 * self.drop_reward * self.alpha # agent has no payload, negative reward
 
 
     def _loadPayload(self, agent):
+        ''' Load a payload and return the appropriate reward. 
+            There is 0 reward for loading properly and a negative reward for taking a payload from a person in need. 
+            There is also a larger negative reward for attempting to take a payload when none exists or the agent is already at max capacity. '''
+        
         node_payloads = self.sdg.getNodePayloads(agent.lastNode)
+        initial_state = self.sdg.getNodeState(agent.lastNode)
 
-        if agent.edge is None and agent.payloads < agent.max_capacity and node_payloads > 0:
-            # agent is at a node, is carrying less than its max capacity, and the node has available payloads
-            agent_need = agent.max_capacity - agent.payloads
-            if node_payloads <= agent_need:
-                # node has less than or exactly the number of payloads needed, so take them all
-                self.sdg.takePayloads(agent.lastNode, node_payloads)
-                agent.payloads += node_payloads
-            else:
-                # node has more than needed, so take only what the agent can carry
-                self.sdg.takePayloads(agent.lastNode, agent_need)
-                agent.payloads += agent_need
+        if agent.payloads < agent.max_capacity and node_payloads > 0:
+            # agent is carrying less than its max capacity and the node has available payloads
+            self.sdg.takePayloads(agent.lastNode, 1)
+            agent.payloads += 1
+            
+            # no reward for loading properly, negative reward for taking away from people
+            new_state = self.sdg.getNodeState(agent.lastNode)
 
-            # successful load, calculate reward based on how many payloads were added to the agent
-            new_agent_need = agent.max_capacity - agent.payloads
-            reward = self.alpha * (agent_need - new_agent_need) 
-            # zero reward if not taking from the depot node
-            reward *= int(self.sdg.isDepot(agent.lastNode))
+            reward = 0 if new_state <= initial_state else -1 * self.load_reward * self.alpha
             return reward 
         
-        return -10 * self.alpha # unsuccessful load, return negative reward
+        return -2 * self.load_reward * self.alpha # unsuccessful load, return negative reward

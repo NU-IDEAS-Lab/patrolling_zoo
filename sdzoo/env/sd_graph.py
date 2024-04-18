@@ -231,6 +231,22 @@ class SDGraph():
 
         return self.graph.nodes[node]["people"]
     
+    def getNodeState(self, node):
+        ''' Returns the state of each node. '''
+        
+        return max(self.getNodePeople(node) - self.getNodePayloads(node), 0)
+    
+    def getTotalState(self):
+        ''' Returns the state of all nodes. '''
+
+        nodes = self.graph.nodes
+        return sum([self.getNodeState(node) for node in nodes if not self.isDepot(node)])
+    
+    def getAverageState(self):
+        ''' Returns the average state of all nodes. '''
+
+        return self.getTotalState() / float(self.graph.number_of_nodes())
+    
     def getNearestNode(self, pos, epsilon=None):
         ''' Returns the nearest node to the given position.
             If epsilon is not None and no node is within epsilon, returns None. '''
