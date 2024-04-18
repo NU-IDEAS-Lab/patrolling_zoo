@@ -401,7 +401,7 @@ class parallel_env(ParallelEnv):
                             rcvr.stateBelief[v] = self.sdg.getNodeState(v)
 
 
-    def _populateStateSpace(self, observe_method, agent, radius, allow_done_agents): # TODO: get rid of idleness
+    def _populateStateSpace(self, observe_method, agent, radius, allow_done_agents):
         ''' Returns a populated state/observation space.'''
 
         if radius == None:
@@ -525,9 +525,6 @@ class parallel_env(ParallelEnv):
         if observe_method in ["pyg"]:
             # Copy pg map to g
             g = deepcopy(self.sdg.graph)
- 
-            # Get a list of last visit times for each node.
-            lastBeliefs = [agent.stateBelief[i] for i in range(self.sdg.graph.number_of_nodes())]     
 
             # Set attributes of patrol graph nodes.
             for node in g.nodes:
@@ -680,7 +677,7 @@ class parallel_env(ParallelEnv):
         '''Calculate the weights of the edges based on the position of the two points, here simply use the Euclidean distance'''
         return np.linalg.norm(np.array(pos1) - np.array(pos2))
 
-    def step(self, action_dict={}, lastStep=False): # TODO: get rid of idleness, base reward on how close state of vertices are to 0
+    def step(self, action_dict={}, lastStep=False): 
         ''''
         Perform a step in the environment based on the given action dictionary.
 
@@ -758,11 +755,11 @@ class parallel_env(ParallelEnv):
                         if reached:
                             if nextNode == dstNode or not self.requireExplicitVisit:
                                 # The agent has reached its destination, visiting the node.
-                                # The agent receives a reward for visiting the node.
+                                # The agent receives a reward for visiting if it doesn't already have a belief about the node.
                                 r = self.onNodeVisit(agent, nextNode)
                                 reward_dict[agent] += r
 
-                                agent.lastNodeVisited = nextNode # TODO: ask about this
+                                agent.lastNodeVisited = nextNode 
                                 if nextNode == dstNode:
                                     agent.currentAction = -1.0
                                     info_dict[agent]["ready"] = True
@@ -780,10 +777,8 @@ class parallel_env(ParallelEnv):
         
         # Record miscellaneous information.
         info_dict["node_visits"] = self.nodeVisits
-        info_dict["avg_idleness"] = self.sdg.getAverageIdlenessTime(self.step_count)
-        info_dict["stddev_idleness"] = self.sdg.getStdDevIdlenessTime(self.step_count)
-        info_dict["worst_idleness"] = self.sdg.getWorstIdlenessTime(self.step_count)
         info_dict["agent_count"] = len(self.agents)
+        info_dict["total_state"] = self.sdg.getTotalState()
 
         #if all people saved, set lastStep = True
         if self.sdg.getTotalState() == 0:
@@ -796,16 +791,6 @@ class parallel_env(ParallelEnv):
                 if self.reward_method_terminal == "average":
                     reward_dict[agent] -= self.beta * self.sdg.getTotalState()
                     reward_dict[agent] -= self.step_count
-                # elif self.reward_method_terminal == "worst":
-                #     reward_dict[agent] += self.beta * self.step_count / (self.sdg.getWorstIdlenessTime(self.step_count) + 1e-8)
-                # elif self.reward_method_terminal == "stddev":
-                #     reward_dict[agent] += self.beta * self.step_count / (self.sdg.getStdDevIdlenessTime(self.step_count) + 1e-8)
-                # elif self.reward_method_terminal == "averageAverage":
-                #     avg = np.average(self.avgIdlenessTimes)
-                #     # reward_dict[agent] += self.beta * self.step_count / (avg + 1e-8)
-                #     reward_dict[agent] -= self.beta * avg
-                # elif self.reward_method_terminal == "divNormalizedWorst":
-                #     reward_dict[agent] /= self._minMaxNormalize(self.sdg.getWorstIdlenessTime(self.step_count), minimum=0.0, maximum=self.max_cycles)
                 elif self.reward_method_terminal != "none":
                     raise ValueError(f"Invalid terminal reward method {self.reward_method_terminal}")
 
@@ -824,7 +809,7 @@ class parallel_env(ParallelEnv):
         return obs_dict, reward_dict, done_dict, truncated_dict, info_dict
 
 
-    def onNodeVisit(self, agent, node): # TODO: remove idleness
+    def onNodeVisit(self, agent, node):
         # reward if agent doesn't have a belief about node
         ''' Called when an agent visits a node.
             Returns the reward for visiting the node, which is the node_visit_reward if
