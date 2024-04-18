@@ -176,9 +176,9 @@ class parallel_env(ParallelEnv):
         if observe_method in ["ranking", "raw", "old", "ajg_new", "ajg_newer", "adjacency", "idlenessOnly"]:
             state_space["vertex_state"] = spaces.Dict({
                 v: spaces.Box(
-                    # people, payloads
-                    low = np.array([-1.0, -1.0], dtype=np.float32),
-                    high = np.array([np.inf, np.inf], dtype=np.float32)
+                    # people - payloads for non depot, payloads for depot
+                    low = np.array([0.0], dtype=np.float32),
+                    high = np.array([np.inf], dtype=np.float32)
                 ) for v in range(self.sdg.graph.number_of_nodes())
             }) # type: ignore
         
@@ -398,7 +398,7 @@ class parallel_env(ParallelEnv):
                                 rcvr.stateBelief[v] = self.sdg.getNodePeople(v) - self.sdg.getNodePayloads(v)
 
 
-    def _populateStateSpace(self, observe_method, agent, radius, allow_done_agents): # TODO: add payloads
+    def _populateStateSpace(self, observe_method, agent, radius, allow_done_agents): # TODO: get rid of idleness
         ''' Returns a populated state/observation space.'''
 
         if radius == None:
@@ -466,7 +466,7 @@ class parallel_env(ParallelEnv):
             for v in vertices:
                 obs["vertex_state"][v] = idlenessTimes[v]
 
-        # Add vertex people and payloads at each vertex.
+        # Add people and payloads at each vertex.
         if observe_method in ["raw", "old", "idlenessOnly", "adjacency"]:
             # Create dictionary with default value of -1.0.
             obs["vertex_state"] = {v: -1.0 for v in range(self.sdg.graph.number_of_nodes())}
@@ -687,7 +687,7 @@ class parallel_env(ParallelEnv):
         '''Calculate the weights of the edges based on the position of the two points, here simply use the Euclidean distance'''
         return np.linalg.norm(np.array(pos1) - np.array(pos2))
 
-    def step(self, action_dict={}, lastStep=False): 
+    def step(self, action_dict={}, lastStep=False): # TODO: get rid of idleness, base reward on how close state of vertices are to 0
         ''''
         Perform a step in the environment based on the given action dictionary.
 
@@ -834,7 +834,7 @@ class parallel_env(ParallelEnv):
         return obs_dict, reward_dict, done_dict, truncated_dict, info_dict
 
 
-    def onNodeVisit(self, node, timeStamp): 
+    def onNodeVisit(self, node, timeStamp): # TODO: remove idleness
         ''' Called when an agent visits a node.
             Returns the reward for visiting the node, which is proportional to
             node idleness time. '''
