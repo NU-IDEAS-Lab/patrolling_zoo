@@ -723,9 +723,12 @@ class parallel_env(ParallelEnv):
                 if not np.issubdtype(type(action), np.integer):
                     raise ValueError(f"Invalid action {action} of type {type(action)} provided.")
 
+                # Store this as the agent's last action.
+                agent.currentAction = action
+
                 is_movement = action == ACTION.DROP or action == ACTION.LOAD
 
-                if not is_movement:
+                if is_movement:
                     if action == ACTION.DROP:
                         # attempt to drop the payload(s), add the appropriate reward
                         reward_dict[agent] += self._dropPayload(agent)  
@@ -738,9 +741,6 @@ class parallel_env(ParallelEnv):
 
                     # Get the destination node.
                     dstNode = self.getDestinationNode(agent, action)
-
-                    # Store this as the agent's last action.
-                    agent.currentAction = action
                     
                     # Calculate the shortest path.
                     path = self._getPathToNode(agent, dstNode)
@@ -839,7 +839,7 @@ class parallel_env(ParallelEnv):
                     raise ValueError(f"Invalid action {action} for agent {agent.name}. Node {agent.lastNode} has only {self.sdg.graph.degree(agent.lastNode)} neighbors.")
                 dstNode = list(self.sdg.graph.neighbors(agent.lastNode))[action]
             else:
-                if action != agent.currentAction:
+                if action != agent.currentAction - 2: # correct for load/drop actions
                     raise ValueError(f"Invalid action {action} for agent {agent.name}. Must complete action {agent.currentAction} first.")
                 dstNode = list(self.sdg.graph.neighbors(agent.lastNode))[action]
         

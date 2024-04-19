@@ -20,7 +20,7 @@ from onpolicy.envs.env_wrappers import SubprocVecEnv, DummyVecEnv
 def make_train_env(all_args):
     def get_env_fn(rank):
         def init_env():
-            if all_args.env_name == "Patrolling":
+            if all_args.env_name == "search-deliver":
                 env = SDEnv(all_args)
             else:
                 print("Can not support the " +
