@@ -75,6 +75,7 @@ class parallel_env(ParallelEnv):
                  node_visit_reward = 2,
                  drop_reward = 5,
                  load_reward = 5,
+                 agent_max_capacity = 1,
                  *args,
                  **kwargs):
         """
@@ -127,7 +128,8 @@ class parallel_env(ParallelEnv):
                         speed = speed,
                         startingNode = self.agentOrigins[i],
                         observationRadius = self.observationRadius,
-                        max_nodes = self.max_nodes
+                        max_nodes = self.max_nodes,
+                        max_capacity = agent_max_capacity
             ) for i in range(num_agents)
         ]
 
@@ -315,12 +317,13 @@ class parallel_env(ParallelEnv):
 
         # Draw the graph.
         pos = nx.get_node_attributes(self.sdg.graph, 'pos')
-        idleness = [self.sdg.getNodeIdlenessTime(i, self.step_count) for i in self.sdg.graph.nodes]
-        nodeColors = [self._minMaxNormalize(idleness[i], a=0.0, b=100, minimum=0.0, maximum=self.step_count) for i in self.sdg.graph.nodes]
+        state = [self.sdg.getNodeState(i) for i in self.sdg.graph.nodes]
+        labels = {n: f"{n}\n{self.sdg.getNodePeople(n)},{self.sdg.getNodePayloads(n)}" for n in self.sdg.nodes}
         nx.draw_networkx(self.sdg.graph,
                          pos,
                          with_labels=True,
-                         node_color=idleness,
+                         labels=labels,
+                         node_color=state,
                          edgecolors='black',
                          vmin=0,
                          vmax=100,
@@ -340,7 +343,7 @@ class parallel_env(ParallelEnv):
             plt.plot([], [], color=color, marker=marker, linestyle='None', label=agent.name, alpha=0.5)
 
         plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
-        plt.gcf().text(0,0,f'Current step: {self.step_count}, Average idleness time: {self.sdg.getAverageIdlenessTime(self.step_count):.2f}')
+        plt.gcf().text(0,0,f'Current step: {self.step_count}, Total State: {self.sdg.getTotalState()}')
         plt.show()
 
 
@@ -728,9 +731,9 @@ class parallel_env(ParallelEnv):
                 # Store this as the agent's last action.
                 agent.currentAction = action
 
-                is_movement = action == ACTION.DROP or action == ACTION.LOAD
+                isnt_movement = action == ACTION.DROP or action == ACTION.LOAD
 
-                if is_movement:
+                if isnt_movement:
                     if action == ACTION.DROP:
                         # attempt to drop the payload(s), add the appropriate reward
                         reward_dict[agent] += self._dropPayload(agent)  

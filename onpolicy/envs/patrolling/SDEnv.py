@@ -48,7 +48,8 @@ class SDEnv(object):
             max_neighbors = args.gnn_max_neighbors,
             node_visit_reward = args.node_visit_reward,
             drop_reward = args.drop_reward,
-            load_reward = args.load_reward
+            load_reward = args.load_reward,
+            agent_max_capacity = args.agent_max_capacity
         )
         
         self.remove_redundancy = args.remove_redundancy
