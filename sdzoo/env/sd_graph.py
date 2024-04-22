@@ -220,6 +220,8 @@ class SDGraph():
         ''' Removes `num` payloads from `node`'''
 
         self.graph.nodes[node]["payloads"] -= num
+        if self.graph.nodes[node]["payloads"] < 0:
+            raise ValueError("Attempting to take from a node with 0 payloads")
 
     def isDepot(self, node):
         ''' Returns if a given node is the depot node'''
@@ -246,6 +248,11 @@ class SDGraph():
         ''' Returns the average state of all nodes. '''
 
         return self.getTotalState() / float(self.graph.number_of_nodes())
+    
+    def getTotalPayloads(self):
+        ''' Returns the total number of payloads. '''
+
+        return self.totalPayloads
     
     def getNearestNode(self, pos, epsilon=None):
         ''' Returns the nearest node to the given position.

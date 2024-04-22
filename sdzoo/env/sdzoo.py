@@ -206,12 +206,12 @@ class parallel_env(ParallelEnv):
                 dtype=np.float32,
             )
         
-        # Add agent graph position vector.
+        # Add agent graph position vector, include agent's payload, max_capacity.
         if observe_method in ["adjacency", "ajg_newer"]:
             state_space["agent_graph_position"] = spaces.Dict({
                 a: spaces.Box(
-                    low = np.array([-1.0, -1.0, -1.0], dtype=np.float32),
-                    high = np.array([self.sdg.graph.number_of_nodes(), self.sdg.graph.number_of_nodes(), 1.0], dtype=np.float32),
+                    low = np.array([-1.0, -1.0, -1.0, 0.0, 0.0], dtype=np.float32),
+                    high = np.array([self.sdg.graph.number_of_nodes(), self.sdg.graph.number_of_nodes(), 1.0, a.max_capacity, a.max_capacity], dtype=np.float32),
                 ) for a in self.possible_agents
             }) # type: ignore
         
@@ -510,7 +510,7 @@ class parallel_env(ParallelEnv):
             
             # Fill in actual values for agents we can see.
             for a in agents:
-                vec = np.zeros(3, dtype=np.float32)
+                vec = np.zeros(5, dtype=np.float32)
                 if a.edge == None:
                     vec[0] = a.lastNode
                     vec[1] = a.lastNode
@@ -519,6 +519,8 @@ class parallel_env(ParallelEnv):
                     vec[0] = a.edge[0]
                     vec[1] = a.edge[1]
                     vec[2] = self._getAgentPathLength(a, self._getPathToNode(a, a.edge[0])) / self.sdg.graph.edges[a.edge]["weight"]
+                vec[3] = a.payloads
+                vec[4] = a.max_capacity
                 graphPos[a] = vec
             obs["agent_graph_position"] = graphPos
 
@@ -789,8 +791,11 @@ class parallel_env(ParallelEnv):
             for agent in self.agents:
                 # Provide an end-of-episode reward.
                 if self.reward_method_terminal == "average":
-                    reward_dict[agent] -= self.beta * self.sdg.getTotalState()
+                    reward_dict[agent] -= (self.sdg.getTotalPayloads() * self.sdg.getTotalState())
                     reward_dict[agent] -= self.step_count
+                    reward_dict[agent] *= self.beta
+                    if self.sdg.getTotalState() == 0:
+                        reward_dict[agent] += 100
                 elif self.reward_method_terminal != "none":
                     raise ValueError(f"Invalid terminal reward method {self.reward_method_terminal}")
 
@@ -971,10 +976,10 @@ class parallel_env(ParallelEnv):
             self.sdg.putPayloads(agent.lastNode, 1)
             agent.payloads -= 1 
 
-            # positive reward for dropping properly, no reward for dropping too much
+            # positive reward for dropping properly proportional to number of payloads at that node, no reward for dropping too much
             new_state = self.sdg.getNodeState(agent.lastNode)
 
-            reward = self.alpha * self.drop_reward if new_state < initial_state else 0
+            reward = self.alpha * self.drop_reward * self.sdg.getNodePayloads(agent.lastNode) if new_state < initial_state else 0
             return reward
         
         return -2 * self.drop_reward * self.alpha # agent has no payload, negative reward
@@ -986,7 +991,6 @@ class parallel_env(ParallelEnv):
             There is also a larger negative reward for attempting to take a payload when none exists or the agent is already at max capacity. '''
         
         node_payloads = self.sdg.getNodePayloads(agent.lastNode)
-        initial_state = self.sdg.getNodeState(agent.lastNode)
 
         if agent.payloads < agent.max_capacity and node_payloads > 0:
             # agent is carrying less than its max capacity and the node has available payloads
@@ -994,9 +998,9 @@ class parallel_env(ParallelEnv):
             agent.payloads += 1
             
             # no reward for loading properly, negative reward for taking away from people
-            new_state = self.sdg.getNodeState(agent.lastNode)
+            state = self.sdg.getNodeState(agent.lastNode)
 
-            reward = 0 if new_state <= initial_state else -1 * self.load_reward * self.alpha
+            reward = 0 if state == 0 else -1 * self.load_reward * self.alpha
             return reward 
         
         return -2 * self.load_reward * self.alpha # unsuccessful load, return negative reward

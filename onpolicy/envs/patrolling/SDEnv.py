@@ -45,7 +45,10 @@ class SDEnv(object):
             max_cycles = -1 if self.args.skip_steps_sync or self.args.skip_steps_async else args.max_cycles,
             regenerate_graph_on_reset = args.graph_random,
             max_nodes = args.gnn_max_nodes,
-            max_neighbors = args.gnn_max_neighbors
+            max_neighbors = args.gnn_max_neighbors,
+            node_visit_reward = args.node_visit_reward,
+            drop_reward = args.drop_reward,
+            load_reward = args.load_reward
         )
         
         self.remove_redundancy = args.remove_redundancy
