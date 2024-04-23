@@ -22,7 +22,7 @@ all_args.communication_probability = 0.1
 all_args.alpha = 1.0
 all_args.beta = 0.5
 
-all_args.node_visit_reward = 2
+
 all_args.drop_reward = 3
 all_args.load_reward = 3
 all_args.step_reward = 5

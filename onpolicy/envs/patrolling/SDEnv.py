@@ -46,7 +46,6 @@ class SDEnv(object):
             regenerate_graph_on_reset = args.graph_random,
             max_nodes = args.gnn_max_nodes,
             max_neighbors = args.gnn_max_neighbors,
-            node_visit_reward = args.node_visit_reward,
             drop_reward = args.drop_reward,
             load_reward = args.load_reward,
             step_reward = args.step_reward,

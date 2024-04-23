@@ -72,7 +72,6 @@ class parallel_env(ParallelEnv):
                  max_neighbors: int = 15,
                  reward_interval: int = -1,
                  regenerate_graph_on_reset: bool = False,
-                 node_visit_reward = 2,
                  drop_reward = 5,
                  load_reward = 5,
                  step_reward = 10,
@@ -113,7 +112,6 @@ class parallel_env(ParallelEnv):
         self.regenerate_graph_on_reset = regenerate_graph_on_reset
         self.max_nodes = max_nodes
         self.max_neighbors = max_neighbors
-        self.node_visit_reward = node_visit_reward
         self.drop_reward = drop_reward
         self.load_reward = load_reward
         self.step_reward = step_reward
@@ -774,6 +772,11 @@ class parallel_env(ParallelEnv):
                     reward_dict[agent] += (self.sdg.getTotalPayloads() / (self.sdg.getTotalState() + 1e-5)) * self.state_reward
                     # reward_dict[agent] += (1 / (self.step_count + 1e-5)) * self.step_reward
                     reward_dict[agent] *= self.beta
+                    print(f"Total State: {self.sdg.getTotalState()}")
+                    print(f"Agent Payloads: {agent.payloads}")
+                    print(f"Node 0 State: {self.sdg.getNodeState(0)}")
+                    print(f"Node 1 State: {self.sdg.getNodeState(1)}")
+
                 elif self.reward_method_terminal != "none":
                     raise ValueError(f"Invalid terminal reward method {self.reward_method_terminal}")
 

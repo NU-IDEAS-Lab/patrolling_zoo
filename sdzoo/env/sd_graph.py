@@ -242,7 +242,7 @@ class SDGraph():
         ''' Returns the state of all nodes. '''
 
         nodes = self.graph.nodes
-        return sum([self.getNodeState(node) for node in nodes if not self.isDepot(node)])
+        return sum([self.getNodeState(node) for node in nodes])
     
     def getAverageState(self):
         ''' Returns the average state of all nodes. '''
