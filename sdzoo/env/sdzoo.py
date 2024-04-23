@@ -75,6 +75,7 @@ class parallel_env(ParallelEnv):
                  node_visit_reward = 2,
                  drop_reward = 5,
                  load_reward = 5,
+                 step_reward = 10,
                  agent_max_capacity = 1,
                  *args,
                  **kwargs):
@@ -114,6 +115,7 @@ class parallel_env(ParallelEnv):
         self.node_visit_reward = node_visit_reward
         self.drop_reward = drop_reward
         self.load_reward = load_reward
+        self.step_reward = step_reward
 
         self.reward_interval = reward_interval
 
@@ -363,6 +365,7 @@ class parallel_env(ParallelEnv):
         
         return self._populateStateSpace(self.observe_method_global, self.possible_agents[0], radius=np.inf, allow_done_agents=True)
 
+
     def state_all(self):
         ''' Similar to the state() method, but this returns a customized copy of the state space for each agent.
             This is useful for centralized training, decentralized execution. '''
@@ -377,31 +380,6 @@ class parallel_env(ParallelEnv):
         ''' Returns the observation for the given agent.'''
 
         return self._populateStateSpace(self.observe_method, agent, radius, allow_done_agents)
-
-
-    def communicate(self, receiver=None, allow_done_agents=False):
-        ''' Simulates messages sent by all agents to receiver.
-            If received successfully, the receiver updates its state belief.
-            If receiver is set to none, will perform communication for all. '''
-
-        # Determine which agents can communicate.
-        if allow_done_agents:
-            agentList = self.possible_agents
-        else:
-            agentList = self.agents
-        
-        if receiver == None:
-            receiverList = agentList
-        else:
-            receiverList = [receiver]
-
-        # Perform communication.
-        for rcvr in receiverList:
-            for a in agentList:
-                if a != rcvr and self.comms_model.canReceive(a, rcvr):
-                    for v in self.sdg.graph.nodes:
-                        if self._dist(self.sdg.getNodePosition(v), a.position) <= a.observationRadius:
-                            rcvr.stateBelief[v] = self.sdg.getNodeState(v)
 
 
     def _populateStateSpace(self, observe_method, agent, radius, allow_done_agents):
@@ -682,6 +660,7 @@ class parallel_env(ParallelEnv):
         '''Calculate the weights of the edges based on the position of the two points, here simply use the Euclidean distance'''
         return np.linalg.norm(np.array(pos1) - np.array(pos2))
 
+
     def step(self, action_dict={}, lastStep=False): 
         ''''
         Perform a step in the environment based on the given action dictionary.
@@ -760,10 +739,6 @@ class parallel_env(ParallelEnv):
                         if reached:
                             if nextNode == dstNode or not self.requireExplicitVisit:
                                 # The agent has reached its destination, visiting the node.
-                                # The agent receives a reward for visiting if it doesn't already have a belief about the node.
-                                r = self.onNodeVisit(agent, nextNode)
-                                reward_dict[agent] += r
-
                                 agent.lastNodeVisited = nextNode 
                                 if nextNode == dstNode:
                                     agent.currentAction = -1.0
@@ -794,8 +769,8 @@ class parallel_env(ParallelEnv):
             for agent in self.agents:
                 # Provide an end-of-episode reward.
                 if self.reward_method_terminal == "average":
-                    reward_dict[agent] -= (self.sdg.getTotalPayloads() * self.sdg.getTotalState())
-                    reward_dict[agent] -= self.step_count
+                    reward_dict[agent] += (self.sdg.getTotalPayloads() / (self.sdg.getTotalState() + 1e-5))
+                    reward_dict[agent] += (1 / (self.step_count + 1e-5)) * self.step_reward
                     reward_dict[agent] *= self.beta
                     if self.sdg.getTotalState() == 0:
                         reward_dict[agent] += 100
@@ -815,20 +790,6 @@ class parallel_env(ParallelEnv):
         self.available_actions = {agent: self._getAvailableActions(agent) for agent in self.possible_agents}
 
         return obs_dict, reward_dict, done_dict, truncated_dict, info_dict
-
-
-    def onNodeVisit(self, agent, node):
-        # reward if agent doesn't have a belief about node
-        ''' Called when an agent visits a node.
-            Returns the reward for visiting the node, which is the node_visit_reward if
-             the agent does not already have a belief about the node, otherwise 0. '''
-        
-        # Record the node visit.
-        self.nodeVisits[node] += 1
-
-        # Calculate a visitation reward.
-        reward = self.node_visit_reward if agent.stateBelief[node] == -1.0 else 0
-        return self.alpha * reward
 
 
     def getDestinationNode(self, agent, action): 
@@ -943,7 +904,9 @@ class parallel_env(ParallelEnv):
             if agent.edge == None:
                 # All actions available.
                 actionMap = np.zeros(self.action_space(agent).n, dtype=np.float32)
-                actionMap[:self.sdg.graph.number_of_nodes() + 2] = 1.0 # add 2 for load and drop
+                actionMap[2:self.sdg.graph.number_of_nodes() + 2] = 1.0 # add 2 for load and drop
+                actionMap[0] = float(agent.payloads < agent.max_capacity and self.sdg.getNodePayloads(agent.lastNode) > 0) # load mask
+                actionMap[1] = float(agent.payloads > 0) # drop mask
                 return actionMap
             else:
                 # Only the current action available (as it is still incomplete).
@@ -957,7 +920,9 @@ class parallel_env(ParallelEnv):
                 actionMap = np.zeros(self.action_space(agent).n, dtype=np.float32)
                 # numNeighbors = self.sdg.graph.degree(agent.lastNode) - 1 # subtract 1 since the self loop adds 2 to the degree
                 numNeighbors = self.sdg.graph.degree(agent.lastNode)
-                actionMap[:numNeighbors + 2] = 1.0 # add 2 for load and drop
+                actionMap[2:numNeighbors + 2] = 1.0 # add 2 for load and drop
+                actionMap[0] = float(agent.payloads < agent.max_capacity and self.sdg.getNodePayloads(agent.lastNode) > 0) # load mask
+                actionMap[1] = float(agent.payloads > 0) # drop mask
                 return actionMap
             else:
                 # Only the current action available (as it is still incomplete).
@@ -966,6 +931,7 @@ class parallel_env(ParallelEnv):
                 return actionMap
         else:
             raise ValueError(f"Invalid action method {self.action_method}")
+    
         
     def _dropPayload(self, agent):
         ''' Drop a payload and return some reward. 
@@ -982,10 +948,11 @@ class parallel_env(ParallelEnv):
             # positive reward for dropping properly proportional to number of payloads at that node, no reward for dropping too much
             new_state = self.sdg.getNodeState(agent.lastNode)
 
-            reward = self.alpha * self.drop_reward * self.sdg.getNodePayloads(agent.lastNode) if new_state < initial_state else 0
+            reward = self.drop_reward * self.sdg.getNodePayloads(agent.lastNode) if new_state < initial_state else 0
+            reward *= self.alpha
             return reward
         
-        return -2 * self.drop_reward * self.alpha # agent has no payload, negative reward
+        raise ValueError(f"BAD DROP:\nAgent Payloads: {agent.payloads}")
 
 
     def _loadPayload(self, agent):
@@ -1003,7 +970,9 @@ class parallel_env(ParallelEnv):
             # no reward for loading properly, negative reward for taking away from people
             state = self.sdg.getNodeState(agent.lastNode)
 
-            reward = 0 if state == 0 else -1 * self.load_reward * self.alpha
+            reward = self.load_reward if state == 0 else 0
+            reward *= self.alpha
             return reward 
         
-        return -2 * self.load_reward * self.alpha # unsuccessful load, return negative reward
+        # load should be impossible because of action masking
+        raise ValueError(f"BAD LOAD:\nAgent Payloads: {agent.payloads}\nAgent Max Capacity: {agent.max_capacity}\nNode Payloads: {node_payloads}")

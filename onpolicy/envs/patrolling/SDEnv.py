@@ -49,6 +49,7 @@ class SDEnv(object):
             node_visit_reward = args.node_visit_reward,
             drop_reward = args.drop_reward,
             load_reward = args.load_reward,
+            step_reward = args.step_reward,
             agent_max_capacity = args.agent_max_capacity
         )
         

@@ -6,7 +6,7 @@ os.environ["WANDB__SERVICE_WAIT"] = "300"
 parser = get_config()
 all_args = parse_args([], parser)
 
-all_args.experiment_name = "search-and-deliver-2node"
+all_args.experiment_name = "search-and-deliver-2node-positive-reward"
 all_args.env_name = "search-deliver"
 all_args.user_name = "ideas-mas"
 
@@ -25,6 +25,7 @@ all_args.beta = 0.5
 all_args.node_visit_reward = 2
 all_args.drop_reward = 3
 all_args.load_reward = 3
+all_args.step_reward = 5
 all_args.agent_max_capacity = 1
 # all_args.reward_method_terminal = "averageAverage"
 all_args.reward_method_terminal = "average"
