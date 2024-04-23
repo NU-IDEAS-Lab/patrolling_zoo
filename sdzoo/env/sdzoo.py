@@ -774,8 +774,6 @@ class parallel_env(ParallelEnv):
                     reward_dict[agent] += (self.sdg.getTotalPayloads() / (self.sdg.getTotalState() + 1e-5)) * self.state_reward
                     # reward_dict[agent] += (1 / (self.step_count + 1e-5)) * self.step_reward
                     reward_dict[agent] *= self.beta
-                    if self.sdg.getTotalState() == 0:
-                        reward_dict[agent] += 100
                 elif self.reward_method_terminal != "none":
                     raise ValueError(f"Invalid terminal reward method {self.reward_method_terminal}")
 
