@@ -26,6 +26,7 @@ all_args.node_visit_reward = 2
 all_args.drop_reward = 3
 all_args.load_reward = 3
 all_args.step_reward = 5
+all_args.state_reward = 10
 all_args.agent_max_capacity = 1
 # all_args.reward_method_terminal = "averageAverage"
 all_args.reward_method_terminal = "average"

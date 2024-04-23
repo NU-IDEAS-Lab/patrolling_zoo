@@ -76,6 +76,7 @@ class parallel_env(ParallelEnv):
                  drop_reward = 5,
                  load_reward = 5,
                  step_reward = 10,
+                 state_reward = 20,
                  agent_max_capacity = 1,
                  *args,
                  **kwargs):
@@ -116,6 +117,7 @@ class parallel_env(ParallelEnv):
         self.drop_reward = drop_reward
         self.load_reward = load_reward
         self.step_reward = step_reward
+        self.state_reward = state_reward
 
         self.reward_interval = reward_interval
 
@@ -769,7 +771,7 @@ class parallel_env(ParallelEnv):
             for agent in self.agents:
                 # Provide an end-of-episode reward.
                 if self.reward_method_terminal == "average":
-                    reward_dict[agent] += (self.sdg.getTotalPayloads() / (self.sdg.getTotalState() + 1e-5))
+                    reward_dict[agent] += (self.sdg.getTotalPayloads() / (self.sdg.getTotalState() + 1e-5)) * self.state_reward
                     reward_dict[agent] += (1 / (self.step_count + 1e-5)) * self.step_reward
                     reward_dict[agent] *= self.beta
                     if self.sdg.getTotalState() == 0:
@@ -931,8 +933,8 @@ class parallel_env(ParallelEnv):
                 return actionMap
         else:
             raise ValueError(f"Invalid action method {self.action_method}")
-    
-        
+
+
     def _dropPayload(self, agent):
         ''' Drop a payload and return some reward. 
             There is a positive reward for dropping a payload for a person in need, and 0 reward for dropping unneeded payloads. 
