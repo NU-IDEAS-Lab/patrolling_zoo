@@ -322,7 +322,7 @@ class parallel_env(ParallelEnv):
         # Draw the graph.
         pos = nx.get_node_attributes(self.sdg.graph, 'pos')
         state = [self.sdg.getNodeState(i) for i in self.sdg.graph.nodes]
-        labels = {n: f"{n}\n{self.sdg.getNodePeople(n)},{self.sdg.getNodePayloads(n)}" for n in self.sdg.nodes}
+        labels = {n: f"{n}\n{self.sdg.getNodePeople(n)},{self.sdg.getNodePayloads(n)}" for n in self.sdg.graph.nodes}
         nx.draw_networkx(self.sdg.graph,
                          pos,
                          with_labels=True,
@@ -772,7 +772,7 @@ class parallel_env(ParallelEnv):
                 # Provide an end-of-episode reward.
                 if self.reward_method_terminal == "average":
                     reward_dict[agent] += (self.sdg.getTotalPayloads() / (self.sdg.getTotalState() + 1e-5)) * self.state_reward
-                    reward_dict[agent] += (1 / (self.step_count + 1e-5)) * self.step_reward
+                    # reward_dict[agent] += (1 / (self.step_count + 1e-5)) * self.step_reward
                     reward_dict[agent] *= self.beta
                     if self.sdg.getTotalState() == 0:
                         reward_dict[agent] += 100
@@ -950,7 +950,7 @@ class parallel_env(ParallelEnv):
             # positive reward for dropping properly proportional to number of payloads at that node, no reward for dropping too much
             new_state = self.sdg.getNodeState(agent.lastNode)
 
-            reward = self.drop_reward * self.sdg.getNodePayloads(agent.lastNode) if new_state < initial_state else 0
+            reward = (initial_state - new_state) * self.drop_reward
             reward *= self.alpha
             return reward
         
@@ -963,6 +963,7 @@ class parallel_env(ParallelEnv):
             There is also a larger negative reward for attempting to take a payload when none exists or the agent is already at max capacity. '''
         
         node_payloads = self.sdg.getNodePayloads(agent.lastNode)
+        initial_state = self.sdg.getNodeState(agent.lastNode)
 
         if agent.payloads < agent.max_capacity and node_payloads > 0:
             # agent is carrying less than its max capacity and the node has available payloads
@@ -970,9 +971,9 @@ class parallel_env(ParallelEnv):
             agent.payloads += 1
             
             # no reward for loading properly, negative reward for taking away from people
-            state = self.sdg.getNodeState(agent.lastNode)
+            new_state = self.sdg.getNodeState(agent.lastNode)
 
-            reward = self.load_reward if state == 0 else 0
+            reward = (initial_state - new_state) * self.load_reward
             reward *= self.alpha
             return reward 
         
