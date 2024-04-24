@@ -774,6 +774,7 @@ class parallel_env(ParallelEnv):
                     reward_dict[agent] *= self.beta
                     print(f"Total State: {self.sdg.getTotalState()}")
                     print(f"Agent Payloads: {agent.payloads}")
+                    print(f"Agent Max Capacity: {agent.max_capacity}")
                     print(f"Node 0 State: {self.sdg.getNodeState(0)}")
                     print(f"Node 1 State: {self.sdg.getNodeState(1)}")
 
