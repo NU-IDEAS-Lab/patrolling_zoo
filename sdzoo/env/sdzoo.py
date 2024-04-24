@@ -769,8 +769,8 @@ class parallel_env(ParallelEnv):
             for agent in self.agents:
                 # Provide an end-of-episode reward.
                 if self.reward_method_terminal == "average":
-                    reward_dict[agent] += (self.sdg.getTotalPayloads() / (self.sdg.getTotalState() + 1e-5)) * self.state_reward
-                    # reward_dict[agent] += (1 / (self.step_count + 1e-5)) * self.step_reward
+                    reward_dict[agent] += (self.sdg.getTotalPayloads() / (self.sdg.getTotalState() + 1e-2)) * self.state_reward
+                    # reward_dict[agent] += (1 / (self.step_count + 1e-2)) * self.step_reward
                     reward_dict[agent] *= self.beta
                     print(f"Total State: {self.sdg.getTotalState()}")
                     print(f"Agent Payloads: {agent.payloads}")
