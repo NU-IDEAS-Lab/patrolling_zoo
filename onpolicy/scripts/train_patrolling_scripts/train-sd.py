@@ -20,13 +20,13 @@ all_args.observation_bitmap_size = 40
 all_args.communication_model = "bernoulli"
 all_args.communication_probability = 0.1
 all_args.alpha = 1.0
-all_args.beta = 0.5
+all_args.beta = 0.0
 
 
-all_args.drop_reward = 5
-all_args.load_reward = 3
+all_args.drop_reward = 1
+all_args.load_reward = 1
 all_args.step_reward = 3
-all_args.state_reward = 3
+all_args.state_reward = 4
 all_args.agent_max_capacity = 1
 # all_args.reward_method_terminal = "averageAverage"
 all_args.reward_method_terminal = "average"
