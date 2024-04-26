@@ -707,6 +707,7 @@ class parallel_env(ParallelEnv):
                         if reached:
                             if nextNode == dstNode or not self.requireExplicitVisit:
                                 # The agent has reached its destination, visiting the node.
+                                self.nodeVisits[nextNode] += 1
                                 agent.lastNodeVisited = nextNode 
                                 if nextNode == dstNode:
                                     agent.currentAction = -1.0
@@ -952,8 +953,11 @@ class parallel_env(ParallelEnv):
     
     def __str__(self):
         ''' Returns a string representation of the environment. '''
+        node_rep = {}
+        for key, val in self.sdg.graph.nodes(data=True):
+            node_rep[key] = val
 
-        return f"SDZoo Environment\nGraph: {self.sdg.graph}\nAgents: {self.agents}\nObservation Method: {self.observe_method}\nAction Method: {self.action_method}"
+        return f"SDZoo Environment\nGraph: {self.sdg.graph}:\n{node_rep}\nAgents: {self.agents}\nObservation Method: {self.observe_method}\nAction Method: {self.action_method}"
     
 
     def __repr__(self):
