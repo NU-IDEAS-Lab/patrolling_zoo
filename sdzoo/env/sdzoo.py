@@ -186,9 +186,9 @@ class parallel_env(ParallelEnv):
         if observe_method in ["ranking", "raw", "old", "ajg_new", "ajg_newer", "adjacency", "idlenessOnly"]:
             state_space["vertex_state"] = spaces.Dict({
                 v: spaces.Box(
-                    # people - payloads for non depot, payloads for depot
-                    low = np.array([0.0], dtype=np.float32),
-                    high = np.array([np.inf], dtype=np.float32)
+                    # people, payloads
+                    low = np.array([-1.0, -1.0], dtype=np.float32),
+                    high = np.array([np.inf, np.inf], dtype=np.float32)
                 ) for v in range(self.sdg.graph.number_of_nodes())
             }) # type: ignore
         
@@ -447,10 +447,10 @@ class parallel_env(ParallelEnv):
         # Add people and payloads at each vertex.
         if observe_method in ["raw", "old", "idlenessOnly", "adjacency"]:
             # Create dictionary with default value of -1.0.
-            obs["vertex_state"] = {v: -1.0 for v in range(self.sdg.graph.number_of_nodes())}
+            obs["vertex_state"] = {v: np.array([-1.0, -1.0]) for v in range(self.sdg.graph.number_of_nodes())}
 
             for node in vertices:
-                obs["vertex_state"][node] = self.sdg.getNodeState(node)
+                obs["vertex_state"][node] = np.array([self.sdg.getNodePeople(node), self.sdg.getNodePayloads(node)], dtype=np.float32)
 
         # Add vertex distances from each agent (normalized).
         if observe_method in ["ajg_new", "ajg_newer"]:
