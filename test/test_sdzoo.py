@@ -87,7 +87,7 @@ class TestEnvironment(unittest.TestCase):
         graph = SDGraph("sdzoo/env/4nodes.graph")
         env = parallel_env(graph,
             num_agents = 1,
-            observe_method = "ajg_new"
+            observe_method = "adjacency"
         )
         agent = env.agents[0]
         env.reset(seed=42)
@@ -115,7 +115,7 @@ class TestEnvironment(unittest.TestCase):
         graph = SDGraph("sdzoo/env/4nodes.graph")
         env = parallel_env(graph,
             num_agents = 1,
-            observe_method = "ajg_new"
+            observe_method = "adjacency"
         )
         agent = env.agents[0]
         env.reset(seed=42)

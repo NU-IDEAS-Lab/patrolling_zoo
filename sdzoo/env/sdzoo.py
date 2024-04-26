@@ -42,6 +42,23 @@ class SDAgent():
         self.lastNodeVisited = None
         self.stateBelief = {i: -1.0 for i in range(self.max_nodes)}
         self.payloads = 0
+
+    
+    def __str__(self):
+        rep = {}
+        rep["position"] = self.position
+        rep["payloads"] = self.payloads
+        rep["max_capacity"] = self.max_capacity
+        rep["currentState"] = self.currentState
+        rep["lastNode"] = self.lastNode
+        rep["edge"] = self.edge
+        rep["currentAction"] = self.currentAction
+        rep["speed"] = self.speed
+        rep["observationRadius"] = self.observationRadius
+        return f"Agent {self.id}: {rep}" 
+    
+    def __repr__(self):
+        return self.__str__()
      
 
 class parallel_env(ParallelEnv): 
@@ -55,12 +72,12 @@ class parallel_env(ParallelEnv):
                  speed = 1.0,
                  alpha = 10.0,
                  beta = 100.0,
-                 action_method = "full",
+                 action_method = "neighbors",
                  action_full_max_nodes = 40,
                  action_neighbors_max_degree = 15,
                  reward_method_terminal = "average",
                  observation_radius = np.inf,
-                 observe_method = "ajg_new",
+                 observe_method = "adjacency",
                  observe_method_global = None,
                  observe_bitmap_dims = (50, 50),
                  attrition_method = "none",
@@ -175,7 +192,7 @@ class parallel_env(ParallelEnv):
         # Add to the dictionary depending on the observation method.
 
         # Add agent id.
-        if observe_method in ["ajg_new", "ajg_newer", "adjacency"]:
+        if observe_method in ["adjacency"]:
             state_space["agent_id"] = spaces.Box(
                 low = -1,
                 high = len(self.possible_agents),
@@ -183,7 +200,7 @@ class parallel_env(ParallelEnv):
             )
 
         # Add vertex people/payload information 
-        if observe_method in ["ranking", "raw", "old", "ajg_new", "ajg_newer", "adjacency", "idlenessOnly"]:
+        if observe_method in ["adjacency"]:
             state_space["vertex_state"] = spaces.Dict({
                 v: spaces.Box(
                     # people, payloads
@@ -192,17 +209,9 @@ class parallel_env(ParallelEnv):
                 ) for v in range(self.sdg.graph.number_of_nodes())
             }) # type: ignore
         
-        # Add vertex distances from each agent.
-        if observe_method in ["old", "ajg_new", "ajg_newer"]:
-            state_space["vertex_distances"] = spaces.Dict({
-                a: spaces.Box(
-                    low = np.array([0.0] * self.sdg.graph.number_of_nodes(), dtype=np.float32),
-                    high = np.array([np.inf] * self.sdg.graph.number_of_nodes(), dtype=np.float32),
-                ) for a in self.possible_agents
-            }) # type: ignore
-        
+
         # Add adjacency matrix.
-        if observe_method in ["adjacency", "ajg_newer"]:
+        if observe_method in ["adjacency"]:
             state_space["adjacency"] = spaces.Box(
                 low=-1.0,
                 high=1.0,
@@ -211,7 +220,7 @@ class parallel_env(ParallelEnv):
             )
         
         # Add agent graph position vector, include agent's payload, max_capacity.
-        if observe_method in ["adjacency", "ajg_newer"]:
+        if observe_method in ["adjacency"]:
             state_space["agent_graph_position"] = spaces.Dict({
                 a: spaces.Box(
                     low = np.array([-1.0, -1.0, -1.0, 0.0, 0.0], dtype=np.float32),
@@ -419,56 +428,16 @@ class parallel_env(ParallelEnv):
         obs = {}
 
         # Add agent ID.
-        # if observe_method in ["ajg_new", "ajg_newer", "adjacency", "pyg"]:
-        if observe_method in ["ajg_new", "ajg_newer", "adjacency"]:
+        if observe_method in ["adjacency"]:
             obs["agent_id"] = agent.id
 
-        # Add vertex idleness time (minMax normalized).
-        if observe_method in ["ajg_new", "ajg_newer"]:
-            # Create numpy array of idleness times.
-            idlenessTimes = np.zeros(self.sdg.graph.number_of_nodes())
-            for v in vertices:
-                idlenessTimes[v] = self.sdg.getNodeIdlenessTime(v, self.step_count)
-            
-            # Normalize.
-            if np.size(idlenessTimes) > 0:
-                if np.min(idlenessTimes) == np.max(idlenessTimes):
-                    idlenessTimes = np.ones(self.sdg.graph.number_of_nodes())
-                else:
-                    idlenessTimes = self._minMaxNormalize(idlenessTimes)
-
-            # Create dictionary with default value of -1.0.
-            obs["vertex_state"] = {v: -1.0 for v in range(self.sdg.graph.number_of_nodes())}
-
-            # Fill actual values for nodes we can see.
-            for v in vertices:
-                obs["vertex_state"][v] = idlenessTimes[v]
-
         # Add people and payloads at each vertex.
-        if observe_method in ["raw", "old", "idlenessOnly", "adjacency"]:
+        if observe_method in ["adjacency"]:
             # Create dictionary with default value of -1.0.
             obs["vertex_state"] = {v: np.array([-1.0, -1.0]) for v in range(self.sdg.graph.number_of_nodes())}
 
             for node in vertices:
                 obs["vertex_state"][node] = np.array([self.sdg.getNodePeople(node), self.sdg.getNodePayloads(node)], dtype=np.float32)
-
-        # Add vertex distances from each agent (normalized).
-        if observe_method in ["ajg_new", "ajg_newer"]:
-            # Calculate the shortest path distances from each agent to each node.
-            vDists = np.ones((len(self.possible_agents), self.sdg.graph.number_of_nodes()))
-            for a in agents:
-                for v in self.sdg.graph.nodes:
-                    path = self._getPathToNode(a, v)
-                    dist = self._getAgentPathLength(a, path)
-                    dist = self._minMaxNormalize(dist, minimum=0.0, maximum=self.sdg.longestPathLength)
-                    vDists[a.id, v] = dist
-            
-            # Convert to dictionary.
-            vertexDistances = {}
-            for a in self.possible_agents:
-                vertexDistances[a] = vDists[a.id]
-            
-            obs["vertex_distances"] = vertexDistances
 
         # Add weighted adjacency matrix (normalized).
         if observe_method in ["adjacency"]:
@@ -483,7 +452,7 @@ class parallel_env(ParallelEnv):
             obs["adjacency"] = adjacency
         
         # Add agent graph position vector.
-        if observe_method in ["adjacency", "ajg_newer"]:
+        if observe_method in ["adjacency"]:
             graphPos = {}
             # Set default value of -1.0
             for a in self.possible_agents:
@@ -979,3 +948,15 @@ class parallel_env(ParallelEnv):
         
         # load should be impossible because of action masking
         raise ValueError(f"BAD LOAD:\nAgent Payloads: {agent.payloads}\nAgent Max Capacity: {agent.max_capacity}\nNode Payloads: {node_payloads}")
+
+    
+    def __str__(self):
+        ''' Returns a string representation of the environment. '''
+
+        return f"SDZoo Environment\nGraph: {self.sdg.graph}\nAgents: {self.agents}\nObservation Method: {self.observe_method}\nAction Method: {self.action_method}"
+    
+
+    def __repr__(self):
+        ''' Returns a string representation of the environment. '''
+
+        return self.__str__()

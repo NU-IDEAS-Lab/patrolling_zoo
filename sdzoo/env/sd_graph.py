@@ -308,3 +308,15 @@ class SDGraph():
                     file.write("S\n")
                     # Why do we convert to int first? Well, that's what the original patrolling_sim did...
                     file.write(f"{int(round(self.graph.edges[i, j]['weight'] / self.resolution))}\n")
+
+
+    def __str__(self) -> str:
+        ''' Returns a string representation of the graph. '''
+
+        return f"SDGraph({self.graphDimension} nodes: {self.graph.nodes}, {self.graph.number_of_edges()} edges, {self.totalPayloads} payloads)"
+    
+
+    def __repr__(self) -> str:
+        ''' Returns a string representation of the graph. '''
+
+        return self.__str__()

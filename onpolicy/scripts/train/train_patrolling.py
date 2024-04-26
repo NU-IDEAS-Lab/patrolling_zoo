@@ -94,7 +94,7 @@ def parse_args(args, parser):
                         help="comma separated list of rewards to be added.")
     parser.add_argument("--action_method", type=str, default="full", 
                         help="the action method to use")
-    parser.add_argument("--observe_method", type=str, default="ajg_new", 
+    parser.add_argument("--observe_method", type=str, default="adjacency", 
                         help="the observation method to use")
     parser.add_argument("--observe_method_global", type=str, default=None, 
                         help="the observation method to use for global observation")
