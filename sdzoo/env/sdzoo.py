@@ -537,7 +537,6 @@ class parallel_env(ParallelEnv):
                     pos = a.position,
                     id = -1 - a.id,
                     nodeType = NODE_TYPE.AGENT,
-                    visitTime = 0.0,
                     people = -1.0,
                     payloads = a.payloads,
                     max_capacity = a.max_capacity,

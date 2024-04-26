@@ -290,7 +290,6 @@ class parallel_env(ParallelEnv):
                         if reached:
                             same = agent.lastNode == nextNode
                             agent.lastNode = nextNode
-                            self.pg.setNodeVisitTime(agent.lastNode, self.step_count)
                             if (agent.lastNode == dstNode or not self.requireExplicitVisit) and not same:
                                 # The agent has reached its destination, visiting the node.
                                 # The agent receives a reward for visiting the node.

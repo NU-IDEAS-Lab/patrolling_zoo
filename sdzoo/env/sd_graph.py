@@ -48,7 +48,6 @@ class SDGraph():
 
                 self.graph.add_node(i,
                     pos = (posx, posy),
-                    visitTime = 0.0,
                     id = i,
                     nodeType = NODE_TYPE.OBSERVABLE_NODE,
                     depot = dep,
@@ -104,7 +103,6 @@ class SDGraph():
             depot = False
             if node_count == depot_node:
                 depot = True
-            self.graph.nodes[node]["visitTime"] = 0.0
             self.graph.nodes[node]["nodeType"] = NODE_TYPE.OBSERVABLE_NODE
             self.graph.nodes[node]["id"] = node
             self.graph.nodes[node]["depot"] = depot
@@ -155,7 +153,6 @@ class SDGraph():
                 self.graph.nodes[node]["id"] = availableIds.pop()
 
         for node in self.graph.nodes:
-            self.graph.nodes[node]["visitTime"] = 0.0
             self.graph.nodes[node]["payloads"] = 0 if not self.graph.nodes[node]["depot"] else self.totalPayloads
 
 
@@ -163,24 +160,6 @@ class SDGraph():
         ''' Returns the node position as a tuple (x, y). '''
 
         return self.graph.nodes[node]["pos"]
-    
-
-    def setNodeVisitTime(self, node, timeStamp):
-        ''' Sets the node visit time. '''
-
-        self.graph.nodes[node]["visitTime"] = timeStamp
-    
-
-    def getNodeVisitTime(self, node):
-        ''' Returns the node visit time. '''
-
-        return self.graph.nodes[node]["visitTime"]
-    
-
-    def getNodeIdlenessTime(self, node, currentTime):
-        ''' Returns the node idleness time. '''
-
-        return currentTime - self.graph.nodes[node]["visitTime"]
 
 
     def getAverageIdlenessTime(self, currentTime):
@@ -294,7 +273,7 @@ class SDGraph():
         ''' Returns a torch_geometric (PyG) graph object. '''
 
         from torch_geometric.utils.convert import from_networkx
-        return from_networkx(self.graph, group_node_attrs=["pos", "visitTime", "people", "payloads"], group_edge_attrs=["weight"])
+        return from_networkx(self.graph, group_node_attrs=["pos", "people", "payloads"], group_edge_attrs=["weight"])
 
 
     def exportToFile(self, filename): 
