@@ -738,7 +738,7 @@ class parallel_env(ParallelEnv):
             for agent in self.agents:
                 # Provide an end-of-episode reward.
                 if self.reward_method_terminal == "average":
-                    reward_dict[agent] += (self.sdg.getTotalPayloads() / (self.sdg.getTotalState() + 1)) * self.state_reward * self.beta
+                    reward_dict[agent] += (self.sdg.getTotalPayloads() / (self.sdg.getTotalState() + 1)) * self.state_reward * self.beta # TODO: normalize?
                     # reward_dict[agent] += (1 / (self.step_count + 1)) * self.step_reward
                     print(f"Total State: {self.sdg.getTotalState()}")
                     print(f"Agent Payloads: {agent.payloads}")
@@ -905,7 +905,7 @@ class parallel_env(ParallelEnv):
             raise ValueError(f"Invalid action method {self.action_method}")
 
 
-    def _dropPayload(self, agent):
+    def _dropPayload(self, agent): # TODO: normalize reward
         ''' Drop a payload and return some reward. 
             There is a positive reward for dropping a payload for a person in need, and 0 reward for dropping unneeded payloads. 
             There is also a negative reward for attempting to drop a payload when the agent is not carrying anything. '''
@@ -927,7 +927,7 @@ class parallel_env(ParallelEnv):
         raise ValueError(f"BAD DROP:\nAgent Payloads: {agent.payloads}")
 
 
-    def _loadPayload(self, agent):
+    def _loadPayload(self, agent): # TODO: normalize reward
         ''' Load a payload and return the appropriate reward. 
             There is 0 reward for loading properly and a negative reward for taking a payload from a person in need. 
             There is also a larger negative reward for attempting to take a payload when none exists or the agent is already at max capacity. '''
