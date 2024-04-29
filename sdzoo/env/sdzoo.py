@@ -678,19 +678,17 @@ class parallel_env(ParallelEnv):
                 # Store this as the agent's last action.
                 agent.currentAction = action
 
-                isnt_movement = action == ACTION.DROP or action == ACTION.LOAD
+                isnt_movement = action == self.action_neighbors_max_degree + ACTION.DROP or action == self.action_neighbors_max_degree + ACTION.LOAD
 
                 if isnt_movement:
-                    if action == ACTION.DROP:
+                    if action == self.action_neighbors_max_degree + ACTION.DROP:
                         # attempt to drop the payload(s), add the appropriate reward
                         reward_dict[agent] += self._dropPayload(agent)  
                     else:
                         # attempt to load the payload(s), add the appropriate reward
                         reward_dict[agent] += self._loadPayload(agent)
+                    info_dict[agent]["ready"] = True
                 else:
-                    # set the actions back to node indices
-                    action -= 2
-
                     # Get the destination node.
                     dstNode = self.getDestinationNode(agent, action)
                     
@@ -738,7 +736,9 @@ class parallel_env(ParallelEnv):
             for agent in self.agents:
                 # Provide an end-of-episode reward.
                 if self.reward_method_terminal == "average":
-                    reward_dict[agent] += (self.sdg.getTotalPayloads() / (self.sdg.getTotalState() + 1)) * self.state_reward * self.beta # TODO: normalize?
+                    # reward_dict[agent] += (self.sdg.getTotalPayloads() / (self.sdg.getTotalState() + 1)) * self.state_reward * self.beta # TODO: normalize?
+                    # reward_dict[agent] += self._minMaxNormalize(self.sdg.getTotalState(), minimum=0.0, maximum=self.sdg.getTotalPayloads()) * self.state_reward * self.beta # TODO: normalize?
+                    reward_dict[agent] += self._minMaxNormalize(-self.sdg.getTotalState(), minimum=-self.sdg.getTotalPayloads(), maximum=0.0) * self.state_reward * self.beta # TODO: normalize?
                     # reward_dict[agent] += (1 / (self.step_count + 1)) * self.step_reward
                     print(f"Total State: {self.sdg.getTotalState()}")
                     print(f"Agent Payloads: {agent.payloads}")
@@ -780,7 +780,7 @@ class parallel_env(ParallelEnv):
                     raise ValueError(f"Invalid action {action} for agent {agent.name}. Node {agent.lastNode} has only {self.sdg.graph.degree(agent.lastNode)} neighbors.")
                 dstNode = list(self.sdg.graph.neighbors(agent.lastNode))[action]
             else:
-                if action != agent.currentAction - 2: # correct for load/drop actions
+                if action != agent.currentAction: # correct for load/drop actions
                     raise ValueError(f"Invalid action {action} for agent {agent.name}. Must complete action {agent.currentAction} first.")
                 dstNode = list(self.sdg.graph.neighbors(agent.lastNode))[action]
         
@@ -892,9 +892,9 @@ class parallel_env(ParallelEnv):
                 actionMap = np.zeros(self.action_space(agent).n, dtype=np.float32)
                 # numNeighbors = self.sdg.graph.degree(agent.lastNode) - 1 # subtract 1 since the self loop adds 2 to the degree
                 numNeighbors = self.sdg.graph.degree(agent.lastNode)
-                actionMap[2:numNeighbors + 2] = 1.0 # add 2 for load and drop
-                actionMap[0] = float(agent.payloads < agent.max_capacity and self.sdg.getNodePayloads(agent.lastNode) > 0) # load mask
-                actionMap[1] = float(agent.payloads > 0) # drop mask
+                actionMap[:numNeighbors] = 1.0 # add 2 for load and drop
+                actionMap[self.action_neighbors_max_degree + ACTION.LOAD] = float(agent.payloads < agent.max_capacity and self.sdg.getNodePayloads(agent.lastNode) > 0) # load mask
+                actionMap[self.action_neighbors_max_degree + ACTION.DROP] = float(agent.payloads > 0) # drop mask
                 return actionMap
             else:
                 # Only the current action available (as it is still incomplete).
