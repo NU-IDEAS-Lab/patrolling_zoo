@@ -228,6 +228,14 @@ class parallel_env(ParallelEnv):
                 ) for a in self.possible_agents
             }) # type: ignore
         
+
+        if observe_method in ["pyg"]:
+            state_space["current_node"] = spaces.Box(
+                low = -1,
+                high = np.inf,
+                dtype=np.int32
+            )
+
         if observe_method in ["pyg"]:
             if self.action_method == "neighbors":
                 edge_space = spaces.Box(
@@ -451,6 +459,12 @@ class parallel_env(ParallelEnv):
                 adjacency[edge[1], edge[0]] = weight
             obs["adjacency"] = adjacency
         
+        if observe_method in ["pyg"]:
+            if agent.edge == None:
+                obs["current_node"] = self.sdg.getNodeState(agent.lastNode)
+            else:
+                obs["current_node"] = -1
+
         # Add agent graph position vector.
         if observe_method in ["adjacency"]:
             graphPos = {}
