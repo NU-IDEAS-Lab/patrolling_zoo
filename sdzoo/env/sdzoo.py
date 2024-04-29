@@ -890,9 +890,9 @@ class parallel_env(ParallelEnv):
             if agent.edge == None:
                 # All actions available.
                 actionMap = np.zeros(self.action_space(agent).n, dtype=np.float32)
-                actionMap[2:self.sdg.graph.number_of_nodes() + 2] = 1.0 # add 2 for load and drop
-                actionMap[0] = float(agent.payloads < agent.max_capacity and self.sdg.getNodePayloads(agent.lastNode) > 0) # load mask
-                actionMap[1] = float(agent.payloads > 0) # drop mask
+                actionMap[:self.sdg.graph.number_of_nodes()] = 1.0 # add 2 for load and drop
+                actionMap[self.sdg.graph.number_of_nodes() + ACTION.LOAD] = float(agent.payloads < agent.max_capacity and self.sdg.getNodePayloads(agent.lastNode) > 0) # load mask
+                actionMap[self.sdg.graph.number_of_nodes() + ACTION.DROP] = float(agent.payloads > 0) # drop mask
                 return actionMap
             else:
                 # Only the current action available (as it is still incomplete).
