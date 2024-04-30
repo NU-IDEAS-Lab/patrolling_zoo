@@ -1,14 +1,14 @@
 import random
 
-from patrolling_zoo.env.patrolling_zoo import parallel_env
-from patrolling_zoo.env.patrol_graph import PatrolGraph
-from patrolling_zoo.env.communication_model import CommunicationModel
+from sdzoo.env.sdzoo import parallel_env
+from sdzoo.env.sd_graph import SDGraph
+from sdzoo.env.communication_model import CommunicationModel
 from gymnasium.spaces.utils import flatten, flatten_space
 from gymnasium.spaces import Dict, Graph
 import numpy as np
 
 
-class PatrollingEnv(object):
+class SDEnv(object): 
     '''Wrapper to make the Patrolling Zoo environment compatible'''
 
     def __init__(self, args):
@@ -16,12 +16,12 @@ class PatrollingEnv(object):
         self.num_agents = args.num_agents
         
         if args.graph_random:
-            pg = PatrolGraph(numNodes=args.graph_random_nodes)
+            pg = SDGraph(numNodes=args.graph_random_nodes)
         else:
-            pg = PatrolGraph(args.graph_file)
+            pg = SDGraph(args.graph_file)
 
         self.env = parallel_env(
-            patrol_graph = pg,
+            sd_graph = pg,
             num_agents = args.num_agents,
             comms_model = CommunicationModel(
                 model = args.communication_model,
@@ -45,7 +45,12 @@ class PatrollingEnv(object):
             max_cycles = -1 if self.args.skip_steps_sync or self.args.skip_steps_async else args.max_cycles,
             regenerate_graph_on_reset = args.graph_random,
             max_nodes = args.gnn_max_nodes,
-            max_neighbors = args.gnn_max_neighbors
+            max_neighbors = args.gnn_max_neighbors,
+            drop_reward = args.drop_reward,
+            load_reward = args.load_reward,
+            step_reward = args.step_reward,
+            state_reward = args.state_reward,
+            agent_max_capacity = args.agent_max_capacity
         )
         
         self.remove_redundancy = args.remove_redundancy

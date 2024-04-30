@@ -11,19 +11,19 @@ class NODE_TYPE(IntEnum):
     UNOBSERVABLE_NODE = 2
 
 
-class PatrolGraph():
+class SDGraph():
     ''' This reads a graph file of the format provided by
         https://github.com/davidbsp/patrolling_sim '''
     
-    def __init__(self, filepath = None, numNodes = 40):
+    def __init__(self, filepath = None, numNodes = 40, payloads = 25):
         self.graph = nx.Graph()
         if filepath is None:
-            self.generateRandomGraph(numNodes)
+            self.generateRandomGraph(numNodes, payloads=payloads)
         else:
             self.loadFromFile(filepath)
 
 
-    def loadFromFile(self, filepath: str):
+    def loadFromFile(self, filepath: str): 
         with open(filepath, "r") as file:
             # Read graph information.
             self.graphDimension = int(file.readline())
@@ -32,19 +32,27 @@ class PatrolGraph():
             self.resolution = float(file.readline())
             self.offsetX = float(file.readline())
             self.offsetY = float(file.readline())
+            self.totalPayloads = int(file.readline())
 
             # Read node data.
-            for _ in range(self.graphDimension):
+            for _ in range(self.graphDimension): 
                 file.readline()
                 
                 # Create the node.
                 i = int(file.readline())
+                posx = int(file.readline()) * self.resolution + self.offsetX
+                posy = int(file.readline()) * self.resolution + self.offsetY
+                dep = bool(int(file.readline()))
+                peeps = int(file.readline())
+                load = 0 if not dep else self.totalPayloads
+
                 self.graph.add_node(i,
-                    pos = (int(file.readline()) * self.resolution + self.offsetX,
-                        int(file.readline()) * self.resolution + self.offsetY),
-                    visitTime = 0.0,
+                    pos = (posx, posy),
                     id = i,
-                    nodeType = NODE_TYPE.OBSERVABLE_NODE
+                    nodeType = NODE_TYPE.OBSERVABLE_NODE,
+                    depot = dep,
+                    people = peeps, 
+                    payloads = load
                 )
                 
                 # Add a self-loop to the node.
@@ -72,7 +80,7 @@ class PatrolGraph():
                 self.longestPathLength = i[1][j]
 
 
-    def generateRandomGraph(self, numNodes, radius=35, sizeX=200.0, sizeY=200.0, seed=None):
+    def generateRandomGraph(self, numNodes, radius=35, sizeX=200, sizeY=200, seed=None, payloads=25):
         ''' Generates a random graph with the given parameters. '''
 
         connected = False
@@ -87,11 +95,38 @@ class PatrolGraph():
         self.resolution = 1.0
         self.offsetX = 0.0
         self.offsetY = 0.0
+        self.totalPayloads = payloads
 
+        depot_node = random.randint(0, len(self.graph.nodes) - 1)
+        node_count = 0
         for node in self.graph.nodes:
-            self.graph.nodes[node]["visitTime"] = 0.0
-            self.graph.nodes[node]["nodeType"] = 0
+            depot = False
+            if node_count == depot_node:
+                depot = True
+            self.graph.nodes[node]["nodeType"] = NODE_TYPE.OBSERVABLE_NODE
             self.graph.nodes[node]["id"] = node
+            self.graph.nodes[node]["depot"] = depot
+            self.graph.nodes[node]["people"] = 0
+            self.graph.nodes[node]["payloads"] = 0 if not depot else self.totalPayloads
+            
+            node_count += 1
+
+        # add people to nodes
+        people_left = self.totalPayloads
+        while people_left > 0:
+            for node in self.graph.nodes:
+                if people_left == 0:
+                    break
+                elif self.graph.nodes[node]["depot"]: # don't add people to depot node
+                    continue
+
+                people = float("inf")
+                while people > people_left:
+                    people = random.randint(0, 3) # add maximum 3 people at a time to a given node
+                self.graph.nodes[node]["people"] += people
+                people_left -= people
+
+            
         for edge in self.graph.edges:
             self.graph.edges[edge]["weight"] = self._dist(self.graph.nodes[edge[0]]["pos"], self.graph.nodes[edge[1]]["pos"])
         self.longestPathLength = 0.0
@@ -118,31 +153,13 @@ class PatrolGraph():
                 self.graph.nodes[node]["id"] = availableIds.pop()
 
         for node in self.graph.nodes:
-            self.graph.nodes[node]["visitTime"] = 0.0
+            self.graph.nodes[node]["payloads"] = 0 if not self.graph.nodes[node]["depot"] else self.totalPayloads
 
 
     def getNodePosition(self, node):
         ''' Returns the node position as a tuple (x, y). '''
 
         return self.graph.nodes[node]["pos"]
-    
-
-    def setNodeVisitTime(self, node, timeStamp):
-        ''' Sets the node visit time. '''
-
-        self.graph.nodes[node]["visitTime"] = timeStamp
-    
-
-    def getNodeVisitTime(self, node):
-        ''' Returns the node visit time. '''
-
-        return self.graph.nodes[node]["visitTime"]
-    
-
-    def getNodeIdlenessTime(self, node, currentTime):
-        ''' Returns the node idleness time. '''
-
-        return currentTime - self.graph.nodes[node]["visitTime"]
 
 
     def getAverageIdlenessTime(self, currentTime):
@@ -168,7 +185,54 @@ class PatrolGraph():
         average_idleness_time = self.getAverageIdlenessTime(currentTime)
         return math.sqrt(sum([math.pow(self.getNodeIdlenessTime(node, currentTime) - average_idleness_time, 2) for node in nodes]) / float(number_of_nodes))
 
+    def getNodePayloads(self, node):
+        ''' Returns the number of payloads delivered to a node'''
 
+        return self.graph.nodes[node]["payloads"]
+    
+    def putPayloads(self, node, num):
+        ''' Adds `num` payloads to `node`'''
+
+        self.graph.nodes[node]["payloads"] += num
+
+    def takePayloads(self, node, num):
+        ''' Removes `num` payloads from `node`'''
+
+        self.graph.nodes[node]["payloads"] -= num
+        if self.graph.nodes[node]["payloads"] < 0:
+            raise ValueError("Attempting to take from a node with 0 payloads")
+
+    def isDepot(self, node):
+        ''' Returns if a given node is the depot node'''
+        
+        return self.graph.nodes[node]["depot"]
+    
+    def getNodePeople(self, node):
+        ''' Returns the number of people at a node'''
+
+        return self.graph.nodes[node]["people"]
+    
+    def getNodeState(self, node):
+        ''' Returns the state of each node. '''
+        
+        return max(self.getNodePeople(node) - self.getNodePayloads(node), 0)
+    
+    def getTotalState(self):
+        ''' Returns the state of all nodes. '''
+
+        nodes = self.graph.nodes
+        return sum([self.getNodeState(node) for node in nodes])
+    
+    def getAverageState(self):
+        ''' Returns the average state of all nodes. '''
+
+        return self.getTotalState() / float(self.graph.number_of_nodes())
+    
+    def getTotalPayloads(self):
+        ''' Returns the total number of payloads. '''
+
+        return self.totalPayloads
+    
     def getNearestNode(self, pos, epsilon=None):
         ''' Returns the nearest node to the given position.
             If epsilon is not None and no node is within epsilon, returns None. '''
@@ -209,10 +273,10 @@ class PatrolGraph():
         ''' Returns a torch_geometric (PyG) graph object. '''
 
         from torch_geometric.utils.convert import from_networkx
-        return from_networkx(self.graph, group_node_attrs=["pos", "visitTime"], group_edge_attrs=["weight"])
+        return from_networkx(self.graph, group_node_attrs=["pos", "people", "payloads"], group_edge_attrs=["weight"])
 
 
-    def exportToFile(self, filename):
+    def exportToFile(self, filename): 
         ''' Exports to a file of the same format as `importFromFile`. '''
 
         with open(filename, "w") as file:
@@ -223,6 +287,7 @@ class PatrolGraph():
             file.write(f"{self.resolution}\n")
             file.write(f"{self.offsetX}\n")
             file.write(f"{self.offsetY}\n")
+            file.write(f"{self.totalPayloads}\n")
 
             # Write node data.
             for i in range(self.graphDimension):
@@ -232,6 +297,8 @@ class PatrolGraph():
                 file.write(f"{i}\n")
                 file.write(f"{int((self.graph.nodes[i]['pos'][0] - self.offsetX) / self.resolution)}\n")
                 file.write(f"{int((self.graph.nodes[i]['pos'][1] - self.offsetY) / self.resolution)}\n")
+                file.write(f"{int(self.graph.nodes[i]['depot'])}\n")
+                file.write(f"{int(self.graph.nodes[i]['people'])}\n")
                 
                 # Write edges.
                 numEdges = self.graph.degree[i]
@@ -241,3 +308,15 @@ class PatrolGraph():
                     file.write("S\n")
                     # Why do we convert to int first? Well, that's what the original patrolling_sim did...
                     file.write(f"{int(round(self.graph.edges[i, j]['weight'] / self.resolution))}\n")
+
+
+    def __str__(self) -> str:
+        ''' Returns a string representation of the graph. '''
+
+        return f"SDGraph({self.graphDimension} nodes: {self.graph.nodes}, {self.graph.number_of_edges()} edges, {self.totalPayloads} payloads)"
+    
+
+    def __repr__(self) -> str:
+        ''' Returns a string representation of the graph. '''
+
+        return self.__str__()
