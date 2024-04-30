@@ -10,7 +10,7 @@ all_args.experiment_name = "search-and-deliver-9node-scale-up"
 all_args.env_name = "search-deliver"
 all_args.user_name = "ideas-mas"
 
-all_args.num_agents = 3
+all_args.num_agents = 4
 all_args.agent_speed = 40.0
 all_args.action_method = "neighbors"
 all_args.observe_method = "pyg"
@@ -37,8 +37,8 @@ all_args.reward_method_terminal = "average"
 all_args.graph_name = "9nodes"
 all_args.graph_file = f"../../../sdzoo/env/{all_args.graph_name}.graph"
 # all_args.num_env_steps = 10000 #total number of steps
-all_args.num_env_steps = 1e5 * 2.5 #total number of steps
-all_args.episode_length = 50 #number of steps in a training episode
+all_args.num_env_steps = 1e6 * 1 #total number of steps
+all_args.episode_length = 200 #number of steps in a training episode
 all_args.max_cycles = all_args.episode_length #number of steps in an environment episode
 
 all_args.algorithm_name = "mappo"

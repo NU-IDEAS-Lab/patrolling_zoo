@@ -906,7 +906,7 @@ class parallel_env(ParallelEnv):
                 actionMap = np.zeros(self.action_space(agent).n, dtype=np.float32)
                 # numNeighbors = self.sdg.graph.degree(agent.lastNode) - 1 # subtract 1 since the self loop adds 2 to the degree
                 numNeighbors = self.sdg.graph.degree(agent.lastNode)
-                actionMap[:numNeighbors] = 1.0 # add 2 for load and drop
+                actionMap[:numNeighbors] = 1.0 
                 actionMap[self.action_neighbors_max_degree + ACTION.LOAD] = float(agent.payloads < agent.max_capacity and self.sdg.getNodePayloads(agent.lastNode) > 0) # load mask
                 actionMap[self.action_neighbors_max_degree + ACTION.DROP] = float(agent.payloads > 0) # drop mask
                 return actionMap
@@ -938,7 +938,7 @@ class parallel_env(ParallelEnv):
             reward *= self.alpha
             return reward
         
-        raise ValueError(f"BAD DROP:\nAgent Payloads: {agent.payloads}")
+        # raise ValueError(f"BAD DROP:\nAgent Payloads: {agent.payloads}")
 
 
     def _loadPayload(self, agent): # TODO: normalize reward
@@ -962,7 +962,7 @@ class parallel_env(ParallelEnv):
             return reward 
         
         # load should be impossible because of action masking
-        raise ValueError(f"BAD LOAD:\nAgent Payloads: {agent.payloads}\nAgent Max Capacity: {agent.max_capacity}\nNode Payloads: {node_payloads}")
+        # raise ValueError(f"BAD LOAD:\nAgent Payloads: {agent.payloads}\nAgent Max Capacity: {agent.max_capacity}\nNode Payloads: {node_payloads}")
 
     
     def __str__(self):
