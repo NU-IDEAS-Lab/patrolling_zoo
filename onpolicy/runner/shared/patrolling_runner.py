@@ -87,7 +87,7 @@ class PatrollingRunner(Runner):
                                 int(total_num_steps / (end - start))))
                 
                 train_infos["average_episode_rewards"] = np.mean(self.buffer.rewards) * self.episode_length
-                print("average episode rewards is {} and total state is {}".format(train_infos["average_episode_rewards"], np.mean(self.env_infos["total_state"])))
+                print("average episode rewards is {} and idleness is {}".format(train_infos["average_episode_rewards"], np.mean(self.env_infos["avg_idleness"])))
                 self.log_train(train_infos, total_num_steps)
                 self.log_env(self.env_infos, total_num_steps)
                 self.env_infos = defaultdict(list)
@@ -139,8 +139,10 @@ class PatrollingRunner(Runner):
         # update env_infos if done
         dones_env = np.all(dones, axis=-1)
 
-        # Add the total state information to env infos.
-        self.env_infos["total_state"] = [i["total_state"] for i in infos]
+        # Add the average idleness time to env infos.
+        self.env_infos["avg_idleness"] = [i["avg_idleness"] for i in infos]
+        self.env_infos["stddev_idleness"] = [i["stddev_idleness"] for i in infos]
+        self.env_infos["worst_idleness"] = [i["worst_idleness"] for i in infos]
         self.env_infos["agent_count"] = [i["agent_count"] for i in infos]
 
         # Add the number of nodes visited to env infos.

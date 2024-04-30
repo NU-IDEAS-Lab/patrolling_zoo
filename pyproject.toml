@@ -3,12 +3,15 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sdzoo"
+name = "patrolling_zoo"
 version = "0.0.1"
 authors = [
-  { name="Gyaan Antia" },
+  { name="Anthony Goeckner" },
+  { name="Nicolas Martinet" },
+  { name="Xinliang Li" },
+  { name="Yueyuan Sui" },
 ]
-description = "Search and Deliver environment for PettingZoo."
+description = "Patrolling environment for PettingZoo."
 readme = "README.md"
 requires-python = ">=3.10"
 classifiers = [
@@ -18,8 +21,8 @@ classifiers = [
 
 [tool.setuptools]
 packages = [
-    "sdzoo",
-    "sdzoo.env",
+    "patrolling_zoo",
+    "patrolling_zoo.env",
     "test",
     "onpolicy",
     "onpolicy.algorithms",

@@ -1,16 +1,16 @@
 import unittest
 from pettingzoo.test import parallel_api_test
-from sdzoo.sdzoo_v0 import SDGraph, parallel_env
+from patrolling_zoo.patrolling_zoo_v0 import PatrolGraph, parallel_env
 
 class TestEnvironment(unittest.TestCase):
 
     def test_parallel_api(self):
-        graph = SDGraph("sdzoo/env/cumberland.graph")
+        graph = PatrolGraph("patrolling_zoo/env/cumberland.graph")
         env = parallel_env(graph, num_agents=2)
         parallel_api_test(env, num_cycles=1000)
     
     def test_path_length_from_node0(self):
-        graph = SDGraph("sdzoo/env/4nodes.graph")
+        graph = PatrolGraph("patrolling_zoo/env/4nodes.graph")
         env = parallel_env(graph, num_agents=1)
         agent = env.agents[0]
         agent.reset()
@@ -34,7 +34,7 @@ class TestEnvironment(unittest.TestCase):
         self.assertAlmostEqual(pathLen, 47.2, places=1)
 
     def test_path_length_from_node1(self):
-        graph = SDGraph("sdzoo/env/4nodes.graph")
+        graph = PatrolGraph("patrolling_zoo/env/4nodes.graph")
         env = parallel_env(graph, num_agents=1)
         agent = env.agents[0]
         agent.reset()
@@ -58,7 +58,7 @@ class TestEnvironment(unittest.TestCase):
         self.assertEqual(pathLen, 25.0)
     
     def test_path_length_from_edge13(self):
-        graph = SDGraph("sdzoo/env/4nodes.graph")
+        graph = PatrolGraph("patrolling_zoo/env/4nodes.graph")
         env = parallel_env(graph, num_agents=1)
         agent = env.agents[0]
         agent.reset()
@@ -84,10 +84,10 @@ class TestEnvironment(unittest.TestCase):
         self.assertEqual(pathLen, 20.0)
     
     def test_state(self):
-        graph = SDGraph("sdzoo/env/4nodes.graph")
+        graph = PatrolGraph("patrolling_zoo/env/4nodes.graph")
         env = parallel_env(graph,
             num_agents = 1,
-            observe_method = "adjacency"
+            observe_method = "ajg_new"
         )
         agent = env.agents[0]
         env.reset(seed=42)
@@ -112,10 +112,10 @@ class TestEnvironment(unittest.TestCase):
         self.assertEqual(len(state["vertex_distances"][agent]), 4)
     
     def test_movement_node0_node1(self):
-        graph = SDGraph("sdzoo/env/4nodes.graph")
+        graph = PatrolGraph("patrolling_zoo/env/4nodes.graph")
         env = parallel_env(graph,
             num_agents = 1,
-            observe_method = "adjacency"
+            observe_method = "ajg_new"
         )
         agent = env.agents[0]
         env.reset(seed=42)

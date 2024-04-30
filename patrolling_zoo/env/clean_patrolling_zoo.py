@@ -1,5 +1,5 @@
 from pettingzoo.utils.env import ParallelEnv
-from sdzoo.env.communication_model import CommunicationModel
+from patrolling_zoo.env.communication_model import CommunicationModel
 from gymnasium import spaces
 import random
 import numpy as np
@@ -8,7 +8,7 @@ from matplotlib import pyplot as plt
 import networkx as nx
 from copy import copy
 
-class SDAgent():
+class PatrolAgent():
     ''' This class stores all agent state. '''
 
     def __init__(self, id, position=(0.0, 0.0), speed = 1.0, observationRadius=np.inf, startingNode=None, currentState = 1):
@@ -36,10 +36,10 @@ class SDAgent():
 
 class parallel_env(ParallelEnv):
     metadata = {
-        "name": "sdzoo_environment_v0",
+        "name": "patrolling_zoo_environment_v0",
     }
 
-    def __init__(self, sd_graph, num_agents,
+    def __init__(self, patrol_graph, num_agents,
                  model = CommunicationModel(model = "bernoulli"),
                  model_name = "bernouli_model",
                  require_explicit_visit = True,
@@ -56,7 +56,7 @@ class parallel_env(ParallelEnv):
         Initialize the PatrolEnv object.
 
         Args:
-            sd_graph (SDGraph): The patrol graph representing the environment.
+            patrol_graph (PatrolGraph): The patrol graph representing the environment.
             num_agents (int): The number of agents in the environment.
 
         Returns:
@@ -64,7 +64,7 @@ class parallel_env(ParallelEnv):
         """
         super().__init__(*args, **kwargs)
 
-        self.pg = sd_graph
+        self.pg = patrol_graph
 
         # Configuration.
         self.requireExplicitVisit = require_explicit_visit
@@ -84,7 +84,7 @@ class parallel_env(ParallelEnv):
         startingNodes = random.sample(list(self.pg.graph.nodes), num_agents)
         startingPositions = [self.pg.getNodePosition(i) for i in startingNodes]
         self.possible_agents = [
-            SDAgent(i, startingPositions[i],
+            PatrolAgent(i, startingPositions[i],
                         speed = speed,
                         startingNode = startingNodes[i],
                         observationRadius = self.observationRadius
@@ -290,6 +290,7 @@ class parallel_env(ParallelEnv):
                         if reached:
                             same = agent.lastNode == nextNode
                             agent.lastNode = nextNode
+                            self.pg.setNodeVisitTime(agent.lastNode, self.step_count)
                             if (agent.lastNode == dstNode or not self.requireExplicitVisit) and not same:
                                 # The agent has reached its destination, visiting the node.
                                 # The agent receives a reward for visiting the node.

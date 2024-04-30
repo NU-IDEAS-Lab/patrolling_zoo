@@ -1,32 +1,30 @@
-# SDZoo
+# Patrolling Zoo
 
-<!-- This repository contains the policy/training code for the paper, "Graph Neural Network-based Multi-agent Reinforcement Learning for Resilient Distributed Coordination of Multi-Robot Systems", by Anthony Goeckner, Yueyuan Sui, Nicolas Martinet, Xinliang Li, and Qi Zhu of Northwestern University in Evanston, Illinois. -->
-
-Gyaan Thesis work forked from [patrolling zoo](https://github.com/NU-IDEAS-Lab/patrolling_zoo)
+This repository contains the policy/training code for the paper, "Graph Neural Network-based Multi-agent Reinforcement Learning for Resilient Distributed Coordination of Multi-Robot Systems", by Anthony Goeckner, Yueyuan Sui, Nicolas Martinet, Xinliang Li, and Qi Zhu of Northwestern University in Evanston, Illinois.
 
 ## Package Description
 Packages are as follows:
 
  * **onpolicy**: Contains the algorithm code.
- * **sdzoo**: Contains the environment code.
+ * **patrolling_zoo**: Contains the environment code.
 
 ## Installation
 
- 1) Clone the sdzoo repository:
+ 1) Clone the patrolling_zoo repository:
     ```bash
-    git clone --recurse git@github.com:NU-IDEAS-Lab/sdzoo.git
+    git clone --recurse git@github.com:NU-IDEAS-Lab/patrolling_zoo.git
     ```
 
  2) Create a Conda environment with required packages:
     ```bash
-    cd ./sdzoo
-    conda env create -n sdzoo -f ./environment.yml
-    conda activate sdzoo
+    cd ./patrolling_zoo
+    conda env create -n patrolling_zoo -f ./environment.yml
+    conda activate patrolling_zoo
     ```
 
- 3) Install PyTorch to the new `sdzoo` conda environment using the [steps outlined on the PyTorch website](https://pytorch.org/get-started/locally/).
+ 3) Install PyTorch to the new `patrolling_zoo` conda environment using the [steps outlined on the PyTorch website](https://pytorch.org/get-started/locally/).
 
- 4) Install the `onpolicy` and `sdzoo` packages:
+ 4) Install the `onpolicy` and `patrolling_zoo` packages:
     ```
     pip install -e .
     ```
