@@ -939,6 +939,7 @@ class parallel_env(ParallelEnv):
             return reward
         
         # raise ValueError(f"BAD DROP:\nAgent Payloads: {agent.payloads}")
+        return -0.25
 
 
     def _loadPayload(self, agent): # TODO: normalize reward
@@ -963,6 +964,7 @@ class parallel_env(ParallelEnv):
         
         # load should be impossible because of action masking
         # raise ValueError(f"BAD LOAD:\nAgent Payloads: {agent.payloads}\nAgent Max Capacity: {agent.max_capacity}\nNode Payloads: {node_payloads}")
+        return -0.25
 
     
     def __str__(self):
